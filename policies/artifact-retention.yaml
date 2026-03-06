@@ -1,0 +1,15 @@
+retention:
+  local-dev:
+    screenshots: 14d
+    debug-output: 14d
+    reports: 30d
+  ci:
+    screenshots: 7d
+    debug-output: 7d
+    reports: 30d
+redaction:
+  enabled: true
+  targets:
+    - phone-number
+    - password
+    - token

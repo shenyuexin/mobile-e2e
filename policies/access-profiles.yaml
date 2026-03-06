@@ -1,0 +1,32 @@
+profiles:
+  read-only:
+    allow:
+      - inspect
+      - screenshot
+      - logs
+    deny:
+      - tap
+      - type
+      - install
+      - uninstall
+  interactive:
+    allow:
+      - inspect
+      - screenshot
+      - logs
+      - tap
+      - type
+      - swipe
+    deny:
+      - uninstall
+  full-control:
+    allow:
+      - inspect
+      - screenshot
+      - logs
+      - tap
+      - type
+      - swipe
+      - install
+      - uninstall
+      - clear-data

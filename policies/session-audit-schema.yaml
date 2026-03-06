@@ -1,0 +1,11 @@
+session_audit:
+  required_fields:
+    - session_id
+    - phase
+    - platform
+    - flow_name
+    - result
+    - started_at
+    - completed_at
+    - artifact_paths
+    - interruption_events
