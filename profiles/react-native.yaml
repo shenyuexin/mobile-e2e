@@ -1,0 +1,13 @@
+profile: react-native
+status: validated-sample-baseline
+validated_with:
+  sample: rn-login-demo
+  platforms:
+    - ios
+    - android
+requirements:
+  - stable testID or accessibility identifiers for critical controls
+  - deterministic app entry via Expo/Metro or native app launch
+  - platform interruption rules maintained separately from business flow
+notes:
+  - Current project baseline is validated on an Expo React Native sample only.

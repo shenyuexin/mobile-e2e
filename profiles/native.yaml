@@ -1,0 +1,8 @@
+profile: native
+status: contract-only
+requirements:
+  - platform-native accessibility identifiers on critical flows
+  - deep-link or deterministic start state for golden path
+  - permission and interruption assumptions documented per platform
+notes:
+  - No native sample app has been validated in this repository yet.

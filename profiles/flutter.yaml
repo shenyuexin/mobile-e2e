@@ -1,0 +1,8 @@
+profile: flutter
+status: contract-only
+requirements:
+  - semantic labels or stable keys for critical widgets
+  - deterministic start path and reset strategy
+  - fallback expectations documented where semantics are insufficient
+notes:
+  - No Flutter sample has been validated in this repository yet.
