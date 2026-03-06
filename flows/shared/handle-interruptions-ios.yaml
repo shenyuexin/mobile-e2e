@@ -1,0 +1,30 @@
+appId: host.exp.Exponent
+---
+- runFlow:
+    when:
+      visible: "Save Password"
+    commands:
+      - tapOn:
+          text: "Not Now"
+          optional: true
+
+- runFlow:
+    when:
+      visible: "以后"
+    commands:
+      - tapOn:
+          text: "以后"
+          optional: true
+
+- tapOn:
+    text: "Not Now"
+    optional: true
+- tapOn:
+    text: "Save Password"
+    optional: true
+- tapOn:
+    text: "以后"
+    optional: true
+- tapOn:
+    text: "存储密码"
+    optional: true

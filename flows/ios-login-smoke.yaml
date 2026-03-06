@@ -1,0 +1,13 @@
+appId: host.exp.Exponent
+---
+- assertVisible: "登录"
+- tapOn:
+    id: "phone-input"
+- inputText: "13800138000"
+- tapOn:
+    id: "password-input"
+- inputText: "123456"
+- tapOn:
+    id: "login-button"
+- runFlow: "/Users/linan/Documents/mobile-e2e-mcp/flows/shared/handle-interruptions-ios.yaml"
+- assertVisible: "欢迎进入首页"
