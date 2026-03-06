@@ -11,3 +11,8 @@
 artifacts/
 reports/
 output/
+
+# Locally cloned third-party example apps
+examples/demo-android-app/
+examples/demo-ios-app/
+examples/demo-flutter-app/
