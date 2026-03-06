@@ -1,0 +1,13 @@
+.DS_Store
+*.log
+*.tmp
+*.swp
+*.swo
+
+# macOS metadata
+._*
+
+# Local artifacts
+artifacts/
+reports/
+output/
