@@ -39,7 +39,16 @@
 - waitForCondition
 - runFlow (scripted action batch)
 
-## E. Assertions & Validation
+## E. Interruption Handling
+
+- detectInterruption
+- classifyInterruption (system alert / action sheet / permission prompt / keyboard / overlay)
+- dismissInterruption
+- resolveInterruptionWithPolicy
+- resumeInterruptedAction
+- getInterruptionReport
+
+## F. Assertions & Validation
 
 - assertVisible
 - assertText
@@ -47,7 +56,7 @@
 - assertWithinBounds
 - assertVisualBaseline
 
-## F. Observability & Debugging
+## G. Observability & Debugging
 
 - getDeviceLogs
 - getAppLogs
@@ -56,7 +65,9 @@
 - getRNConsoleLogs (RN adapter)
 - getActionTimeline
 
-## G. Session, Governance, and Collaboration
+- getInterruptionTimeline
+
+## H. Session, Governance, and Collaboration
 
 - startSession / endSession
 - checkpoint / rollback
@@ -83,11 +94,11 @@ Action resolution order:
 
 ### L1 (MVP)
 
-- Device selection, app lifecycle, screenshot, tree, tap/type/swipe, basic assertions, logs.
+- Device selection, app lifecycle, screenshot, tree, tap/type/swipe, basic assertions, logs, and minimal interruption detection/handling for known system prompts.
 
 ### L2 (Stability)
 
-- Flakiness controls, retries with reason codes, session report, crash diagnostics, baseline visuals.
+- Flakiness controls, retries with reason codes, session report, crash diagnostics, baseline visuals, reusable interruption policy library, and interruption telemetry.
 
 ### L3 (Scale)
 

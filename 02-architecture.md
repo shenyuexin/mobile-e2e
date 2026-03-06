@@ -12,6 +12,7 @@ MCP API Gateway
    +--> Planner/Executor
    +--> Policy Engine
    +--> Artifact Store
+   +--> Interruption Manager
    +--> Adapter Router
               |
               +--> Android Adapter(s)
@@ -35,6 +36,7 @@ MCP API Gateway
 
 - Platform-specific action execution.
 - Element resolution and retries.
+- Interruption detection and handling.
 - Screenshot/OCR/CV fallback orchestration.
 - Device and app-level diagnostics collection.
 
@@ -116,6 +118,7 @@ Router output:
 - UI stability wait (layout hash unchanged threshold)
 - bounded retries with reason-aware backoff
 - overlay detection before action
+- system alert / action sheet / permission prompt detection
 - keyboard state normalization
 - deterministic timeouts by action class
 - post-action verification hooks
@@ -128,17 +131,44 @@ Required ordered state transitions:
 
 1. Resolve stable locator (deterministic).
 2. Execute platform-native action.
-3. Verify post-condition.
-4. If resolution/action fails, evaluate fallback eligibility:
+3. Detect interruption window before post-condition check.
+4. If interruption is present, resolve via interruption policy.
+5. Verify post-condition.
+6. If resolution/action fails, evaluate fallback eligibility:
    - allow app test hook path (if available)
    - allow OCR/CV only under bounded policy
-5. If bounded fallback fails, hard fail with reasonCode + artifacts.
+7. If bounded fallback fails, hard fail with reasonCode + artifacts.
 
 Prohibited transitions:
 
 - OCR/CV as first action path for standard controls.
 - Unbounded retry loops without state change evidence.
 - Silent downgrade from deterministic to probabilistic without telemetry.
+
+---
+
+## 6.3 Interruption Manager
+
+The Interruption Manager is responsible for handling transient UI that can invalidate otherwise-correct automation flows.
+
+Supported interruption classes:
+
+- system alerts
+- action sheets / bottom sheets
+- permission prompts
+- save-password prompts
+- keyboard overlays
+- app-level transient overlays
+
+Required functions:
+
+1. detect interruption before and after critical actions
+2. classify interruption source and priority
+3. apply platform-specific resolution policy
+4. resume interrupted action with bounded retry
+5. emit interruption telemetry and artifacts
+
+Interruption handling is deterministic-first and policy-driven. It must not silently dismiss unknown prompts without recording evidence.
 
 ---
 
