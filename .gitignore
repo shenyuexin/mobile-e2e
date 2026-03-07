@@ -11,6 +11,8 @@
 artifacts/
 reports/
 output/
+.gradle-flutter-isolated/
+examples/build/
 
 # Locally cloned third-party example apps
 examples/demo-android-app/
