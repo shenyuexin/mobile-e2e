@@ -1,9 +1,12 @@
 # Maestro Adapter
 
-This package is the future home for the Maestro-backed execution adapter.
+This package now provides the minimal TypeScript adapter used by `run_flow`.
 
-Current status:
+Current scope:
 
-- directory scaffold created
-- existing executable runners remain under `scripts/dev/`
-- next step is to move shared runner logic from scripts into adapter functions
+- `resolveRepoPath()`
+- `buildArtifactsDir()`
+- `collectBasicRunResult()`
+- `runFlowWithMaestro()`
+
+The adapter intentionally preserves the existing shell runners under `scripts/dev/` as the execution backend. Shared logic can move inward from those scripts in later iterations after the TS loop is stable.
