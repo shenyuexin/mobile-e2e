@@ -3,6 +3,7 @@ export type {
   EndSessionInput,
   Platform,
   RunFlowInput,
+  RunnerProfile,
   Session,
   SessionTimelineEvent,
   StartSessionInput,

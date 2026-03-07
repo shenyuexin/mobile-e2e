@@ -2,6 +2,7 @@ import type { ReasonCode } from "./reason-codes.js";
 
 export type Platform = "android" | "ios";
 export type ToolStatus = "success" | "failed" | "partial";
+export type RunnerProfile = "phase1" | "native_android" | "native_ios" | "flutter_android";
 
 export interface SessionTimelineEvent {
   timestamp: string;
@@ -37,6 +38,7 @@ export interface ToolResult<TData = unknown> {
 export interface RunFlowInput {
   sessionId: string;
   platform: Platform;
+  runnerProfile?: RunnerProfile;
   flowPath?: string;
   harnessConfigPath?: string;
   runnerScript?: string;
