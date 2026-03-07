@@ -27,3 +27,42 @@ assumptions:
   - Expo dev server is reachable on port 8081
   - Sample app remains a demo baseline, not a production readiness claim
   - Each run starts from a reset-based entry instead of in-app state reuse
+phase3_validations:
+  native_android:
+    enabled: true
+    sample_name: mobitru-native
+    runner_script: scripts/run_phase3_native_android.sh
+    artifact_root: artifacts/phase3-native-android
+    app_id: com.epam.mobitru
+    run_count_default: 2
+    flows:
+      - flows/native/mobitru-android-login.yaml
+    assumptions:
+      - The app is already installed, or NATIVE_ANDROID_APK_PATH points to a debug APK.
+      - Android native validation currently covers the login harness flow.
+  native_ios:
+    enabled: true
+    sample_name: mobitru-native
+    runner_script: scripts/run_phase3_native_ios.sh
+    artifact_root: artifacts/phase3-native-ios
+    app_id: com.epam.mobitru.demoapp
+    run_count_default: 2
+    flows:
+      - flows/native/mobitru-ios-baseline.yaml
+      - flows/native/mobitru-ios-login.yaml
+    assumptions:
+      - The app is already installed, or NATIVE_IOS_APP_PATH points to a simulator build artifact.
+      - iOS native validation covers both baseline and input-style login flows.
+  flutter_android:
+    enabled: true
+    sample_name: mobitru-flutter
+    runner_script: scripts/run_phase3_flutter_android.sh
+    artifact_root: artifacts/phase3-flutter-android
+    app_id: com.epam.mobitru
+    run_count_default: 3
+    flows:
+      - flows/flutter/mobitru-flutter-login-baseline.yaml
+      - flows/flutter/mobitru-flutter-login.yaml
+    assumptions:
+      - The app is already installed, or FLUTTER_APK_PATH points to a debug APK.
+      - Current unified reporting covers Android Flutter validation only.
