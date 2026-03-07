@@ -9,6 +9,7 @@
 - `docs/product/02-deployment-model.zh-CN.md`：开源部署模型
 - `docs/product/03-installation-and-integration.zh-CN.md`：安装与接入指南
 - `docs/product/04-open-source-scope-and-release-plan.zh-CN.md`：开源范围与发布计划
+- `docs/product/05-post-migration-implementation-brief.zh-CN.md`：迁移后实施说明
 
 ## 这个 MCP 会实现哪些能力？
 
@@ -86,4 +87,4 @@
 2. **再补少量真机冒烟**（处理通知、系统弹窗、OEM差异）
 3. 每阶段都按统一证据包与门禁指标做 Go/No-Go
 
-详细验收逻辑请看：`13-phase-validation-strategy.zh-CN.md`
+详细验收逻辑请看：`docs/phases/phase-validation-strategy.zh-CN.md`

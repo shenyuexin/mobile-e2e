@@ -19,6 +19,8 @@
   说明用户如何安装、配置、启动 MCP、接入 Agent，并执行第一个样例流程。
 - `04-open-source-scope-and-release-plan.zh-CN.md`
   说明哪些目录和能力应开源、哪些内容不应公开，以及推荐的分阶段发布方案。
+- `05-post-migration-implementation-brief.zh-CN.md`
+  说明目录迁移完成后，后续 AI 和工程实现应如何继续推进。
 
 ## 当前结论
 

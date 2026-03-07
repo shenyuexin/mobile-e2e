@@ -1,0 +1,9 @@
+{
+  "name": "@mobile-e2e-mcp/cli",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "bin": {
+    "mobile-e2e-mcp": "./src/index.js"
+  }
+}

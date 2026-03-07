@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/tool-result.schema.json",
+  "title": "MobileE2EMcpToolResult",
+  "type": "object",
+  "required": [
+    "status",
+    "reasonCode",
+    "sessionId",
+    "durationMs",
+    "attempts",
+    "artifacts",
+    "data",
+    "nextSuggestions"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["success", "failed", "partial"]
+    },
+    "reasonCode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "data": {
+      "type": "object"
+    },
+    "nextSuggestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

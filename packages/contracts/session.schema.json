@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/session.schema.json",
+  "title": "MobileE2EMcpSession",
+  "type": "object",
+  "required": [
+    "sessionId",
+    "platform",
+    "deviceId",
+    "appId",
+    "policyProfile",
+    "startedAt",
+    "artifactsRoot",
+    "timeline"
+  ],
+  "properties": {
+    "sessionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["android", "ios"]
+    },
+    "deviceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "appId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profile": {
+      "type": ["string", "null"]
+    },
+    "policyProfile": {
+      "type": "string",
+      "minLength": 1
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "artifactsRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timeline": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": true
+}
