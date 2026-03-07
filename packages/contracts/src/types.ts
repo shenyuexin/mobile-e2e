@@ -19,7 +19,7 @@ export interface Session {
   startedAt: string;
   artifactsRoot: string;
   timeline: SessionTimelineEvent[];
-  profile?: string | null;
+  profile?: RunnerProfile | null;
   phase?: string | null;
   sampleName?: string | null;
 }
@@ -33,6 +33,18 @@ export interface ToolResult<TData = unknown> {
   artifacts: string[];
   data: TData;
   nextSuggestions: string[];
+}
+
+export interface DeviceInfo {
+  id: string;
+  name?: string;
+  platform: Platform;
+  state: string;
+  available: boolean;
+}
+
+export interface ListDevicesInput {
+  includeUnavailable?: boolean;
 }
 
 export interface RunFlowInput {
@@ -58,9 +70,10 @@ export interface StartSessionInput {
   appId?: string;
   policyProfile?: string;
   phase?: string | null;
-  profile?: string | null;
+  profile?: RunnerProfile | null;
   sampleName?: string | null;
   artifactsRoot?: string;
+  harnessConfigPath?: string;
 }
 
 export interface EndSessionInput {

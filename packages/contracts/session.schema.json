@@ -20,7 +20,10 @@
     },
     "platform": {
       "type": "string",
-      "enum": ["android", "ios"]
+      "enum": [
+        "android",
+        "ios"
+      ]
     },
     "deviceId": {
       "type": "string",
@@ -31,7 +34,22 @@
       "minLength": 1
     },
     "profile": {
-      "type": ["string", "null"]
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "phase": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sampleName": {
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "policyProfile": {
       "type": "string",
