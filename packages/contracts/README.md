@@ -1,12 +1,13 @@
 # Contracts
 
-This package defines the shared execution contracts for `mobile-e2e-mcp`.
+This package defines the shared TypeScript execution boundary for `mobile-e2e-mcp`.
 
 Current scope:
 
-- session schema
-- tool result schema
-- canonical reason codes
+- `Session`
+- `ToolResult`
+- `ReasonCode`
+- `RunFlowInput`
+- JSON schemas for session and tool-result payloads
 
-These files are intentionally minimal and serve as the first stable boundary for
-the future MCP server, adapters, reports, and policy enforcement.
+These types are now shared by `packages/mcp-server`, `packages/adapter-maestro`, and future reporting/policy code.
