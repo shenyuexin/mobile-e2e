@@ -2,6 +2,14 @@
 
 本项目用于设计并落地一个面向 AI Agent 的移动端端到端（E2E）MCP 平台，覆盖 Android、iOS、React Native、Flutter。
 
+## 开源产品文档
+
+- `docs/product/README.zh-CN.md`：开源产品文档索引
+- `docs/product/01-open-source-positioning.zh-CN.md`：开源产品定位
+- `docs/product/02-deployment-model.zh-CN.md`：开源部署模型
+- `docs/product/03-installation-and-integration.zh-CN.md`：安装与接入指南
+- `docs/product/04-open-source-scope-and-release-plan.zh-CN.md`：开源范围与发布计划
+
 ## 这个 MCP 会实现哪些能力？
 
 ## 1) 设备与环境控制

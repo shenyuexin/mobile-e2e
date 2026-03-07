@@ -50,6 +50,7 @@ This repository contains a comprehensive technical blueprint for building a larg
 - `policies/**/*.yaml` — interruption/governance policy baselines
 - `scripts/*.sh` / `scripts/*.py` — sample harness runners and reporting tools
 - `examples/rn-login-demo/App.tsx.template` — 最小登录样例页面模板（Expo RN）
+- `docs/product/README.zh-CN.md` — 开源产品文档索引（部署模型、接入方式、开源边界）
 
 ## Positioning
 
