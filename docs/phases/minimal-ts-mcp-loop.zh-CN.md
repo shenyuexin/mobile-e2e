@@ -17,6 +17,7 @@
 4. 把 `packages/adapter-maestro` 落为最小 TS adapter，并复用现有 shell runner
 5. 把 `packages/mcp-server` 接到真实 adapter，并提供 `dev-cli.ts`
 6. 为 `run_flow` 增加 `runnerProfile`，可选择 `phase1`、`native_android`、`native_ios`、`flutter_android`
+7. 新增最小 `doctor` 与 `list_devices` 诊断入口
 
 ## 当前最小验证入口
 
@@ -34,6 +35,8 @@ pnpm mcp:dev -- --platform android --run-count 1
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --platform android --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --platform ios --runner-profile native_ios --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --platform android --runner-profile flutter_android --dry-run
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --list-devices --include-unavailable
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --doctor --include-unavailable
 ```
 
 ## 已验证结果
@@ -43,6 +46,8 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --platform andr
 - `flutter_android` dry-run：成功解析到 phase3 flutter Android runner，并识别 bundled flows
 - `native_android` 真实执行：成功触发脚本，但因 `INSTALL_FAILED_VERSION_DOWNGRADE` 返回 `CONFIGURATION_ERROR`
 - `native_ios` 指定单个 `flowPath` dry-run：返回 `UNSUPPORTED_OPERATION`，明确提示底层脚本是 bundled flow runner
+- `doctor` 实机验证：成功检查 `adb`、`xcrun simctl`、`maestro` 与设备可用性
+- `list_devices` 实机验证：成功返回 Android emulator 与 iOS simulators 的结构化清单
 
 ## 已知限制
 

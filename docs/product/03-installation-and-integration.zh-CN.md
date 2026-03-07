@@ -85,6 +85,7 @@ pnpm install
 - `pnpm validate:dry-run`
 - `pnpm mcp:dev -- --platform android --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --list-devices --include-unavailable`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --doctor --include-unavailable`
 
 未来建议补齐：
 
