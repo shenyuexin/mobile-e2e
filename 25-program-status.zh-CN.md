@@ -42,9 +42,9 @@
 
 ## 当前最重要的剩余工作
 
-1. 选择下一个非 RN 目标（Native 或 Flutter）
-2. 将 Flutter onboarding 结果纳入统一执行/报告体系
-3. 在新的 sample 上继续验证 Phase 3 的扩展有效性
+1. 在新的 sample 上继续验证 Phase 3 的扩展有效性
+2. 开始把 Phase 4 治理基线接入运行时执行链路
+3. 为 Phase 5 的真实 agentic integration 准备可复用的失败输入与审计边界
 
 ---
 
@@ -54,7 +54,7 @@
 
 - **Phase 1：完成**
 - **Phase 2：完成**
-- **Phase 3：基线已建，等待新 sample 实证**
+- **Phase 3：共享 runner/report 路径已覆盖 RN / Native / Flutter，等待新 sample 实证**
 - **Phase 3：RN / Native / Flutter 三条主路径均已建立实证样本与 harness 基线**
 - **Phase 4：基线已建，等待运行时接入**
 - **Phase 5：基线已建，等待真实 agentic integration**

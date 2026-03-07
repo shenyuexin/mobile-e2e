@@ -2,9 +2,9 @@
 
 ## 1. Current Program State
 
-- Current phase: Phase 3 groundwork (in progress)
+- Current phase: Phase 3 validation expansion (in progress)
 - Target completion date: TBD
-- Next review checkpoint: framework onboarding review after first non-RN sample is introduced
+- Next review checkpoint: framework validation review after shared reporting covers Flutter and the next sample is introduced
 
 ## 2. Owners and DRIs
 
@@ -41,7 +41,6 @@
 
 ## 6. Next Actions
 
-1. Onboard first non-RN sample against profile contracts.
-2. Decide whether next validation target is Native or Flutter.
-3. Keep governance and agentic baselines as configuration contracts until runtime enforcement exists.
-4. Preserve distinction between “baseline defined” and “phase fully productionized.”
+1. Validate the next sample against Phase 3 profile contracts and compatibility targets.
+2. Start wiring governance baselines into runtime enforcement checkpoints.
+3. Keep agentic baselines as configuration contracts until runtime integration exists.
