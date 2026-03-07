@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import {
   REASON_CODES,
   type DeviceInfo,
+  type DoctorCheck,
+  type DoctorInput,
   type ListDevicesInput,
   type Platform,
   type ReasonCode,
@@ -656,6 +658,115 @@ export async function listAvailableDevices(
     data: {
       android: androidDevices,
       ios: iosDevices,
+    },
+    nextSuggestions,
+  };
+}
+
+function summarizeCommandAvailability(name: string, execution: CommandExecution): DoctorCheck {
+  if (execution.exitCode === 0) {
+    return {
+      name,
+      status: "pass",
+      detail: execution.stdout.trim() || `${name} is available.`,
+    };
+  }
+
+  return {
+    name,
+    status: "fail",
+    detail: execution.stderr.trim() || `${name} returned exit code ${String(execution.exitCode)}.`,
+  };
+}
+
+function summarizeDeviceCheck(name: string, count: number): DoctorCheck {
+  if (count > 0) {
+    return {
+      name,
+      status: "pass",
+      detail: `${String(count)} available device(s) detected.`,
+    };
+  }
+
+  return {
+    name,
+    status: "warn",
+    detail: "No available devices detected.",
+  };
+}
+
+export async function runDoctor(
+  input: DoctorInput = {},
+): Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>> {
+  const repoRoot = resolveRepoPath();
+  const startTime = Date.now();
+  const sessionId = `doctor-${Date.now()}`;
+  const checks: DoctorCheck[] = [];
+
+  let adbExecution: CommandExecution | undefined;
+  try {
+    adbExecution = await executeRunner(["adb", "version"], repoRoot, process.env);
+    checks.push(summarizeCommandAvailability("adb", adbExecution));
+  } catch (error) {
+    checks.push({
+      name: "adb",
+      status: "fail",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  let simctlExecution: CommandExecution | undefined;
+  try {
+    simctlExecution = await executeRunner(["xcrun", "simctl", "help"], repoRoot, process.env);
+    checks.push(summarizeCommandAvailability("xcrun simctl", simctlExecution));
+  } catch (error) {
+    checks.push({
+      name: "xcrun simctl",
+      status: "fail",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  let maestroExecution: CommandExecution | undefined;
+  try {
+    maestroExecution = await executeRunner(["maestro", "--version"], repoRoot, process.env);
+    checks.push(summarizeCommandAvailability("maestro", maestroExecution));
+  } catch (error) {
+    checks.push({
+      name: "maestro",
+      status: "fail",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const deviceResult = await listAvailableDevices({ includeUnavailable: input.includeUnavailable });
+  checks.push(summarizeDeviceCheck("android devices", deviceResult.data.android.filter((device) => device.available).length));
+  checks.push(summarizeDeviceCheck("ios simulators", deviceResult.data.ios.filter((device) => device.available).length));
+
+  let status: ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>["status"] = "success";
+  let reasonCode: ReasonCode = REASON_CODES.ok;
+  if (checks.some((check) => check.status === "fail")) {
+    status = "failed";
+    reasonCode = REASON_CODES.configurationError;
+  } else if (checks.some((check) => check.status === "warn")) {
+    status = "partial";
+    reasonCode = REASON_CODES.deviceUnavailable;
+  }
+
+  const nextSuggestions = checks
+    .filter((check) => check.status !== "pass")
+    .map((check) => `Resolve ${check.name}: ${check.detail}`);
+
+  return {
+    status,
+    reasonCode,
+    sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      checks,
+      devices: deviceResult.data,
     },
     nextSuggestions,
   };
