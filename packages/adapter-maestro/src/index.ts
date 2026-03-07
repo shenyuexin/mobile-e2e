@@ -5,6 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   REASON_CODES,
+  type DeviceInfo,
+  type ListDevicesInput,
   type Platform,
   type ReasonCode,
   type RunFlowInput,
@@ -23,7 +25,9 @@ interface HarnessSelection {
   runnerScript: string;
   deviceId?: string;
   appId: string;
+  sampleName: string;
   launchUrl?: string;
+  artifactRoot?: string;
   runCountDefault: number;
   configuredFlows: string[];
 }
@@ -49,6 +53,12 @@ interface BasicRunData {
   command: string[];
   exitCode: number | null;
   summaryLine?: string;
+}
+
+export interface SessionDefaults {
+  appId: string;
+  sampleName: string;
+  artifactsRoot: string;
 }
 
 const DEFAULT_HARNESS_CONFIG_PATH = "configs/harness/sample-harness.yaml";
@@ -157,6 +167,8 @@ async function loadHarnessSelection(
     const appId = readNonEmptyString(platformDefaults, "app_id");
     const launchUrl = readNonEmptyString(platformDefaults, "launch_url");
     const runCountDefault = readPositiveNumber(platformDefaults, "run_count_default") ?? 1;
+    const sample = parsedConfig.sample;
+    const sampleName = isRecord(sample) ? readNonEmptyString(sample, "name") ?? "rn-login-demo" : "rn-login-demo";
 
     if (!runnerScript || !deviceId || !appId) {
       throw new Error(`Incomplete phase1 config for ${platform} in ${harnessConfigPath}`);
@@ -167,6 +179,7 @@ async function loadHarnessSelection(
       runnerScript,
       deviceId,
       appId,
+      sampleName,
       launchUrl,
       runCountDefault,
       configuredFlows: [DEFAULT_FLOWS[platform]],
@@ -185,6 +198,8 @@ async function loadHarnessSelection(
 
   const runnerScript = readNonEmptyString(profileConfig, "runner_script");
   const appId = readNonEmptyString(profileConfig, "app_id");
+  const sampleName = readNonEmptyString(profileConfig, "sample_name") ?? runnerProfile;
+  const artifactRoot = readNonEmptyString(profileConfig, "artifact_root");
   const runCountDefault = readPositiveNumber(profileConfig, "run_count_default") ?? 1;
   const configuredFlows = readStringArray(profileConfig, "flows");
   const deviceId = readNonEmptyString(platformDefaults, "device_udid");
@@ -198,6 +213,8 @@ async function loadHarnessSelection(
     runnerScript,
     deviceId,
     appId,
+    sampleName,
+    artifactRoot,
     runCountDefault,
     configuredFlows,
   };
@@ -236,10 +253,32 @@ export function buildArtifactsDir(
     throw new Error("artifactRoot must be relative to the repository root.");
   }
 
-  const relativePath = artifactRoot ?? path.posix.join("artifacts", "mcp-server", sessionId, platform, runnerProfile);
+  const relativePath = artifactRoot
+    ? path.posix.join(artifactRoot, sessionId)
+    : path.posix.join("artifacts", "mcp-server", sessionId, platform, runnerProfile);
   return {
     absolutePath: path.resolve(repoRoot, relativePath),
     relativePath,
+  };
+}
+
+export async function resolveSessionDefaults(input: {
+  sessionId: string;
+  platform: Platform;
+  runnerProfile?: RunnerProfile | null;
+  harnessConfigPath?: string;
+  artifactRoot?: string;
+}): Promise<SessionDefaults> {
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const harnessConfigPath = input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH;
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, harnessConfigPath);
+  const artifactsDir = buildArtifactsDir(repoRoot, input.sessionId, input.platform, runnerProfile, input.artifactRoot ?? selection.artifactRoot);
+
+  return {
+    appId: selection.appId,
+    sampleName: selection.sampleName,
+    artifactsRoot: artifactsDir.relativePath,
   };
 }
 
@@ -258,6 +297,18 @@ function buildFailureReason(stderr: string, exitCode: number | null): ReasonCode
     return REASON_CODES.flowFailed;
   }
   return REASON_CODES.adapterError;
+}
+
+function readSummaryLine(stdout?: string): string | undefined {
+  if (!stdout) {
+    return undefined;
+  }
+
+  const carriageReturn = String.fromCharCode(13);
+  const lineFeed = String.fromCharCode(10);
+  const normalized = stdout.replaceAll(carriageReturn, "");
+  const lines = normalized.split(lineFeed).filter(Boolean);
+  return lines.at(-1);
 }
 
 async function executeRunner(command: string[], repoRoot: string, env: NodeJS.ProcessEnv): Promise<CommandExecution> {
@@ -388,7 +439,7 @@ export async function collectBasicRunResult(params: {
       failedRuns,
       command: params.command,
       exitCode: params.execution?.exitCode ?? 0,
-      summaryLine: params.execution?.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1),
+      summaryLine: readSummaryLine(params.execution?.stdout),
     },
     nextSuggestions,
   };
@@ -406,7 +457,13 @@ export async function runFlowWithMaestro(input: RunFlowInput): Promise<ToolResul
   );
   const effectiveFlowPath = requestedFlowPath ?? selection.configuredFlows[0];
   const runnerScript = input.runnerScript ?? selection.runnerScript;
-  const artifactsDir = buildArtifactsDir(repoRoot, input.sessionId, input.platform, runnerProfile, input.artifactRoot);
+  const artifactsDir = buildArtifactsDir(
+    repoRoot,
+    input.sessionId,
+    input.platform,
+    runnerProfile,
+    input.artifactRoot ?? selection.artifactRoot,
+  );
   const absoluteRunnerScript = path.resolve(repoRoot, runnerScript);
   const runCount = input.runCount ?? selection.runCountDefault;
   const command = ["bash", toRelativePath(repoRoot, absoluteRunnerScript), String(runCount)];
@@ -473,4 +530,133 @@ export async function runFlowWithMaestro(input: RunFlowInput): Promise<ToolResul
     dryRun: false,
     execution,
   });
+}
+
+function parseAdbDevices(stdout: string, includeUnavailable: boolean): DeviceInfo[] {
+  return stdout
+    .replaceAll(String.fromCharCode(13), "")
+    .split(String.fromCharCode(10))
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("List of devices attached"))
+    .map((line) => {
+      const [id, state = "unknown"] = line.split(/\s+/);
+      return {
+        id,
+        platform: "android" as const,
+        state,
+        available: state === "device",
+      };
+    })
+    .filter((device) => includeUnavailable || device.available);
+}
+
+function parseIosDevices(stdout: string, includeUnavailable: boolean): DeviceInfo[] {
+  const parsed: unknown = JSON.parse(stdout);
+  if (!isRecord(parsed)) {
+    return [];
+  }
+
+  const devicesSection = parsed.devices;
+  if (!isRecord(devicesSection)) {
+    return [];
+  }
+
+  const devicesById = new Map<string, DeviceInfo>();
+  for (const runtimeDevices of Object.values(devicesSection)) {
+    if (!Array.isArray(runtimeDevices)) {
+      continue;
+    }
+
+    for (const device of runtimeDevices) {
+      if (!isRecord(device)) {
+        continue;
+      }
+
+      const id = readNonEmptyString(device, "udid");
+      const name = readNonEmptyString(device, "name");
+      const state = readNonEmptyString(device, "state") ?? "unknown";
+      const isAvailable = device.isAvailable === true;
+      if (!id) {
+        continue;
+      }
+
+      const normalizedDevice: DeviceInfo = {
+        id,
+        name,
+        platform: "ios",
+        state,
+        available: isAvailable && state.toLowerCase() !== "unavailable",
+      };
+
+      const existing = devicesById.get(id);
+      if (!existing || (!existing.available && normalizedDevice.available)) {
+        devicesById.set(id, normalizedDevice);
+      }
+    }
+  }
+
+  return Array.from(devicesById.values()).filter((device) => includeUnavailable || device.available);
+}
+
+export async function listAvailableDevices(
+  input: ListDevicesInput = {},
+): Promise<ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>> {
+  const repoRoot = resolveRepoPath();
+  const startTime = Date.now();
+  const includeUnavailable = input.includeUnavailable ?? false;
+  const sessionId = `device-scan-${Date.now()}`;
+  const nextSuggestions: string[] = [];
+
+  let androidDevices: DeviceInfo[] = [];
+  let iosDevices: DeviceInfo[] = [];
+  let status: ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>["status"] = "success";
+  let reasonCode: ReasonCode = REASON_CODES.ok;
+
+  try {
+    const adbResult = await executeRunner(["adb", "devices"], repoRoot, process.env);
+    androidDevices = adbResult.exitCode === 0 ? parseAdbDevices(adbResult.stdout, includeUnavailable) : [];
+    if (adbResult.exitCode !== 0) {
+      status = "partial";
+      reasonCode = REASON_CODES.deviceUnavailable;
+      nextSuggestions.push("adb is unavailable or returned an error while listing Android devices.");
+    }
+  } catch {
+    status = "partial";
+    reasonCode = REASON_CODES.deviceUnavailable;
+    nextSuggestions.push("adb is unavailable in the current environment.");
+  }
+
+  try {
+    const iosResult = await executeRunner(["xcrun", "simctl", "list", "devices", "available", "--json"], repoRoot, process.env);
+    iosDevices = iosResult.exitCode === 0 ? parseIosDevices(iosResult.stdout, includeUnavailable) : [];
+    if (iosResult.exitCode !== 0) {
+      status = status === "success" ? "partial" : status;
+      reasonCode = reasonCode === REASON_CODES.ok ? REASON_CODES.deviceUnavailable : reasonCode;
+      nextSuggestions.push("xcrun simctl returned an error while listing iOS simulators.");
+    }
+  } catch {
+    status = status === "success" ? "partial" : status;
+    reasonCode = reasonCode === REASON_CODES.ok ? REASON_CODES.deviceUnavailable : reasonCode;
+    nextSuggestions.push("xcrun simctl is unavailable in the current environment.");
+  }
+
+  if (androidDevices.length === 0 && iosDevices.length === 0 && status === "success") {
+    status = "partial";
+    reasonCode = REASON_CODES.deviceUnavailable;
+    nextSuggestions.push("No available Android devices or iOS simulators were detected.");
+  }
+
+  return {
+    status,
+    reasonCode,
+    sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      android: androidDevices,
+      ios: iosDevices,
+    },
+    nextSuggestions,
+  };
 }
