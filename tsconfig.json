@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/contracts"
+    },
+    {
+      "path": "./packages/adapter-maestro"
+    },
+    {
+      "path": "./packages/mcp-server"
+    }
+  ]
+}
