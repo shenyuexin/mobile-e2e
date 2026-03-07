@@ -1,0 +1,22 @@
+{
+  "name": "mobile-e2e-mcp",
+  "private": true,
+  "packageManager": "pnpm@10.30.3",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm build && pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm run validate:dry-run",
+    "validate:dry-run": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --platform android --dry-run --run-count 1",
+    "mcp:dev": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server dev"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2"
+  }
+}
