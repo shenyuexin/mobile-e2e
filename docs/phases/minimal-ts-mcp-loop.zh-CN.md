@@ -23,6 +23,7 @@
 10. 新增最小 launch_app 工具
 11. 新增最小 take_screenshot 工具
 12. 新增最小 terminate_app 工具
+13. 新增最小 inspect_ui 工具
 
 ## 当前最小验证入口
 
@@ -47,6 +48,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --install-app -
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --launch-app --platform android --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --take-screenshot --platform android --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --terminate-app --platform android --runner-profile phase1 --dry-run
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --inspect-ui --platform android --runner-profile phase1 --dry-run
 ```
 
 ## 已验证结果
@@ -63,6 +65,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --terminate-app
 - `launch_app` 实机验证：phase1 Android/iOS dry-run 成功，Android 真实启动成功
 - `take_screenshot` 实机验证：Android dry-run 成功，真实截图 artifact 已输出
 - `terminate_app` 实机验证：Android dry-run 与真实终止均成功
+- `inspect_ui` 实机验证：Android hierarchy dump 成功，iOS 明确返回 partial 支持
 
 ## 已知限制
 
