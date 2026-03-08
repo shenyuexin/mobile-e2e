@@ -92,6 +92,9 @@ pnpm install
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --take-screenshot --platform android --runner-profile phase1 --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --terminate-app --platform android --runner-profile phase1 --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --inspect-ui --platform android --runner-profile phase1 --dry-run`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --content-desc "View products" --dry-run`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --text "Cart is empty" --dry-run`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --resource-id login_button --clickable true --query-limit 5 --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --tap --platform android --runner-profile phase1 --x 900 --y 140 --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --type-text --platform android --runner-profile phase1 --text hello --dry-run`
 
@@ -254,5 +257,28 @@ pnpm mcp:stdio
 
 当前 `inspect_ui` 在 Android 上除了原始 XML，还会返回结构化摘要，包括节点总数、可点击节点数量、带 content-desc/text 的 sample nodes，作为后续元素级交互的基础输入。
 
+当前新增的 `query_ui` 会复用同一份 Android hierarchy 解析结果，提供最小查询层：
+
+- 查询条件：`resourceId` / `contentDesc` / `text` / `className` / `clickable`
+- 查询结果：原始 node、`matchedBy`、`score`、`result.totalMatches`
+- 返回语义：命中多个候选时不会偷偷裁成单个元素，默认返回候选列表；若设置 `query-limit`，只限制回传条数，不改变 `totalMatches`
+- CLI 最小入口：`--query-ui` 配合 `--content-desc` / `--resource-id` / `--class-name` / `--clickable`，或在 `--query-ui` 下直接使用 `--text`
+
+这层能力的目标是让后续 `tap` / `type_text` 可以基于查询结果升级为元素级交互，而不是继续长期依赖人工坐标。
+
 
 当前 iOS `inspect_ui` 不再是假定 simctl 能导出 tree，而是明确依赖 `idb ui describe-all --json --nested`。若环境未安装 `idb-companion` / `fb-idb`，工具会返回配置型 partial/failed 结果并提示安装。
+
+当前 iOS `query_ui` 也遵循同样的诚实原则：
+
+- 若未安装 `idb`，返回 configuration-style partial 结果
+- 若能成功抓取 hierarchy，也只返回 raw artifact + partial/unsupported 语义
+- 不会伪装 iOS 已具备 Android 等价的结构化查询能力
+
+
+当前仓库默认会优先从用户目录解析 `idb` CLI 与 companion 路径，用于 iOS `inspect_ui`。在当前环境中，成功路径依赖：
+
+- `~/Library/Python/3.9/bin/idb`
+- `~/.local/share/idb-companion.universal/bin/idb_companion`
+
+若路径缺失，`doctor` 与 `inspect_ui` 都会返回明确的配置诊断，而不会伪装成已支持。
