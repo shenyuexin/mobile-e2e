@@ -18,6 +18,7 @@
 5. 把 `packages/mcp-server` 接到真实 adapter，并提供 `dev-cli.ts`
 6. 为 `run_flow` 增加 `runnerProfile`，可选择 `phase1`、`native_android`、`native_ios`、`flutter_android`
 7. 新增最小 `doctor` 与 `list_devices` 诊断入口
+8. 新增最小 stdio transport 入口
 
 ## 当前最小验证入口
 
@@ -37,6 +38,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --platform ios 
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --platform android --runner-profile flutter_android --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --list-devices --include-unavailable
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --doctor --include-unavailable
+printf '%s\n%s\n' '{"id":1,"method":"initialize"}' '{"id":2,"method":"list_tools"}' | pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/stdio-server.ts
 ```
 
 ## 已验证结果
@@ -48,6 +50,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --doctor --incl
 - `native_ios` 指定单个 `flowPath` dry-run：返回 `UNSUPPORTED_OPERATION`，明确提示底层脚本是 bundled flow runner
 - `doctor` 实机验证：成功检查 `adb`、`xcrun simctl`、`maestro` 与设备可用性
 - `list_devices` 实机验证：成功返回 Android emulator 与 iOS simulators 的结构化清单
+- `stdio` 实机验证：成功完成 initialize / list_tools / invoke(doctor) 的 stdin/stdout 往返
 
 ## 已知限制
 

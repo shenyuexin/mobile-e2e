@@ -86,6 +86,7 @@ pnpm install
 - `pnpm mcp:dev -- --platform android --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --list-devices --include-unavailable`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --doctor --include-unavailable`
+- `pnpm mcp:stdio`
 
 未来建议补齐：
 
@@ -174,6 +175,20 @@ pnpm --filter @mobile-e2e-mcp/mcp-server dev -- --platform android --runner-prof
 开源首版建议优先支持：
 
 - `stdio`
+
+当前最小 stdio 入口：
+
+```bash
+pnpm mcp:stdio
+```
+
+协议暂为最小行分隔 JSON，请求示例：
+
+```json
+{"id":1,"method":"initialize"}
+{"id":2,"method":"list_tools"}
+{"id":3,"method":"invoke","params":{"tool":"doctor","input":{"includeUnavailable":false}}}
+```
 
 后续可扩展：
 
