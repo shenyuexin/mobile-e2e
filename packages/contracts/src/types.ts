@@ -30,7 +30,43 @@ export interface InspectUiSummary {
   nodesWithContentDesc: number;
   sampleNodes: InspectUiNode[];
 }
+export type InspectUiMatchField = "resourceId" | "contentDesc" | "text" | "className" | "clickable";
+export interface InspectUiQuery {
+  resourceId?: string;
+  contentDesc?: string;
+  text?: string;
+  className?: string;
+  clickable?: boolean;
+  limit?: number;
+}
+export interface InspectUiMatch {
+  node: InspectUiNode;
+  matchedBy: InspectUiMatchField[];
+  score?: number;
+}
+export interface InspectUiQueryResult {
+  query: InspectUiQuery;
+  totalMatches: number;
+  matches: InspectUiMatch[];
+}
+export type QueryUiMatchField = InspectUiMatchField;
+export interface QueryUiSelector extends InspectUiQuery {}
+export interface QueryUiMatch extends InspectUiMatch {}
+export interface QueryUiData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  query: InspectUiQuery;
+  command: string[];
+  exitCode: number | null;
+  result: InspectUiQueryResult;
+  supportLevel: "full" | "partial";
+  content?: string;
+  summary?: InspectUiSummary;
+}
 export interface InspectUiInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; outputPath?: string; dryRun?: boolean; }
+export interface InspectUiQueryInput extends InspectUiInput, InspectUiQuery {}
+export interface QueryUiInput extends InspectUiQueryInput {}
 export interface InstallAppInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; artifactPath?: string; deviceId?: string; dryRun?: boolean; }
 export interface LaunchAppInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; appId?: string; launchUrl?: string; dryRun?: boolean; }
 export interface ListDevicesInput { includeUnavailable?: boolean; }
