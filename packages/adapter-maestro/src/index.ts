@@ -9,6 +9,7 @@ import {
   type DeviceInfo,
   type DoctorCheck,
   type DoctorInput,
+  type InstallAppInput,
   type ListDevicesInput,
   type Platform,
   type ReasonCode,
@@ -41,6 +42,20 @@ interface CommandExecution {
   stderr: string;
 }
 
+interface InstallArtifactSpec {
+  kind: "file" | "directory";
+  envVar: string;
+  relativePath: string;
+}
+
+interface InstallAppData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  artifactPath?: string;
+  installCommand: string[];
+  exitCode: number | null;
+}
+
 interface BasicRunData {
   dryRun: boolean;
   harnessConfigPath: string;
@@ -56,6 +71,43 @@ interface BasicRunData {
   command: string[];
   exitCode: number | null;
   summaryLine?: string;
+}
+
+function getInstallArtifactSpec(runnerProfile: RunnerProfile): InstallArtifactSpec | undefined {
+  if (runnerProfile === "native_android") {
+    return {
+      kind: "file",
+      envVar: "NATIVE_ANDROID_APK_PATH",
+      relativePath: "examples/demo-android-app/app/build/outputs/apk/debug/app-debug.apk",
+    };
+  }
+  if (runnerProfile === "native_ios") {
+    return {
+      kind: "directory",
+      envVar: "NATIVE_IOS_APP_PATH",
+      relativePath: "examples/demo-ios-app/build/Build/Products/Debug-iphonesimulator/MobiTruKotlin.app",
+    };
+  }
+  if (runnerProfile === "flutter_android") {
+    return {
+      kind: "file",
+      envVar: "FLUTTER_APK_PATH",
+      relativePath: "examples/demo-flutter-app/build/app/outputs/flutter-apk/app-debug.apk",
+    };
+  }
+  return undefined;
+}
+
+function resolveInstallArtifactPath(repoRoot: string, runnerProfile: RunnerProfile, explicitArtifactPath?: string): string | undefined {
+  if (explicitArtifactPath) {
+    return path.isAbsolute(explicitArtifactPath) ? explicitArtifactPath : path.resolve(repoRoot, explicitArtifactPath);
+  }
+  const spec = getInstallArtifactSpec(runnerProfile);
+  if (!spec) {
+    return undefined;
+  }
+  const fromEnv = process.env[spec.envVar];
+  return fromEnv ? fromEnv : path.resolve(repoRoot, spec.relativePath);
 }
 
 export interface SessionDefaults {
@@ -835,23 +887,15 @@ function summarizeOptionalArtifactCheck(name: string, artifactPath: string, kind
 }
 
 function collectArtifactChecks(repoRoot: string): DoctorCheck[] {
-  return [
-    summarizeOptionalArtifactCheck(
-      "native_android artifact",
-      process.env.NATIVE_ANDROID_APK_PATH ?? path.resolve(repoRoot, "examples/demo-android-app/app/build/outputs/apk/debug/app-debug.apk"),
-      "file",
-    ),
-    summarizeOptionalArtifactCheck(
-      "native_ios artifact",
-      process.env.NATIVE_IOS_APP_PATH ?? path.resolve(repoRoot, "examples/demo-ios-app/build/Build/Products/Debug-iphonesimulator/MobiTruKotlin.app"),
-      "directory",
-    ),
-    summarizeOptionalArtifactCheck(
-      "flutter_android artifact",
-      process.env.FLUTTER_APK_PATH ?? path.resolve(repoRoot, "examples/demo-flutter-app/build/app/outputs/flutter-apk/app-debug.apk"),
-      "file",
-    ),
-  ];
+  return (["native_android", "native_ios", "flutter_android"] as RunnerProfile[]).map((profile) => {
+    const spec = getInstallArtifactSpec(profile);
+    const artifactPath = resolveInstallArtifactPath(repoRoot, profile);
+    return summarizeOptionalArtifactCheck(
+      `${profile} artifact`,
+      artifactPath ?? `No artifact path configured for ${profile}`,
+      spec?.kind ?? "file",
+    );
+  });
 }
 
 async function collectRuntimeStateChecks(repoRoot: string): Promise<DoctorCheck[]> {
@@ -999,6 +1043,105 @@ async function collectInstallStateChecks(repoRoot: string): Promise<DoctorCheck[
   }
 
   return checks;
+}
+
+export async function installAppWithMaestro(input: InstallAppInput): Promise<ToolResult<InstallAppData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+
+  if (runnerProfile === "phase1") {
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        installCommand: [],
+        exitCode: null,
+      },
+      nextSuggestions: ["phase1 relies on Expo Go already being installed. Use doctor to verify launch URL/device readiness instead of install_app."],
+    };
+  }
+
+  const artifactPath = resolveInstallArtifactPath(repoRoot, runnerProfile, input.artifactPath);
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const installCommand =
+    input.platform === "android"
+      ? ["adb", "-s", input.deviceId ?? selection.deviceId ?? "emulator-5554", "install", "-r", artifactPath ?? ""]
+      : ["xcrun", "simctl", "install", input.deviceId ?? selection.deviceId ?? "ADA078B9-3C6B-4875-8B85-A7789F368816", artifactPath ?? ""];
+
+  const spec = getInstallArtifactSpec(runnerProfile);
+  const exists = artifactPath ? existsSync(artifactPath) : false;
+  const artifactMissing = !artifactPath || !spec || !exists;
+  if (artifactMissing) {
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        artifactPath,
+        installCommand,
+        exitCode: null,
+      },
+      nextSuggestions: ["Provide a valid artifactPath or set the runner-specific artifact environment variable before calling install_app."],
+    };
+  }
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        runnerProfile,
+        artifactPath,
+        installCommand,
+        exitCode: 0,
+      },
+      nextSuggestions: ["Run install_app without dryRun to perform the actual installation."],
+    };
+  }
+
+  const execution = await executeRunner(installCommand, repoRoot, process.env);
+  const status = execution.exitCode === 0 ? "success" : "failed";
+  const reasonCode = execution.exitCode === 0 ? REASON_CODES.ok : buildFailureReason(execution.stderr, execution.exitCode);
+  const nextSuggestions = execution.exitCode === 0
+    ? []
+    : [
+        "Review the install stderr for downgrade or signature conflicts before retrying.",
+        "If the conflict is caused by a differently signed build, manually uninstall the existing app before reinstalling.",
+      ];
+
+  return {
+    status,
+    reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      dryRun: false,
+      runnerProfile,
+      artifactPath,
+      installCommand,
+      exitCode: execution.exitCode,
+    },
+    nextSuggestions,
+  };
 }
 
 export async function runDoctor(

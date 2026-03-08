@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { DoctorInput, ListDevicesInput, Platform, RunFlowInput, RunnerProfile, StartSessionInput } from "@mobile-e2e-mcp/contracts";
+import type { DoctorInput, InstallAppInput, ListDevicesInput, Platform, RunFlowInput, RunnerProfile, StartSessionInput } from "@mobile-e2e-mcp/contracts";
 import { createServer } from "./index.js";
 
 interface CliOptions {
@@ -7,8 +7,10 @@ interface CliOptions {
   doctor: boolean;
   dryRun: boolean;
   includeUnavailable: boolean;
+  installApp: boolean;
   listDevices: boolean;
   runCount: number;
+  artifactPath?: string;
   runnerProfile?: RunnerProfile;
   flowPath?: string;
   harnessConfigPath?: string;
@@ -26,8 +28,10 @@ function parseCliArgs(argv: string[]): CliOptions {
   let doctor = false;
   let dryRun = false;
   let includeUnavailable = false;
+  let installApp = false;
   let listDevices = false;
   let runCount = 1;
+  let artifactPath: string | undefined;
   let runnerProfile: RunnerProfile | undefined;
   let flowPath: string | undefined;
   let harnessConfigPath: string | undefined;
@@ -46,6 +50,8 @@ function parseCliArgs(argv: string[]): CliOptions {
       dryRun = true;
     } else if (arg === "--include-unavailable") {
       includeUnavailable = true;
+    } else if (arg === "--install-app") {
+      installApp = true;
     } else if (arg === "--list-devices") {
       listDevices = true;
     } else if (arg === "--run-count" && nextValue) {
@@ -53,6 +59,9 @@ function parseCliArgs(argv: string[]): CliOptions {
       if (Number.isFinite(parsed) && parsed > 0) {
         runCount = parsed;
       }
+      index += 1;
+    } else if (arg === "--artifact-path" && nextValue) {
+      artifactPath = nextValue;
       index += 1;
     } else if (arg === "--runner-profile" && isRunnerProfile(nextValue)) {
       runnerProfile = nextValue;
@@ -69,7 +78,7 @@ function parseCliArgs(argv: string[]): CliOptions {
     }
   }
 
-  return { platform, doctor, dryRun, includeUnavailable, listDevices, runCount, runnerProfile, flowPath, harnessConfigPath, sessionId };
+  return { platform, doctor, dryRun, includeUnavailable, installApp, listDevices, runCount, artifactPath, runnerProfile, flowPath, harnessConfigPath, sessionId };
 }
 
 async function main(): Promise<void> {
@@ -88,6 +97,23 @@ async function main(): Promise<void> {
   if (cliOptions.listDevices) {
     const result = await server.invoke("list_devices", { includeUnavailable: cliOptions.includeUnavailable } satisfies ListDevicesInput);
     console.log(JSON.stringify({ tools: server.listTools(), listDevicesResult: result }, null, 2));
+    if (result.status === "failed") {
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (cliOptions.installApp) {
+    const installInput: InstallAppInput = {
+      sessionId: cliOptions.sessionId ?? `install-${Date.now()}`,
+      platform: cliOptions.platform,
+      runnerProfile: cliOptions.runnerProfile,
+      harnessConfigPath: cliOptions.harnessConfigPath,
+      artifactPath: cliOptions.artifactPath,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("install_app", installInput);
+    console.log(JSON.stringify({ tools: server.listTools(), installAppResult: result }, null, 2));
     if (result.status === "failed") {
       process.exitCode = 1;
     }
