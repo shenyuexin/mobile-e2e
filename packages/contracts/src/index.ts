@@ -19,4 +19,5 @@ export type {
   TerminateAppInput,
   ToolResult,
   ToolStatus,
+  TypeTextInput,
 } from "./types.js";
