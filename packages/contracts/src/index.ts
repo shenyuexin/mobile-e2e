@@ -4,6 +4,7 @@ export type {
   DoctorCheck,
   DoctorInput,
   EndSessionInput,
+  InspectUiInput,
   InstallAppInput,
   LaunchAppInput,
   ListDevicesInput,

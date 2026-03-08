@@ -13,6 +13,7 @@ export interface DeviceInfo { id: string; name?: string; platform: Platform; sta
 export interface DoctorCheck { name: string; status: "pass" | "warn" | "fail"; detail: string; }
 export interface DoctorInput { includeUnavailable?: boolean; }
 export interface InstallAppInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; artifactPath?: string; deviceId?: string; dryRun?: boolean; }
+export interface InspectUiInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; outputPath?: string; dryRun?: boolean; }
 export interface LaunchAppInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; appId?: string; launchUrl?: string; dryRun?: boolean; }
 export interface ListDevicesInput { includeUnavailable?: boolean; }
 export interface ScreenshotInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; outputPath?: string; dryRun?: boolean; }
