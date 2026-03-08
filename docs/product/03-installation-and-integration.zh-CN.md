@@ -93,10 +93,11 @@ pnpm install
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --terminate-app --platform android --runner-profile phase1 --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --inspect-ui --platform android --runner-profile phase1 --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --content-desc "View products" --dry-run`
-- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --text "Cart is empty" --dry-run`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --content-desc "Cart is empty" --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --resource-id login_button --clickable true --query-limit 5 --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --tap --platform android --runner-profile phase1 --x 900 --y 140 --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --type-text --platform android --runner-profile phase1 --text hello --dry-run`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --tap-element --platform android --runner-profile phase1 --content-desc "Back" --dry-run`
 
 未来建议补齐：
 
@@ -263,6 +264,7 @@ pnpm mcp:stdio
 - 查询结果：原始 node、`matchedBy`、`score`、`result.totalMatches`
 - 返回语义：命中多个候选时不会偷偷裁成单个元素，默认返回候选列表；若设置 `query-limit`，只限制回传条数，不改变 `totalMatches`
 - CLI 最小入口：`--query-ui` 配合 `--content-desc` / `--resource-id` / `--class-name` / `--clickable`，或在 `--query-ui` 下直接使用 `--text`
+- 当前 demo Android 页面更常把可见文案暴露在 `content-desc`，所以对 `Cart is empty`、`View products` 这类字符串，优先使用 `--content-desc` 更符合当前样例实际 hierarchy
 
 这层能力的目标是让后续 `tap` / `type_text` 可以基于查询结果升级为元素级交互，而不是继续长期依赖人工坐标。
 

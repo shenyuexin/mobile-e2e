@@ -61,7 +61,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --take-screensh
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --terminate-app --platform android --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --inspect-ui --platform android --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --content-desc "View products" --dry-run
-pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --text "Cart is empty" --dry-run
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --content-desc "Cart is empty" --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --query-ui --platform android --runner-profile phase1 --resource-id login_button --clickable true --query-limit 5 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --tap --platform android --runner-profile phase1 --x 900 --y 140 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --type-text --platform android --runner-profile phase1 --text hello --dry-run
@@ -85,10 +85,12 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --type-text --p
 - `inspect_ui` 现已附带结构化摘要（节点数、可点击节点、sample nodes），便于后续 `tap` / `type_text` 消费
 - `query_ui` 现已复用 Android hierarchy dump 解析，支持 `resourceId` / `contentDesc` / `text` / `className` / `clickable` 组合过滤，并返回 `result.totalMatches`、候选 `matches`、每个候选的 `matchedBy` / `score`
 - `query_ui` 在 CLI 中既支持 `--query-content-desc` / `--query-text` 这类显式参数，也支持更短的 `--content-desc` / `--resource-id` / `--class-name` / `--clickable`；当入口是 `--query-ui` 时，`--text` 会作为查询文本使用
+- 当前 demo Android 页面里的主要可见文案落在 `content-desc`，所以像 `Cart is empty` 这类字符串在本仓库验证时应优先用 `--content-desc`，而不是假设一定出现在 node `text`
 - iOS `query_ui` 仅如实返回 partial / unsupported 风格结果：可选地捕获 raw hierarchy artifact，但不会假装已经具备 Android 等价元素查询层
 - iOS inspect_ui 走 idb 分支：当前机器已补齐 `idb` CLI + `idb_companion`，并验证成功态；若缺环境时会返回明确的 `CONFIGURATION_ERROR` 与安装建议
 - `tap` 实机验证：Android 坐标点击 dry-run 与真实执行均成功
 - `type_text` 实机验证：Android 文本输入 dry-run 与真实执行均成功
+- `tap_element` 实机验证：Android 已能基于 selector 解析 bounds 并执行真实点击
 - `doctor` 现已额外检查 `idb` CLI、`idb_companion` 与 iOS target visibility
 
 ## 已知限制
@@ -96,7 +98,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --type-text --p
 - 当前 adapter 的真实执行仍优先复用现有 shell runner，不是直接重写底层执行逻辑
 - `native_ios` 与 `flutter_android` 的底层脚本会执行一组预定义 flows，因此不能假装支持精确单 flow 选择
 - 真实执行是否通过仍取决于本机 `maestro`、模拟器、设备、安装包版本和 Expo dev server 等运行环境
-- 当前 `query_ui` 仍是“查询层”，还没有把 `tap` / `type_text` 升级成元素级动作；后续应在查询结果与 bounds/焦点策略之间加一层显式 action resolver
+- 当前 `query_ui` 仍是“查询层”，但 `tap_element` 已经把 Android 的首个匹配节点解析为 bounds 中心点并执行点击；iOS 仍保持 partial/unsupported。
 
 ## 下一轮建议
 
