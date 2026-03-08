@@ -1,0 +1,45 @@
+[
+  {
+    "type": "Window",
+    "role": "AXWindow",
+    "AXLabel": "Shop",
+    "enabled": true,
+    "frame": { "x": 0, "y": 0, "width": 393, "height": 852 },
+    "children": [
+      {
+        "type": "StaticText",
+        "role": "AXStaticText",
+        "title": "Welcome back",
+        "AXLabel": "Welcome back",
+        "enabled": true,
+        "frame": { "x": 32, "y": 80, "width": 160, "height": 24 }
+      },
+      {
+        "type": "Button",
+        "role": "AXButton",
+        "title": "Sign in",
+        "AXLabel": "Sign in",
+        "AXUniqueId": "signin_button",
+        "enabled": true,
+        "frame": { "x": 32.5, "y": 140, "width": 160, "height": 48 }
+      },
+      {
+        "type": "ScrollView",
+        "role": "AXScrollView",
+        "AXLabel": "Catalog",
+        "enabled": true,
+        "frame": { "x": 0, "y": 220, "width": 393, "height": 500 },
+        "children": [
+          {
+            "type": "Cell",
+            "role": "AXCell",
+            "AXLabel": "Blue shoes",
+            "enabled": true,
+            "custom_actions": ["Open"],
+            "frame": { "x": 16, "y": 240, "width": 361, "height": 72 }
+          }
+        ]
+      }
+    ]
+  }
+]

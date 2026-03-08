@@ -1,4 +1,8 @@
 import {
+  type GetLogsData,
+  type GetLogsInput,
+  type ResolveUiTargetData,
+  type ResolveUiTargetInput,
   type DeviceInfo,
   type DoctorCheck,
   type DoctorInput,
@@ -12,18 +16,24 @@ import {
   type QueryUiData,
   type QueryUiInput,
   type QueryUiMatch,
-  type QueryUiMatchField,
-  type QueryUiSelector,
   type ReasonCode,
   type RunFlowInput,
   type RunnerProfile,
   type ScreenshotInput,
+  type ScrollAndResolveUiTargetData,
+  type ScrollAndResolveUiTargetInput,
   type TapElementData,
   type TapElementInput,
   type TapInput,
   type TerminateAppInput,
   type ToolResult,
   type TypeTextInput,
+  type TypeIntoElementData,
+  type TypeIntoElementInput,
+  type UiScrollDirection,
+  type WaitForUiData,
+  type WaitForUiInput,
+  type WaitForUiMode,
   REASON_CODES,
 } from "@mobile-e2e-mcp/contracts";
 import { spawn } from "node:child_process";
@@ -31,8 +41,24 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import {
+  buildNonExecutedUiTargetResolution,
+  buildScrollSwipeCoordinates,
+  buildUiTargetResolution,
+  buildInspectUiSummary,
+  hasQueryUiSelector,
+  isWaitConditionMet,
+  normalizeQueryUiSelector,
+  parseAndroidUiHierarchyNodes,
+  parseInspectUiSummary,
+  parseIosInspectSummary,
+  queryUiNodes,
+  reasonCodeForResolutionStatus,
+  shouldAbortWaitForUiAfterReadFailure,
+} from "./ui-model.js";
 
 interface ArtifactDirectory {
   absolutePath: string;
@@ -63,8 +89,46 @@ interface InspectUiData {
   outputPath: string;
   command: string[];
   exitCode: number | null;
+  supportLevel: "full" | "partial";
+  platformSupportNote?: string;
   content?: string;
   summary?: InspectUiSummary;
+}
+
+interface GetLogsCapture {
+  relativeOutputPath: string;
+  absoluteOutputPath: string;
+  command: string[];
+  supportLevel: "full" | "partial";
+  linesRequested?: number;
+  sinceSeconds: number;
+}
+const DEFAULT_WAIT_TIMEOUT_MS = 5000;
+const DEFAULT_WAIT_INTERVAL_MS = 500;
+const DEFAULT_GET_LOGS_LINES = 200;
+const DEFAULT_GET_LOGS_SINCE_SECONDS = 60;
+const DEFAULT_SCROLL_MAX_SWIPES = 3;
+const DEFAULT_SCROLL_DURATION_MS = 250;
+const DEFAULT_WAIT_UNTIL: WaitForUiMode = "visible";
+const DEFAULT_SCROLL_DIRECTION: UiScrollDirection = "up";
+const DEFAULT_WAIT_MAX_CONSECUTIVE_READ_FAILURES = 2;
+
+interface AndroidUiSnapshot {
+  command: string[];
+  readCommand: string[];
+  relativeOutputPath: string;
+  absoluteOutputPath: string;
+  readExecution: CommandExecution;
+  nodes: InspectUiNode[];
+  summary?: InspectUiSummary;
+  queryResult: { totalMatches: number; matches: QueryUiMatch[] };
+}
+interface AndroidUiSnapshotFailure {
+  reasonCode: ReasonCode;
+  exitCode: number | null;
+  outputPath: string;
+  command: string[];
+  message: string;
 }
 
 interface TypeTextData {
@@ -238,202 +302,6 @@ function readStringArray(record: Record<string, unknown>, key: string): string[]
   return value.filter((item): item is string => typeof item === "string" && item.length > 0);
 }
 
-function decodeXmlText(value: string | undefined): string | undefined {
-  if (!value) {
-    return value;
-  }
-  return value
-    .replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&amp;", "&")
-    .replaceAll("&#10;", "\n")
-    .replaceAll("&#39;", "'");
-}
-
-function normalizeQueryUiSelector(query: QueryUiSelector): QueryUiSelector {
-  return {
-    resourceId: query.resourceId && query.resourceId.length > 0 ? query.resourceId : undefined,
-    contentDesc: query.contentDesc && query.contentDesc.length > 0 ? query.contentDesc : undefined,
-    text: query.text && query.text.length > 0 ? query.text : undefined,
-    className: query.className && query.className.length > 0 ? query.className : undefined,
-    clickable: query.clickable,
-    limit: typeof query.limit === "number" && Number.isFinite(query.limit) && query.limit > 0 ? Math.floor(query.limit) : undefined,
-  };
-}
-
-function hasQueryUiSelector(query: QueryUiSelector): boolean {
-  return query.resourceId !== undefined
-    || query.contentDesc !== undefined
-    || query.text !== undefined
-    || query.className !== undefined
-    || query.clickable !== undefined;
-}
-
-function parseAndroidUiHierarchyNodes(xml: string): InspectUiNode[] {
-  const nodes: InspectUiNode[] = [];
-  const nodeRegex = /<node([^>]*)\/?>(?:<\/node>)?/g;
-
-  for (const match of xml.matchAll(nodeRegex)) {
-    const rawAttributes = match[1] ?? "";
-    const attributes = Object.fromEntries(
-      Array.from(rawAttributes.matchAll(/([\w:-]+)="([^"]*)"/g)).map(([, key, value]) => [key, decodeXmlText(value) ?? ""]),
-    );
-
-    const node: InspectUiNode = {
-      index: attributes.index ? Number(attributes.index) : undefined,
-      text: attributes.text || undefined,
-      resourceId: attributes["resource-id"] || undefined,
-      className: attributes.class || undefined,
-      packageName: attributes.package || undefined,
-      contentDesc: attributes["content-desc"] || undefined,
-      clickable: attributes.clickable === "true",
-      enabled: attributes.enabled !== "false",
-      scrollable: attributes.scrollable === "true",
-      bounds: attributes.bounds || undefined,
-    };
-    nodes.push(node);
-  }
-
-  return nodes;
-}
-
-function buildInspectUiSummary(nodes: InspectUiNode[]): InspectUiSummary {
-  const sampleNodes = nodes.filter((node) => node.clickable || node.text || node.contentDesc || node.resourceId).slice(0, 25);
-  return {
-    totalNodes: nodes.length,
-    clickableNodes: nodes.filter((node) => node.clickable).length,
-    scrollableNodes: nodes.filter((node) => node.scrollable).length,
-    nodesWithText: nodes.filter((node) => Boolean(node.text)).length,
-    nodesWithContentDesc: nodes.filter((node) => Boolean(node.contentDesc)).length,
-    sampleNodes,
-  };
-}
-
-function parseInspectUiSummary(xml: string): InspectUiSummary {
-  return buildInspectUiSummary(parseAndroidUiHierarchyNodes(xml));
-}
-
-function toIosInspectNode(node: Record<string, unknown>): InspectUiNode {
-  const frame = isRecord(node.frame) ? node.frame : undefined;
-  const frameX = typeof frame?.x === "number" ? frame.x : 0;
-  const frameY = typeof frame?.y === "number" ? frame.y : 0;
-  const frameWidth = typeof frame?.width === "number" ? frame.width : 0;
-  const frameHeight = typeof frame?.height === "number" ? frame.height : 0;
-  const bounds = frame
-    ? `[${String(frameX)},${String(frameY)}][${String(frameX + frameWidth)},${String(frameY + frameHeight)}]`
-    : undefined;
-  const type = readNonEmptyString(node, "type") ?? undefined;
-  return {
-    text: readNonEmptyString(node, "title") ?? undefined,
-    resourceId: readNonEmptyString(node, "AXUniqueId") ?? undefined,
-    className: type,
-    packageName: readNonEmptyString(node, "role") ?? undefined,
-    contentDesc: readNonEmptyString(node, "AXLabel") ?? undefined,
-    clickable: ["Button", "Link", "Cell"].includes(type ?? "") || (Array.isArray(node.custom_actions) && node.custom_actions.length > 0),
-    enabled: node.enabled !== false,
-    scrollable: (type ?? "").toLowerCase().includes("scroll"),
-    bounds,
-  };
-}
-
-function flattenIosInspectNodes(input: unknown, output: InspectUiNode[]): void {
-  if (!Array.isArray(input)) {
-    return;
-  }
-  for (const item of input) {
-    if (!isRecord(item)) {
-      continue;
-    }
-    output.push(toIosInspectNode(item));
-    flattenIosInspectNodes(item.children, output);
-  }
-}
-
-function parseIosInspectSummary(jsonText: string): InspectUiSummary {
-  const parsed: unknown = JSON.parse(jsonText);
-  const nodes: InspectUiNode[] = [];
-  flattenIosInspectNodes(parsed, nodes);
-  return buildInspectUiSummary(nodes);
-}
-
-function matchesQueryString(nodeValue: string | undefined, queryValue: string | undefined): boolean {
-  if (queryValue === undefined) {
-    return true;
-  }
-  if (!nodeValue) {
-    return false;
-  }
-  return nodeValue.toLocaleLowerCase().includes(queryValue.toLocaleLowerCase());
-}
-
-function queryAndroidUiNodes(nodes: InspectUiNode[], query: QueryUiSelector): { totalMatches: number; matches: QueryUiMatch[] } {
-  const allMatches = nodes.flatMap((node) => {
-    const matchedBy: QueryUiMatchField[] = [];
-
-    if (query.resourceId !== undefined) {
-      if (!matchesQueryString(node.resourceId, query.resourceId)) {
-        return [];
-      }
-      matchedBy.push("resourceId");
-    }
-
-    if (query.contentDesc !== undefined) {
-      if (!matchesQueryString(node.contentDesc, query.contentDesc)) {
-        return [];
-      }
-      matchedBy.push("contentDesc");
-    }
-
-    if (query.text !== undefined) {
-      if (!matchesQueryString(node.text, query.text)) {
-        return [];
-      }
-      matchedBy.push("text");
-    }
-
-    if (query.className !== undefined) {
-      if (!matchesQueryString(node.className, query.className)) {
-        return [];
-      }
-      matchedBy.push("className");
-    }
-
-    if (query.clickable !== undefined) {
-      if (node.clickable !== query.clickable) {
-        return [];
-      }
-      matchedBy.push("clickable");
-    }
-
-    return [{ node, matchedBy, score: matchedBy.length }];
-  });
-
-  return {
-    totalMatches: allMatches.length,
-    matches: query.limit === undefined ? allMatches : allMatches.slice(0, query.limit),
-  };
-}
-
-function parseBoundsCenter(bounds: string | undefined): { x: number; y: number } | undefined {
-  if (!bounds) {
-    return undefined;
-  }
-  const match = bounds.match(/^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/);
-  if (!match) {
-    return undefined;
-  }
-  const left = Number(match[1]);
-  const top = Number(match[2]);
-  const right = Number(match[3]);
-  const bottom = Number(match[4]);
-  return {
-    x: Math.round((left + right) / 2),
-    y: Math.round((top + bottom) / 2),
-  };
-}
-
 function buildAndroidUiDumpCommands(deviceId: string): { dumpCommand: string[]; readCommand: string[] } {
   return {
     dumpCommand: ["adb", "-s", deviceId, "shell", "uiautomator", "dump", "/sdcard/view.xml"],
@@ -441,8 +309,137 @@ function buildAndroidUiDumpCommands(deviceId: string): { dumpCommand: string[]; 
   };
 }
 
+function isAndroidUiSnapshotFailure(value: AndroidUiSnapshot | AndroidUiSnapshotFailure): value is AndroidUiSnapshotFailure {
+  return "message" in value;
+}
+
+function buildResolutionNextSuggestions(status: "resolved" | "no_match" | "ambiguous" | "missing_bounds" | "unsupported" | "not_executed", toolName: string): string[] {
+  if (status === "resolved") {
+    return [];
+  }
+  if (status === "no_match") {
+    return [`No UI nodes matched the provided selector for ${toolName}. Broaden the selector or inspect nearby nodes.`];
+  }
+  if (status === "ambiguous") {
+    return [`Multiple UI nodes matched the selector for ${toolName}. Narrow the selector before performing an element action.`];
+  }
+  if (status === "missing_bounds") {
+    return [`A matching UI node was found for ${toolName}, but its bounds were not parseable.`];
+  }
+  if (status === "not_executed") {
+    return [`${toolName} did not execute live UI resolution in this run. Re-run without dryRun or fix the upstream capture failure.`];
+  }
+  return [`${toolName} is not fully supported for this platform in the current repository state.`];
+}
+
+function normalizeWaitForUiMode(value: WaitForUiMode | undefined): WaitForUiMode {
+  return value ?? DEFAULT_WAIT_UNTIL;
+}
+
+function normalizeScrollDirection(value: UiScrollDirection | undefined): UiScrollDirection {
+  return value ?? DEFAULT_SCROLL_DIRECTION;
+}
+
+function reasonCodeForWaitTimeout(_waitUntil: WaitForUiMode): ReasonCode {
+  return REASON_CODES.timeout;
+}
+
+function escapeAndroidInputText(text: string): string {
+  return text.replaceAll(" ", "%s");
+}
+
+async function captureAndroidUiSnapshot(
+  repoRoot: string,
+  deviceId: string,
+  sessionId: string,
+  runnerProfile: RunnerProfile,
+  outputPath: string | undefined,
+  query: QueryUiInput,
+): Promise<AndroidUiSnapshot | AndroidUiSnapshotFailure> {
+  const relativeOutputPath = outputPath ?? path.posix.join("artifacts", "ui-dumps", sessionId, `android-${runnerProfile}.xml`);
+  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
+  const { dumpCommand, readCommand } = buildAndroidUiDumpCommands(deviceId);
+  const command = [...dumpCommand, ...readCommand];
+
+  await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
+  const dumpExecution = await executeRunner(dumpCommand, repoRoot, process.env);
+  if (dumpExecution.exitCode !== 0) {
+    return {
+      reasonCode: buildFailureReason(dumpExecution.stderr, dumpExecution.exitCode),
+      exitCode: dumpExecution.exitCode,
+      outputPath: relativeOutputPath,
+      command,
+      message: "Check Android device state and ensure uiautomator dump is permitted before retrying UI resolution.",
+    };
+  }
+
+  const readExecution = await executeRunner(readCommand, repoRoot, process.env);
+  if (readExecution.exitCode === 0) {
+    await writeFile(absoluteOutputPath, readExecution.stdout, "utf8");
+  }
+  const nodes = readExecution.exitCode === 0 ? parseAndroidUiHierarchyNodes(readExecution.stdout) : [];
+  const summary = readExecution.exitCode === 0 ? buildInspectUiSummary(nodes) : undefined;
+  const queryResult = readExecution.exitCode === 0 ? queryUiNodes(nodes, query) : { totalMatches: 0, matches: [] as QueryUiMatch[] };
+
+  return {
+    command,
+    readCommand,
+    relativeOutputPath,
+    absoluteOutputPath,
+    readExecution,
+    nodes,
+    summary,
+    queryResult,
+  };
+}
+
 function buildIosUiDescribeCommand(deviceId: string): string[] {
   return buildIdbCommand(["ui", "describe-all", "--udid", deviceId, "--json", "--nested"]);
+}
+
+function normalizePositiveInteger(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+function countNonEmptyLines(content: string): number {
+  return content
+    .replaceAll(String.fromCharCode(13), "")
+    .split(String.fromCharCode(10))
+    .filter((line) => line.length > 0)
+    .length;
+}
+
+function buildGetLogsCapture(
+  repoRoot: string,
+  input: GetLogsInput,
+  runnerProfile: RunnerProfile,
+  deviceId: string,
+): GetLogsCapture {
+  const sinceSeconds = normalizePositiveInteger(input.sinceSeconds, DEFAULT_GET_LOGS_SINCE_SECONDS);
+  const linesRequested = input.platform === "android" ? normalizePositiveInteger(input.lines, DEFAULT_GET_LOGS_LINES) : undefined;
+  const extension = input.platform === "android" ? "logcat.txt" : "simulator.log";
+  const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "logs", input.sessionId, `${input.platform}-${runnerProfile}.${extension}`);
+  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
+
+  if (input.platform === "android") {
+    return {
+      relativeOutputPath,
+      absoluteOutputPath,
+      command: ["adb", "-s", deviceId, "logcat", "-d", "-t", String(linesRequested ?? DEFAULT_GET_LOGS_LINES)],
+      supportLevel: "full",
+      linesRequested,
+      sinceSeconds,
+    };
+  }
+
+  return {
+    relativeOutputPath,
+    absoluteOutputPath,
+    command: ["xcrun", "simctl", "spawn", deviceId, "log", "show", "--style", "compact", "--last", `${String(sinceSeconds)}s`],
+    supportLevel: "full",
+    linesRequested,
+    sinceSeconds,
+  };
 }
 
 function toRelativePath(repoRoot: string, targetPath: string): string {
@@ -1360,7 +1357,7 @@ export async function typeTextWithMaestro(input: TypeTextInput): Promise<ToolRes
       attempts: 1,
       artifacts: [],
       data: { dryRun: Boolean(input.dryRun), runnerProfile, text: input.text, command: [], exitCode: null },
-      nextSuggestions: ["type_text currently supports Android input text only. iOS text entry is not yet wired in this repo."],
+      nextSuggestions: ["type_text currently executes Android input text only. iOS text entry is not yet wired through this repo."],
     };
   }
 
@@ -1368,8 +1365,8 @@ export async function typeTextWithMaestro(input: TypeTextInput): Promise<ToolRes
   const command = ["adb", "-s", deviceId, "shell", "input", "text", escaped];
   if (input.dryRun) {
     return {
-      status: "success",
-      reasonCode: REASON_CODES.ok,
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
@@ -1392,7 +1389,7 @@ export async function typeTextWithMaestro(input: TypeTextInput): Promise<ToolRes
   };
 }
 
-export async function tapElementWithMaestro(input: TapElementInput): Promise<ToolResult<TapElementData>> {
+export async function resolveUiTargetWithMaestro(input: ResolveUiTargetInput): Promise<ToolResult<ResolveUiTargetData>> {
   const startTime = Date.now();
   const repoRoot = resolveRepoPath();
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
@@ -1402,8 +1399,10 @@ export async function tapElementWithMaestro(input: TapElementInput): Promise<Too
     text: input.text,
     className: input.className,
     clickable: input.clickable,
-    limit: 1,
+    limit: input.limit,
   });
+
+  const defaultOutputPath = input.outputPath ?? path.posix.join("artifacts", "ui-dumps", input.sessionId, `${input.platform}-${runnerProfile}.${input.platform === "android" ? "xml" : "json"}`);
 
   if (!hasQueryUiSelector(query)) {
     return {
@@ -1413,8 +1412,727 @@ export async function tapElementWithMaestro(input: TapElementInput): Promise<Too
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: { dryRun: Boolean(input.dryRun), runnerProfile, query, command: [], exitCode: null, supportLevel: input.platform === "android" ? "full" : "partial" },
-      nextSuggestions: ["Provide at least one selector field before calling tap_element."],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        outputPath: defaultOutputPath,
+        query,
+        command: [],
+        exitCode: null,
+        result: { query, totalMatches: 0, matches: [] },
+        resolution: buildNonExecutedUiTargetResolution(query, input.platform === "android" ? "full" : "partial"),
+        supportLevel: input.platform === "android" ? "full" : "partial",
+      },
+      nextSuggestions: ["Provide at least one selector field before calling resolve_ui_target."],
+    };
+  }
+
+  if (input.platform === "ios") {
+    const idbCommand = buildIosUiDescribeCommand(input.deviceId ?? "ADA078B9-3C6B-4875-8B85-A7789F368816");
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        outputPath: defaultOutputPath,
+        query,
+        command: idbCommand,
+        exitCode: input.dryRun ? 0 : null,
+        result: { query, totalMatches: 0, matches: [] },
+        resolution: buildNonExecutedUiTargetResolution(query, "partial"),
+        supportLevel: "partial",
+      },
+      nextSuggestions: ["resolve_ui_target currently provides actionable target resolution for Android only. Use inspect_ui artifacts for iOS manual inspection."],
+    };
+  }
+
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? "emulator-5554";
+  const { dumpCommand, readCommand } = buildAndroidUiDumpCommands(deviceId);
+  const command = [...dumpCommand, ...readCommand];
+
+  if (input.dryRun) {
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        runnerProfile,
+        outputPath: defaultOutputPath,
+        query,
+        command,
+        exitCode: 0,
+        result: { query, totalMatches: 0, matches: [] },
+        resolution: buildNonExecutedUiTargetResolution(query, "full"),
+        supportLevel: "full",
+      },
+      nextSuggestions: ["resolve_ui_target dry-run only previews the capture command. Run it without --dry-run to resolve against the live Android hierarchy."],
+    };
+  }
+
+  const snapshot = await captureAndroidUiSnapshot(repoRoot, deviceId, input.sessionId, runnerProfile, input.outputPath, { sessionId: input.sessionId, platform: input.platform, runnerProfile, harnessConfigPath: input.harnessConfigPath, deviceId, outputPath: input.outputPath, dryRun: false, ...query });
+  if (isAndroidUiSnapshotFailure(snapshot)) {
+    return {
+      status: "failed",
+      reasonCode: snapshot.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile,
+        outputPath: snapshot.outputPath,
+        query,
+        command: snapshot.command,
+        exitCode: snapshot.exitCode,
+        result: { query, totalMatches: 0, matches: [] },
+        resolution: buildNonExecutedUiTargetResolution(query, "full"),
+        supportLevel: "full",
+      },
+      nextSuggestions: [snapshot.message],
+    };
+  }
+
+  if (snapshot.readExecution.exitCode !== 0) {
+    return {
+      status: "failed",
+      reasonCode: buildFailureReason(snapshot.readExecution.stderr, snapshot.readExecution.exitCode),
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile,
+        outputPath: snapshot.relativeOutputPath,
+        query,
+        command: snapshot.command,
+        exitCode: snapshot.readExecution.exitCode,
+        result: { query, totalMatches: 0, matches: [] },
+        resolution: buildNonExecutedUiTargetResolution(query, "full"),
+        supportLevel: "full",
+      },
+      nextSuggestions: ["Could not read the Android UI hierarchy before resolving the target. Check device state and retry."],
+    };
+  }
+
+  const result = { query, ...snapshot.queryResult };
+  const resolution = buildUiTargetResolution(query, result, "full");
+  return {
+    status: resolution.status === "resolved" ? "success" : "partial",
+    reasonCode: reasonCodeForResolutionStatus(resolution.status),
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [toRelativePath(repoRoot, snapshot.absoluteOutputPath)],
+    data: {
+      dryRun: false,
+      runnerProfile,
+      outputPath: snapshot.relativeOutputPath,
+      query,
+      command: snapshot.command,
+      exitCode: snapshot.readExecution.exitCode,
+      result,
+      resolution,
+      supportLevel: "full",
+      content: snapshot.readExecution.stdout,
+      summary: snapshot.summary,
+    },
+    nextSuggestions: resolution.status === "resolved"
+      ? []
+      : buildResolutionNextSuggestions(resolution.status, "resolve_ui_target"),
+  };
+}
+
+export async function tapElementWithMaestro(input: TapElementInput): Promise<ToolResult<TapElementData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const resolveResult = await resolveUiTargetWithMaestro({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile: input.runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    outputPath: input.outputPath,
+    resourceId: input.resourceId,
+    contentDesc: input.contentDesc,
+    text: input.text,
+    className: input.className,
+    clickable: input.clickable,
+    limit: input.limit,
+    dryRun: input.dryRun,
+  });
+  const query = resolveResult.data.query;
+
+  if (resolveResult.status === "failed") {
+    return {
+      status: "failed",
+      reasonCode: resolveResult.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        query,
+        matchCount: resolveResult.data.resolution.matchCount,
+        resolution: resolveResult.data.resolution,
+        matchedNode: resolveResult.data.resolution.matchedNode,
+        resolvedBounds: resolveResult.data.resolution.resolvedBounds,
+        resolvedX: resolveResult.data.resolution.resolvedPoint?.x,
+        resolvedY: resolveResult.data.resolution.resolvedPoint?.y,
+        command: resolveResult.data.command,
+        exitCode: resolveResult.data.exitCode,
+        supportLevel: resolveResult.data.supportLevel,
+      },
+      nextSuggestions: resolveResult.nextSuggestions,
+    };
+  }
+
+  const resolution = resolveResult.data.resolution;
+  if (input.dryRun && (resolution.status === "unsupported" || resolution.status === "not_executed")) {
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: true,
+        runnerProfile,
+        query,
+        matchCount: resolution.matchCount,
+        resolution,
+        matchedNode: resolution.matchedNode,
+        resolvedBounds: resolution.resolvedBounds,
+        resolvedX: resolution.resolvedPoint?.x,
+        resolvedY: resolution.resolvedPoint?.y,
+        command: resolveResult.data.command,
+        exitCode: resolveResult.data.exitCode,
+        supportLevel: resolveResult.data.supportLevel,
+      },
+      nextSuggestions: ["tap_element dry-run does not resolve live UI selectors. Run resolve_ui_target or tap_element without --dry-run to resolve against the current hierarchy."],
+    };
+  }
+  if (resolveResult.status !== "success" || !resolution.resolvedPoint || !resolution.resolvedBounds || !resolution.matchedNode) {
+    return {
+      status: "partial",
+      reasonCode: resolveResult.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        query,
+        matchCount: resolution.matchCount,
+        resolution,
+        matchedNode: resolution.matchedNode,
+        resolvedBounds: resolution.resolvedBounds,
+        resolvedX: resolution.resolvedPoint?.x,
+        resolvedY: resolution.resolvedPoint?.y,
+        command: resolveResult.data.command,
+        exitCode: resolveResult.data.exitCode,
+        supportLevel: resolveResult.data.supportLevel,
+      },
+      nextSuggestions: buildResolutionNextSuggestions(resolution.status, "tap_element"),
+    };
+  }
+
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? "emulator-5554";
+  const tapCommand = ["adb", "-s", deviceId, "shell", "input", "tap", String(resolution.resolvedPoint.x), String(resolution.resolvedPoint.y)];
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: { dryRun: true, runnerProfile, query, matchCount: resolution.matchCount, resolution, matchedNode: resolution.matchedNode, resolvedBounds: resolution.resolvedBounds, resolvedX: resolution.resolvedPoint.x, resolvedY: resolution.resolvedPoint.y, command: tapCommand, exitCode: 0, supportLevel: "full" },
+      nextSuggestions: ["Run tap_element without dryRun to perform the resolved Android tap."],
+    };
+  }
+
+  const execution = await executeRunner(tapCommand, repoRoot, process.env);
+  return {
+    status: execution.exitCode === 0 ? "success" : "failed",
+    reasonCode: execution.exitCode === 0 ? REASON_CODES.ok : REASON_CODES.actionTapFailed,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: resolveResult.artifacts,
+    data: { dryRun: false, runnerProfile, query, matchCount: resolution.matchCount, resolution, matchedNode: resolution.matchedNode, resolvedBounds: resolution.resolvedBounds, resolvedX: resolution.resolvedPoint.x, resolvedY: resolution.resolvedPoint.y, command: tapCommand, exitCode: execution.exitCode, supportLevel: "full" },
+    nextSuggestions: execution.exitCode === 0 ? [] : ["Check Android device state before retrying tap_element."],
+  };
+}
+
+export async function typeIntoElementWithMaestro(input: TypeIntoElementInput): Promise<ToolResult<TypeIntoElementData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const resolveResult = await resolveUiTargetWithMaestro({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile: input.runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    outputPath: input.outputPath,
+    resourceId: input.resourceId,
+    contentDesc: input.contentDesc,
+    text: input.text,
+    className: input.className,
+    clickable: input.clickable,
+    limit: input.limit,
+    dryRun: input.dryRun,
+  });
+  const query = resolveResult.data.query;
+  const resolution = resolveResult.data.resolution;
+
+  if (input.dryRun && (resolution.status === "unsupported" || resolution.status === "not_executed")) {
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: true,
+        runnerProfile,
+        query,
+        value: input.value,
+        resolution,
+        commands: resolveResult.data.command.length > 0 ? [resolveResult.data.command] : [],
+        exitCode: resolveResult.data.exitCode,
+        supportLevel: resolveResult.data.supportLevel,
+      },
+      nextSuggestions: ["type_into_element dry-run does not resolve live UI selectors. Run resolve_ui_target or type_into_element without --dry-run to resolve against the current hierarchy."],
+    };
+  }
+
+  if (resolveResult.status === "failed") {
+    return {
+      status: "failed",
+      reasonCode: resolveResult.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        query,
+        value: input.value,
+        resolution,
+        commands: resolveResult.data.command.length > 0 ? [resolveResult.data.command] : [],
+        exitCode: resolveResult.data.exitCode,
+        supportLevel: resolveResult.data.supportLevel,
+      },
+      nextSuggestions: resolveResult.nextSuggestions,
+    };
+  }
+
+  if (resolveResult.status !== "success" || !resolution.resolvedPoint) {
+    return {
+      status: "partial",
+      reasonCode: resolveResult.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        query,
+        value: input.value,
+        resolution,
+        commands: [],
+        exitCode: resolveResult.data.exitCode,
+        supportLevel: resolveResult.data.supportLevel,
+      },
+      nextSuggestions: buildResolutionNextSuggestions(resolution.status, "type_into_element"),
+    };
+  }
+
+  if (input.platform === "ios") {
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        query,
+        value: input.value,
+        resolution,
+        commands: [],
+        exitCode: null,
+        supportLevel: "partial",
+      },
+      nextSuggestions: ["type_into_element currently provides actionable element input for Android only. Use inspect_ui artifacts for iOS manual inspection."],
+    };
+  }
+
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? "emulator-5554";
+  const focusCommand = ["adb", "-s", deviceId, "shell", "input", "tap", String(resolution.resolvedPoint.x), String(resolution.resolvedPoint.y)];
+  const typeCommand = ["adb", "-s", deviceId, "shell", "input", "text", escapeAndroidInputText(input.value)];
+  const commands = [focusCommand, typeCommand];
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: true,
+        runnerProfile,
+        query,
+        value: input.value,
+        resolution,
+        commands,
+        exitCode: 0,
+        supportLevel: "full",
+      },
+      nextSuggestions: ["Run type_into_element without dryRun to focus the resolved Android element and enter text."],
+    };
+  }
+
+  const focusExecution = await executeRunner(focusCommand, repoRoot, process.env);
+  if (focusExecution.exitCode !== 0) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.actionFocusFailed,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: false,
+        runnerProfile,
+        query,
+        value: input.value,
+        resolution,
+        commands,
+        exitCode: focusExecution.exitCode,
+        supportLevel: "full",
+      },
+      nextSuggestions: ["Could not focus the resolved Android element before typing. Check device state and retry."],
+    };
+  }
+
+  const typeExecution = await executeRunner(typeCommand, repoRoot, process.env);
+  return {
+    status: typeExecution.exitCode === 0 ? "success" : "failed",
+    reasonCode: typeExecution.exitCode === 0 ? REASON_CODES.ok : REASON_CODES.actionTypeFailed,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: resolveResult.artifacts,
+    data: {
+      dryRun: false,
+      runnerProfile,
+      query,
+      value: input.value,
+      resolution,
+      commands,
+      exitCode: typeExecution.exitCode,
+      supportLevel: "full",
+    },
+    nextSuggestions: typeExecution.exitCode === 0 ? [] : ["Check Android focus state before retrying type_into_element."],
+  };
+}
+
+export async function waitForUiWithMaestro(input: WaitForUiInput): Promise<ToolResult<WaitForUiData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const query = normalizeQueryUiSelector({
+    resourceId: input.resourceId,
+    contentDesc: input.contentDesc,
+    text: input.text,
+    className: input.className,
+    clickable: input.clickable,
+    limit: input.limit,
+  });
+  const timeoutMs = typeof input.timeoutMs === "number" && input.timeoutMs > 0 ? Math.floor(input.timeoutMs) : DEFAULT_WAIT_TIMEOUT_MS;
+  const intervalMs = typeof input.intervalMs === "number" && input.intervalMs > 0 ? Math.floor(input.intervalMs) : DEFAULT_WAIT_INTERVAL_MS;
+  const waitUntil = normalizeWaitForUiMode(input.waitUntil);
+  const defaultOutputPath = input.outputPath ?? path.posix.join("artifacts", "ui-dumps", input.sessionId, `${input.platform}-${runnerProfile}.${input.platform === "android" ? "xml" : "json"}`);
+
+  if (!hasQueryUiSelector(query)) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        outputPath: defaultOutputPath,
+        query,
+        timeoutMs,
+        intervalMs,
+        waitUntil,
+        polls: 0,
+        command: [],
+        exitCode: null,
+        result: { query, totalMatches: 0, matches: [] },
+        supportLevel: input.platform === "android" ? "full" : "partial",
+      },
+      nextSuggestions: ["Provide at least one selector field before calling wait_for_ui."],
+    };
+  }
+
+  if (input.platform === "ios") {
+    const idbCommand = buildIosUiDescribeCommand(input.deviceId ?? "ADA078B9-3C6B-4875-8B85-A7789F368816");
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        outputPath: defaultOutputPath,
+        query,
+        timeoutMs,
+        intervalMs,
+        waitUntil,
+        polls: 0,
+        command: idbCommand,
+        exitCode: input.dryRun ? 0 : null,
+        result: { query, totalMatches: 0, matches: [] },
+        supportLevel: "partial",
+      },
+      nextSuggestions: ["wait_for_ui currently performs active polling for Android only. Use inspect_ui artifacts for iOS manual inspection."],
+    };
+  }
+
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? "emulator-5554";
+  const { dumpCommand, readCommand } = buildAndroidUiDumpCommands(deviceId);
+  const command = [...dumpCommand, ...readCommand];
+
+  if (input.dryRun) {
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        runnerProfile,
+        outputPath: defaultOutputPath,
+        query,
+        timeoutMs,
+        intervalMs,
+        waitUntil,
+        polls: 0,
+        command,
+        exitCode: 0,
+        result: { query, totalMatches: 0, matches: [] },
+        supportLevel: "full",
+      },
+      nextSuggestions: ["wait_for_ui dry-run only previews the capture command. Run it without --dry-run to poll the live Android hierarchy."],
+    };
+  }
+
+  let polls = 0;
+  let lastSnapshot: AndroidUiSnapshot | AndroidUiSnapshotFailure | undefined;
+  let consecutiveReadFailures = 0;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    polls += 1;
+    lastSnapshot = await captureAndroidUiSnapshot(repoRoot, deviceId, input.sessionId, runnerProfile, input.outputPath, { sessionId: input.sessionId, platform: input.platform, runnerProfile, harnessConfigPath: input.harnessConfigPath, deviceId, outputPath: input.outputPath, dryRun: false, ...query });
+    if (!isAndroidUiSnapshotFailure(lastSnapshot) && lastSnapshot.readExecution.exitCode !== 0) {
+      consecutiveReadFailures += 1;
+      if (shouldAbortWaitForUiAfterReadFailure({ consecutiveReadFailures, maxConsecutiveReadFailures: DEFAULT_WAIT_MAX_CONSECUTIVE_READ_FAILURES })) {
+        return {
+          status: "failed",
+          reasonCode: buildFailureReason(lastSnapshot.readExecution.stderr, lastSnapshot.readExecution.exitCode),
+          sessionId: input.sessionId,
+          durationMs: Date.now() - startTime,
+          attempts: polls,
+          artifacts: [],
+          data: {
+            dryRun: false,
+            runnerProfile,
+            outputPath: lastSnapshot.relativeOutputPath,
+            query,
+            timeoutMs,
+            intervalMs,
+            waitUntil,
+            polls,
+            command: lastSnapshot.command,
+            exitCode: lastSnapshot.readExecution.exitCode,
+            result: { query, totalMatches: 0, matches: [] },
+            supportLevel: "full",
+          },
+          nextSuggestions: [`Android UI hierarchy reads failed ${String(consecutiveReadFailures)} times in a row during wait_for_ui. Check device state and retry instead of waiting for timeout.`],
+        };
+      }
+    } else if (!isAndroidUiSnapshotFailure(lastSnapshot)) {
+      consecutiveReadFailures = 0;
+    }
+    if (!isAndroidUiSnapshotFailure(lastSnapshot) && lastSnapshot.readExecution.exitCode === 0 && isWaitConditionMet({ query, ...lastSnapshot.queryResult }, waitUntil)) {
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: polls,
+        artifacts: [toRelativePath(repoRoot, lastSnapshot.absoluteOutputPath)],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          outputPath: lastSnapshot.relativeOutputPath,
+          query,
+          timeoutMs,
+          intervalMs,
+          waitUntil,
+          polls,
+          command: lastSnapshot.command,
+          exitCode: lastSnapshot.readExecution.exitCode,
+          result: { query, ...lastSnapshot.queryResult },
+          supportLevel: "full",
+          content: lastSnapshot.readExecution.stdout,
+          summary: lastSnapshot.summary,
+        },
+        nextSuggestions: [],
+      };
+    }
+    if (Date.now() < deadline) {
+      await delay(intervalMs);
+    }
+  }
+
+  if (lastSnapshot && isAndroidUiSnapshotFailure(lastSnapshot)) {
+    return {
+      status: "failed",
+      reasonCode: lastSnapshot.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: polls,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile,
+        outputPath: lastSnapshot.outputPath,
+        query,
+        timeoutMs,
+        intervalMs,
+        waitUntil,
+        polls,
+        command: lastSnapshot.command,
+        exitCode: lastSnapshot.exitCode,
+        result: { query, totalMatches: 0, matches: [] },
+        supportLevel: "full",
+      },
+      nextSuggestions: [lastSnapshot.message],
+    };
+  }
+
+  const timeoutSnapshot = !lastSnapshot || isAndroidUiSnapshotFailure(lastSnapshot)
+    ? undefined
+    : lastSnapshot;
+  const result = timeoutSnapshot ? { query, ...timeoutSnapshot.queryResult } : { query, totalMatches: 0, matches: [] as QueryUiMatch[] };
+  return {
+    status: "partial",
+    reasonCode: reasonCodeForWaitTimeout(waitUntil),
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: polls,
+    artifacts: timeoutSnapshot ? [toRelativePath(repoRoot, timeoutSnapshot.absoluteOutputPath)] : [],
+    data: {
+      dryRun: false,
+      runnerProfile,
+      outputPath: timeoutSnapshot?.relativeOutputPath ?? defaultOutputPath,
+      query,
+      timeoutMs,
+      intervalMs,
+      waitUntil,
+      polls,
+      command: timeoutSnapshot?.command ?? command,
+      exitCode: timeoutSnapshot?.readExecution.exitCode ?? null,
+      result,
+      supportLevel: "full",
+      content: timeoutSnapshot?.readExecution.stdout,
+      summary: timeoutSnapshot?.summary,
+    },
+    nextSuggestions: [`Timed out waiting for Android UI condition '${waitUntil}'. Broaden the selector, change waitUntil, increase timeoutMs, or inspect the latest hierarchy artifact.`],
+  };
+}
+
+export async function scrollAndResolveUiTargetWithMaestro(input: ScrollAndResolveUiTargetInput): Promise<ToolResult<ScrollAndResolveUiTargetData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const query = normalizeQueryUiSelector({
+    resourceId: input.resourceId,
+    contentDesc: input.contentDesc,
+    text: input.text,
+    className: input.className,
+    clickable: input.clickable,
+    limit: input.limit,
+  });
+  const maxSwipes = typeof input.maxSwipes === "number" && input.maxSwipes >= 0 ? Math.floor(input.maxSwipes) : DEFAULT_SCROLL_MAX_SWIPES;
+  const swipeDurationMs = typeof input.swipeDurationMs === "number" && input.swipeDurationMs > 0 ? Math.floor(input.swipeDurationMs) : DEFAULT_SCROLL_DURATION_MS;
+  const swipeDirection = normalizeScrollDirection(input.swipeDirection);
+  const defaultOutputPath = input.outputPath ?? path.posix.join("artifacts", "ui-dumps", input.sessionId, `${input.platform}-${runnerProfile}.${input.platform === "android" ? "xml" : "json"}`);
+
+  if (!hasQueryUiSelector(query)) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        outputPath: defaultOutputPath,
+        query,
+        maxSwipes,
+        swipeDirection,
+        swipeDurationMs,
+        swipesPerformed: 0,
+        commandHistory: [],
+        exitCode: null,
+        result: { query, totalMatches: 0, matches: [] },
+        resolution: buildNonExecutedUiTargetResolution(query, input.platform === "android" ? "full" : "partial"),
+        supportLevel: input.platform === "android" ? "full" : "partial",
+      },
+      nextSuggestions: ["Provide at least one selector field before calling scroll_and_resolve_ui_target."],
     };
   }
 
@@ -1426,47 +2144,32 @@ export async function tapElementWithMaestro(input: TapElementInput): Promise<Too
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: { dryRun: Boolean(input.dryRun), runnerProfile, query, command: [], exitCode: null, supportLevel: "partial" },
-      nextSuggestions: ["tap_element currently supports Android only. Use inspect_ui/query_ui artifacts for iOS manual inspection."],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        outputPath: defaultOutputPath,
+        query,
+        maxSwipes,
+        swipeDirection,
+        swipeDurationMs,
+        swipesPerformed: 0,
+        commandHistory: [],
+        exitCode: input.dryRun ? 0 : null,
+        result: { query, totalMatches: 0, matches: [] },
+        resolution: buildNonExecutedUiTargetResolution(query, "partial"),
+        supportLevel: "partial",
+      },
+      nextSuggestions: ["scroll_and_resolve_ui_target currently provides actionable scrolling for Android only. Use inspect_ui artifacts for iOS manual inspection."],
     };
   }
 
   const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
   const deviceId = input.deviceId ?? selection.deviceId ?? "emulator-5554";
   const { dumpCommand, readCommand } = buildAndroidUiDumpCommands(deviceId);
-  const dumpExecution = await executeRunner(dumpCommand, repoRoot, process.env);
-  if (dumpExecution.exitCode !== 0) {
-    return {
-      status: "failed",
-      reasonCode: buildFailureReason(dumpExecution.stderr, dumpExecution.exitCode),
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: { dryRun: Boolean(input.dryRun), runnerProfile, query, command: dumpCommand, exitCode: dumpExecution.exitCode, supportLevel: "full" },
-      nextSuggestions: ["Could not refresh Android UI tree before tap_element. Check device state and retry."],
-    };
-  }
+  const previewSwipe = buildScrollSwipeCoordinates([], swipeDirection, swipeDurationMs);
+  const previewSwipeCommand = ["adb", "-s", deviceId, "shell", "input", "swipe", String(previewSwipe.start.x), String(previewSwipe.start.y), String(previewSwipe.end.x), String(previewSwipe.end.y), String(previewSwipe.durationMs)];
 
-  const readExecution = await executeRunner(readCommand, repoRoot, process.env);
-  if (readExecution.exitCode !== 0) {
-    return {
-      status: "failed",
-      reasonCode: buildFailureReason(readExecution.stderr, readExecution.exitCode),
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: { dryRun: Boolean(input.dryRun), runnerProfile, query, command: readCommand, exitCode: readExecution.exitCode, supportLevel: "full" },
-      nextSuggestions: ["Could not read Android UI tree before tap_element. Check device state and retry."],
-    };
-  }
-
-  const nodes = parseAndroidUiHierarchyNodes(readExecution.stdout);
-  const queryResult = queryAndroidUiNodes(nodes, query);
-  const firstMatch = queryResult.matches[0];
-  const center = parseBoundsCenter(firstMatch?.node.bounds);
-  if (!firstMatch || !center) {
+  if (input.dryRun) {
     return {
       status: "partial",
       reasonCode: REASON_CODES.unsupportedOperation,
@@ -1474,35 +2177,205 @@ export async function tapElementWithMaestro(input: TapElementInput): Promise<Too
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: { dryRun: Boolean(input.dryRun), runnerProfile, query, matchedNode: firstMatch?.node, command: [], exitCode: null, supportLevel: "full" },
-      nextSuggestions: ["No tappable element with parseable bounds matched the provided selector."],
+      data: {
+        dryRun: true,
+        runnerProfile,
+        outputPath: defaultOutputPath,
+        query,
+        maxSwipes,
+        swipeDirection,
+        swipeDurationMs,
+        swipesPerformed: 0,
+        commandHistory: [[...dumpCommand, ...readCommand], previewSwipeCommand],
+        exitCode: 0,
+        result: { query, totalMatches: 0, matches: [] },
+        resolution: buildNonExecutedUiTargetResolution(query, "full"),
+        supportLevel: "full",
+      },
+      nextSuggestions: ["scroll_and_resolve_ui_target dry-run only previews capture and swipe commands. Run it without --dry-run to resolve against the live Android hierarchy."],
     };
   }
 
-  const tapCommand = ["adb", "-s", deviceId, "shell", "input", "tap", String(center.x), String(center.y)];
-  if (input.dryRun) {
-    return {
-      status: "success",
-      reasonCode: REASON_CODES.ok,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: { dryRun: true, runnerProfile, query, matchedNode: firstMatch.node, resolvedX: center.x, resolvedY: center.y, command: tapCommand, exitCode: 0, supportLevel: "full" },
-      nextSuggestions: ["Run tap_element without dryRun to perform the resolved Android tap."],
-    };
+  let swipesPerformed = 0;
+  const commandHistory: string[][] = [];
+  let lastSnapshot: AndroidUiSnapshot | AndroidUiSnapshotFailure | undefined;
+
+  while (swipesPerformed <= maxSwipes) {
+    lastSnapshot = await captureAndroidUiSnapshot(repoRoot, deviceId, input.sessionId, runnerProfile, input.outputPath, { sessionId: input.sessionId, platform: input.platform, runnerProfile, harnessConfigPath: input.harnessConfigPath, deviceId, outputPath: input.outputPath, dryRun: false, ...query });
+    if (isAndroidUiSnapshotFailure(lastSnapshot)) {
+      return {
+        status: "failed",
+        reasonCode: lastSnapshot.reasonCode,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: swipesPerformed + 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          outputPath: lastSnapshot.outputPath,
+          query,
+          maxSwipes,
+          swipeDirection,
+          swipeDurationMs,
+          swipesPerformed,
+          commandHistory: [...commandHistory, lastSnapshot.command],
+          exitCode: lastSnapshot.exitCode,
+          result: { query, totalMatches: 0, matches: [] },
+          resolution: buildNonExecutedUiTargetResolution(query, "full"),
+          supportLevel: "full",
+        },
+        nextSuggestions: [lastSnapshot.message],
+      };
+    }
+
+    commandHistory.push(lastSnapshot.command);
+    if (lastSnapshot.readExecution.exitCode !== 0) {
+      return {
+        status: "failed",
+        reasonCode: buildFailureReason(lastSnapshot.readExecution.stderr, lastSnapshot.readExecution.exitCode),
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: swipesPerformed + 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          outputPath: lastSnapshot.relativeOutputPath,
+          query,
+          maxSwipes,
+          swipeDirection,
+          swipeDurationMs,
+          swipesPerformed,
+          commandHistory,
+          exitCode: lastSnapshot.readExecution.exitCode,
+          result: { query, totalMatches: 0, matches: [] },
+          resolution: buildNonExecutedUiTargetResolution(query, "full"),
+          supportLevel: "full",
+        },
+        nextSuggestions: ["Could not read the Android UI hierarchy while scrolling for target resolution. Check device state and retry."],
+      };
+    }
+
+    const result = { query, ...lastSnapshot.queryResult };
+    const resolution = buildUiTargetResolution(query, result, "full");
+    if (resolution.status !== "no_match") {
+      return {
+        status: resolution.status === "resolved" ? "success" : "partial",
+        reasonCode: reasonCodeForResolutionStatus(resolution.status),
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: swipesPerformed + 1,
+        artifacts: [toRelativePath(repoRoot, lastSnapshot.absoluteOutputPath)],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          outputPath: lastSnapshot.relativeOutputPath,
+          query,
+          maxSwipes,
+          swipeDirection,
+          swipeDurationMs,
+          swipesPerformed,
+          commandHistory,
+          exitCode: lastSnapshot.readExecution.exitCode,
+          result,
+          resolution,
+          supportLevel: "full",
+          content: lastSnapshot.readExecution.stdout,
+          summary: lastSnapshot.summary,
+        },
+        nextSuggestions: resolution.status === "resolved" ? [] : buildResolutionNextSuggestions(resolution.status, "scroll_and_resolve_ui_target"),
+      };
+    }
+
+    if (swipesPerformed === maxSwipes) {
+      return {
+        status: "partial",
+        reasonCode: REASON_CODES.noMatch,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: swipesPerformed + 1,
+        artifacts: [toRelativePath(repoRoot, lastSnapshot.absoluteOutputPath)],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          outputPath: lastSnapshot.relativeOutputPath,
+          query,
+          maxSwipes,
+          swipeDirection,
+          swipeDurationMs,
+          swipesPerformed,
+          commandHistory,
+          exitCode: lastSnapshot.readExecution.exitCode,
+          result,
+          resolution,
+          supportLevel: "full",
+          content: lastSnapshot.readExecution.stdout,
+          summary: lastSnapshot.summary,
+        },
+        nextSuggestions: ["Reached maxSwipes without finding a matching Android target. Narrow the selector or increase maxSwipes."],
+      };
+    }
+
+    const swipe = buildScrollSwipeCoordinates(lastSnapshot.nodes, swipeDirection, swipeDurationMs);
+    const swipeCommand = ["adb", "-s", deviceId, "shell", "input", "swipe", String(swipe.start.x), String(swipe.start.y), String(swipe.end.x), String(swipe.end.y), String(swipe.durationMs)];
+    commandHistory.push(swipeCommand);
+    const swipeExecution = await executeRunner(swipeCommand, repoRoot, process.env);
+    if (swipeExecution.exitCode !== 0) {
+      return {
+        status: "failed",
+        reasonCode: REASON_CODES.actionScrollFailed,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: swipesPerformed + 1,
+        artifacts: [toRelativePath(repoRoot, lastSnapshot.absoluteOutputPath)],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          outputPath: lastSnapshot.relativeOutputPath,
+          query,
+          maxSwipes,
+          swipeDirection,
+          swipeDurationMs,
+          swipesPerformed,
+          commandHistory,
+          exitCode: swipeExecution.exitCode,
+          result,
+          resolution,
+          supportLevel: "full",
+          content: lastSnapshot.readExecution.stdout,
+          summary: lastSnapshot.summary,
+        },
+        nextSuggestions: ["Android swipe failed while searching for the target. Check device state and retry scroll_and_resolve_ui_target."],
+      };
+    }
+
+    swipesPerformed += 1;
   }
 
-  const execution = await executeRunner(tapCommand, repoRoot, process.env);
   return {
-    status: execution.exitCode === 0 ? "success" : "failed",
-    reasonCode: execution.exitCode === 0 ? REASON_CODES.ok : buildFailureReason(execution.stderr, execution.exitCode),
+    status: "partial",
+    reasonCode: REASON_CODES.noMatch,
     sessionId: input.sessionId,
     durationMs: Date.now() - startTime,
-    attempts: 1,
+    attempts: swipesPerformed + 1,
     artifacts: [],
-    data: { dryRun: false, runnerProfile, query, matchedNode: firstMatch.node, resolvedX: center.x, resolvedY: center.y, command: tapCommand, exitCode: execution.exitCode, supportLevel: "full" },
-    nextSuggestions: execution.exitCode === 0 ? [] : ["Check Android device state before retrying tap_element."],
+    data: {
+      dryRun: false,
+      runnerProfile,
+      outputPath: defaultOutputPath,
+      query,
+      maxSwipes,
+      swipeDirection,
+      swipeDurationMs,
+      swipesPerformed,
+      commandHistory,
+      exitCode: null,
+      result: { query, totalMatches: 0, matches: [] },
+      resolution: buildUiTargetResolution(query, { query, totalMatches: 0, matches: [] }, "full"),
+      supportLevel: "full",
+    },
+    nextSuggestions: ["Reached the end of scroll_and_resolve_ui_target without a resolvable Android match."],
   };
 }
 
@@ -1522,7 +2395,7 @@ export async function tapWithMaestro(input: TapInput): Promise<ToolResult<TapDat
       attempts: 1,
       artifacts: [],
       data: { dryRun: Boolean(input.dryRun), runnerProfile, x: input.x, y: input.y, command: [], exitCode: null },
-      nextSuggestions: ["tap currently supports Android coordinate taps only. Use inspect_ui output to derive Android coordinates."],
+      nextSuggestions: ["tap currently executes Android coordinate taps only. iOS coordinate tap is not yet wired through this repo."],
     };
   }
 
@@ -1575,7 +2448,7 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
         durationMs: Date.now() - startTime,
         attempts: 1,
         artifacts: [],
-        data: { dryRun: true, runnerProfile, outputPath: iosRelativeOutputPath, command: idbCommand, exitCode: 0 },
+        data: { dryRun: true, runnerProfile, outputPath: iosRelativeOutputPath, command: idbCommand, exitCode: 0, supportLevel: "partial", platformSupportNote: "iOS inspect_ui captures hierarchy through idb; query and action parity remain partial." },
         nextSuggestions: ["Run inspect_ui without dryRun to capture an actual iOS hierarchy dump through idb."],
       };
     }
@@ -1589,7 +2462,7 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
         durationMs: Date.now() - startTime,
         attempts: 1,
         artifacts: [],
-        data: { dryRun: false, runnerProfile, outputPath: iosRelativeOutputPath, command: idbCommand, exitCode: idbProbe?.exitCode ?? null },
+        data: { dryRun: false, runnerProfile, outputPath: iosRelativeOutputPath, command: idbCommand, exitCode: idbProbe?.exitCode ?? null, supportLevel: "partial", platformSupportNote: "iOS inspect_ui depends on idb availability in the local environment." },
         nextSuggestions: ["iOS inspect_ui in this repo requires idb. Install idb-companion and fb-idb, then retry inspect_ui."],
       };
     }
@@ -1613,6 +2486,8 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
         outputPath: iosRelativeOutputPath,
         command: idbCommand,
         exitCode: idbExecution.exitCode,
+        supportLevel: "partial",
+        platformSupportNote: "iOS inspect_ui can capture hierarchy artifacts, but downstream query/action tooling is still partial compared with Android.",
         content: idbExecution.exitCode === 0 ? idbExecution.stdout : undefined,
         summary: idbExecution.exitCode === 0 ? parseIosInspectSummary(idbExecution.stdout) : undefined,
       },
@@ -1632,7 +2507,7 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: { dryRun: true, runnerProfile, outputPath: relativeOutputPath, command: [...dumpCommand, ...readCommand], exitCode: 0 },
+      data: { dryRun: true, runnerProfile, outputPath: relativeOutputPath, command: [...dumpCommand, ...readCommand], exitCode: 0, supportLevel: "full" },
       nextSuggestions: ["Run inspect_ui without dryRun to capture an actual Android hierarchy dump."],
     };
   }
@@ -1646,7 +2521,7 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command: dumpCommand, exitCode: dumpExecution.exitCode },
+      data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command: dumpCommand, exitCode: dumpExecution.exitCode, supportLevel: "full" },
       nextSuggestions: ["Check Android device state and ensure uiautomator dump is permitted before retrying inspect_ui."],
     };
   }
@@ -1669,6 +2544,7 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
       outputPath: relativeOutputPath,
       command: readCommand,
       exitCode: readExecution.exitCode,
+      supportLevel: "full",
       content: readExecution.exitCode === 0 ? readExecution.stdout : undefined,
       summary: readExecution.exitCode === 0 ? parseInspectUiSummary(readExecution.stdout) : undefined,
     },
@@ -1853,7 +2729,7 @@ export async function queryUiWithMaestro(input: QueryUiInput): Promise<ToolResul
 
   const nodes = readExecution.exitCode === 0 ? parseAndroidUiHierarchyNodes(readExecution.stdout) : [];
   const summary = readExecution.exitCode === 0 ? buildInspectUiSummary(nodes) : undefined;
-  const queryResult = readExecution.exitCode === 0 ? queryAndroidUiNodes(nodes, query) : { totalMatches: 0, matches: [] as QueryUiMatch[] };
+  const queryResult = readExecution.exitCode === 0 ? queryUiNodes(nodes, query) : { totalMatches: 0, matches: [] as QueryUiMatch[] };
 
   return {
     status: readExecution.exitCode === 0 ? "success" : "failed",
@@ -1974,6 +2850,71 @@ export async function takeScreenshotWithMaestro(input: ScreenshotInput): Promise
     artifacts: execution.exitCode === 0 ? [toRelativePath(repoRoot, absoluteOutputPath)] : [],
     data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command, exitCode: execution.exitCode },
     nextSuggestions: execution.exitCode === 0 ? [] : ["Check simulator boot state before retrying take_screenshot."],
+  };
+}
+
+export async function getLogsWithMaestro(input: GetLogsInput): Promise<ToolResult<GetLogsData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? (input.platform === "android" ? "emulator-5554" : "ADA078B9-3C6B-4875-8B85-A7789F368816");
+  const capture = buildGetLogsCapture(repoRoot, input, runnerProfile, deviceId);
+
+  await mkdir(path.dirname(capture.absoluteOutputPath), { recursive: true });
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        runnerProfile,
+        outputPath: capture.relativeOutputPath,
+        command: capture.command,
+        exitCode: 0,
+        supportLevel: capture.supportLevel,
+        lineCount: 0,
+        linesRequested: capture.linesRequested,
+        sinceSeconds: capture.sinceSeconds,
+      },
+      nextSuggestions: ["Run get_logs without dryRun to capture live device or simulator logs."],
+    };
+  }
+
+  const execution = await executeRunner(capture.command, repoRoot, process.env);
+  if (execution.exitCode === 0) {
+    await writeFile(capture.absoluteOutputPath, execution.stdout, "utf8");
+  }
+
+  return {
+    status: execution.exitCode === 0 ? "success" : "failed",
+    reasonCode: execution.exitCode === 0 ? REASON_CODES.ok : buildFailureReason(execution.stderr, execution.exitCode),
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: execution.exitCode === 0 ? [toRelativePath(repoRoot, capture.absoluteOutputPath)] : [],
+    data: {
+      dryRun: false,
+      runnerProfile,
+      outputPath: capture.relativeOutputPath,
+      command: capture.command,
+      exitCode: execution.exitCode,
+      supportLevel: capture.supportLevel,
+      lineCount: execution.exitCode === 0 ? countNonEmptyLines(execution.stdout) : 0,
+      linesRequested: capture.linesRequested,
+      sinceSeconds: capture.sinceSeconds,
+      content: execution.exitCode === 0 ? execution.stdout : undefined,
+    },
+    nextSuggestions: execution.exitCode === 0
+      ? []
+      : [input.platform === "android"
+        ? "Check adb connectivity and the selected Android device before retrying get_logs."
+        : "Check simulator boot state and log access permissions before retrying get_logs."],
   };
 }
 

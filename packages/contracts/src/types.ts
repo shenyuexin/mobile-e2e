@@ -57,6 +57,16 @@ export interface InspectUiMatch {
   matchedBy: InspectUiMatchField[];
   score?: number;
 }
+export type UiTargetResolutionStatus = "resolved" | "no_match" | "ambiguous" | "missing_bounds" | "unsupported" | "not_executed";
+export interface UiTargetResolution {
+  status: UiTargetResolutionStatus;
+  matchCount: number;
+  query: InspectUiQuery;
+  matches: InspectUiMatch[];
+  matchedNode?: InspectUiNode;
+  resolvedBounds?: UiBounds;
+  resolvedPoint?: UiPoint;
+}
 export interface InspectUiQueryResult {
   query: InspectUiQuery;
   totalMatches: number;
@@ -76,6 +86,29 @@ export interface QueryUiData {
   supportLevel: "full" | "partial";
   content?: string;
   summary?: InspectUiSummary;
+}
+export interface GetLogsInput {
+  sessionId: string;
+  platform: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  outputPath?: string;
+  lines?: number;
+  sinceSeconds?: number;
+  dryRun?: boolean;
+}
+export interface GetLogsData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  command: string[];
+  exitCode: number | null;
+  supportLevel: "full" | "partial";
+  lineCount: number;
+  linesRequested?: number;
+  sinceSeconds: number;
+  content?: string;
 }
 export interface InspectUiInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; outputPath?: string; dryRun?: boolean; }
 export interface InspectUiQueryInput extends InspectUiInput, InspectUiQuery {}
@@ -101,6 +134,7 @@ export interface TapElementData {
   runnerProfile: RunnerProfile;
   query: InspectUiQuery;
   matchCount?: number;
+  resolution?: UiTargetResolution;
   matchedNode?: InspectUiNode;
   resolvedBounds?: UiBounds;
   resolvedX?: number;
@@ -108,6 +142,78 @@ export interface TapElementData {
   command: string[];
   exitCode: number | null;
   supportLevel: "full" | "partial";
+}
+export interface ResolveUiTargetInput extends InspectUiQueryInput {}
+export interface ResolveUiTargetData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  query: InspectUiQuery;
+  command: string[];
+  exitCode: number | null;
+  result: InspectUiQueryResult;
+  resolution: UiTargetResolution;
+  supportLevel: "full" | "partial";
+  content?: string;
+  summary?: InspectUiSummary;
+}
+export interface TypeIntoElementInput extends InspectUiQueryInput {
+  value: string;
+}
+export interface TypeIntoElementData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  query: InspectUiQuery;
+  value: string;
+  resolution: UiTargetResolution;
+  commands: string[][];
+  exitCode: number | null;
+  supportLevel: "full" | "partial";
+}
+export type WaitForUiMode = "visible" | "gone" | "unique";
+export interface WaitForUiInput extends InspectUiQueryInput {
+  timeoutMs?: number;
+  intervalMs?: number;
+  waitUntil?: WaitForUiMode;
+}
+export interface WaitForUiData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  query: InspectUiQuery;
+  timeoutMs: number;
+  intervalMs: number;
+  waitUntil: WaitForUiMode;
+  polls: number;
+  command: string[];
+  exitCode: number | null;
+  result: InspectUiQueryResult;
+  supportLevel: "full" | "partial";
+  content?: string;
+  summary?: InspectUiSummary;
+}
+export type UiScrollDirection = "up" | "down";
+export interface ScrollAndResolveUiTargetInput extends ResolveUiTargetInput {
+  maxSwipes?: number;
+  swipeDirection?: UiScrollDirection;
+  swipeDurationMs?: number;
+}
+export interface ScrollAndResolveUiTargetData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  query: InspectUiQuery;
+  maxSwipes: number;
+  swipeDirection: UiScrollDirection;
+  swipeDurationMs: number;
+  swipesPerformed: number;
+  commandHistory: string[][];
+  exitCode: number | null;
+  result: InspectUiQueryResult;
+  resolution: UiTargetResolution;
+  supportLevel: "full" | "partial";
+  content?: string;
+  summary?: InspectUiSummary;
 }
 export interface RunFlowInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; flowPath?: string; harnessConfigPath?: string; runnerScript?: string; runCount?: number; dryRun?: boolean; artifactRoot?: string; deviceId?: string; appId?: string; launchUrl?: string; env?: Record<string, string>; }
 export interface StartSessionInput { platform: Platform; sessionId?: string; deviceId?: string; appId?: string; policyProfile?: string; phase?: string | null; profile?: RunnerProfile | null; sampleName?: string | null; artifactsRoot?: string; harnessConfigPath?: string; }

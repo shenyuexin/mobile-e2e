@@ -44,13 +44,20 @@ From WDA model:
 
 ## 4. iOS MCP Tooling Set (Phase-wise)
 
+Important note for the current repository state:
+
+- `inspect_ui` is the only iOS UI-surface tool with a validated success path today, and it depends on `idb ui describe-all --json --nested`.
+- `query_ui` on iOS is intentionally partial: hierarchy capture may succeed, but structured matching parity with Android is not claimed.
+- `tap`, `type_text`, and `tap_element` are not yet wired to a live iOS execution backend in this repo, even though `idb` and WDA theoretically expose related primitives.
+- Documentation must distinguish backend capability in principle from what this repo has actually integrated.
+
 ## Phase 1
 
 - ios.listTargets
 - ios.bootSimulator
 - ios.launchApp / ios.terminateApp
 - ios.getTree
-- ios.tap / ios.type / ios.swipe
+- ios.tap / ios.type / ios.swipe (backend design target, not yet fully wired in this repo)
 - ios.takeScreenshot
 - ios.getLogs
 

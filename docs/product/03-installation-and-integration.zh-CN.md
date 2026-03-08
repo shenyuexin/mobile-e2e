@@ -268,14 +268,53 @@ pnpm mcp:stdio
 
 这层能力的目标是让后续 `tap` / `type_text` 可以基于查询结果升级为元素级交互，而不是继续长期依赖人工坐标。
 
+当前仓库也新增了一个最小只读证据工具 `get_logs`：
+
+- Android 走 `adb -s <device> logcat -d -t <N>`，适合抓取最近若干行 logcat
+- iOS simulator 走 `xcrun simctl spawn <UDID> log show --style compact --last <Ns>`，适合抓取最近时间窗口日志
+- 返回会包含 `outputPath`、底层 `command`、`lineCount`、`sinceSeconds` 与原始 `content`
+- 这条链路当前定位为“诊断/取证”，不是更高层的 crash 归因或 app 级过滤系统
+
+当前仓库也已经补了一个最小动作桥接层 `tap_element`：
+
+- 输入仍复用 `resourceId` / `contentDesc` / `text` / `className` / `clickable`
+- Android 上会先走 `resolve_ui_target`，只有在 `resolved` 状态下才继续执行点击
+- 返回会包含 `matchCount`、`resolution`、`matchedNode`、`resolvedBounds`、`resolvedX`、`resolvedY`
+- 这仍不是完整元素动作系统；它只是从“查询层”过渡到后续元素级 `tap` / `type_text` 的桥接能力
+
+当前还新增了两条最小动作链路：
+
+- `resolve_ui_target`：显式返回 `resolved` / `no_match` / `ambiguous` / `missing_bounds` / `unsupported`
+- `type_into_element`：Android 上先聚焦解析后的节点，再输入 `--value`
+- `wait_for_ui`：Android 上按 selector 轮询 hierarchy，支持 `visible` / `gone` / `unique`；若 hierarchy 连续读取失败，会直接返回真实失败而不是继续等到超时
+- `scroll_and_resolve_ui_target`：Android 上在滚动容器内执行“抓 tree -> resolve -> swipe -> retry”
+
 
 当前 iOS `inspect_ui` 不再是假定 simctl 能导出 tree，而是明确依赖 `idb ui describe-all --json --nested`。若环境未安装 `idb-companion` / `fb-idb`，工具会返回配置型 partial/failed 结果并提示安装。
+
+当前 iOS `inspect_ui` 即使成功抓到 hierarchy，也会在 data 中标记 `supportLevel: partial`，明确说明它解决的是“tree capture”，不是 Android 等价的全链路查询/动作支持。
 
 当前 iOS `query_ui` 也遵循同样的诚实原则：
 
 - 若未安装 `idb`，返回 configuration-style partial 结果
 - 若能成功抓取 hierarchy，也只返回 raw artifact + partial/unsupported 语义
 - 不会伪装 iOS 已具备 Android 等价的结构化查询能力
+
+当前 iOS `tap` / `type_text` / `tap_element` 也保持同样的边界：
+
+- 会明确返回 partial / unsupported 风格语义
+- 文案会直接说明“当前仓库尚未把这些动作接到 iOS 执行后端”
+- 不会因为底层理论上有 `idb ui tap` / `idb ui text` 能力，就假装仓库里已经完整接好
+
+当前 iOS `resolve_ui_target` / `type_into_element` / `wait_for_ui` 也遵循同样原则：
+
+- 返回 partial / unsupported 风格语义
+- 不伪装 iOS 已具备 Android 等价的目标解析、等待与元素输入能力
+
+当前 iOS `scroll_and_resolve_ui_target` 也遵循同样原则：
+
+- 返回 partial / unsupported 风格语义
+- 不伪装 iOS 已具备 Android 等价的滚动解析闭环
 
 
 当前仓库默认会优先从用户目录解析 `idb` CLI 与 companion 路径，用于 iOS `inspect_ui`。在当前环境中，成功路径依赖：
@@ -284,3 +323,24 @@ pnpm mcp:stdio
 - `~/.local/share/idb-companion.universal/bin/idb_companion`
 
 若路径缺失，`doctor` 与 `inspect_ui` 都会返回明确的配置诊断，而不会伪装成已支持。
+
+## 测试与 fixture
+
+当前仓库新增了最小回归测试入口：
+
+- `pnpm test:unit`
+
+当前 fixture 位于：
+
+- `tests/fixtures/ui/android-cart.xml`
+- `tests/fixtures/ui/ios-sample.json`
+
+这些 fixture 主要用于回归验证：
+
+- Android hierarchy XML 解析与 summary
+- 查询条件组合过滤和 `query-limit`
+- bounds 结构化与动作桥接解析
+- resolution 的 `ambiguous` / `resolved` 语义
+- `wait_for_ui` 的 `visible` / `gone` / `unique` 判断语义
+- 滚动手势坐标推导
+- iOS hierarchy JSON 到 summary 的最小归一化
