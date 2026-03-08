@@ -14,6 +14,7 @@ export type {
   Session,
   SessionTimelineEvent,
   StartSessionInput,
+  TerminateAppInput,
   ToolResult,
   ToolStatus,
 } from "./types.js";
