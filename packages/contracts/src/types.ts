@@ -22,6 +22,19 @@ export interface InspectUiNode {
   scrollable: boolean;
   bounds?: string;
 }
+export interface UiPoint {
+  x: number;
+  y: number;
+}
+export interface UiBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+  center: UiPoint;
+}
 export interface InspectUiSummary {
   totalNodes: number;
   clickableNodes: number;
@@ -74,6 +87,28 @@ export interface ScreenshotInput { sessionId: string; platform: Platform; runner
 export interface TapInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; x: number; y: number; dryRun?: boolean; }
 export interface TerminateAppInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; appId?: string; dryRun?: boolean; }
 export interface TypeTextInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; text: string; dryRun?: boolean; }
+export interface TapElementInput extends InspectUiQuery {
+  sessionId: string;
+  platform: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  outputPath?: string;
+  dryRun?: boolean;
+}
+export interface TapElementData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  query: InspectUiQuery;
+  matchCount?: number;
+  matchedNode?: InspectUiNode;
+  resolvedBounds?: UiBounds;
+  resolvedX?: number;
+  resolvedY?: number;
+  command: string[];
+  exitCode: number | null;
+  supportLevel: "full" | "partial";
+}
 export interface RunFlowInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; flowPath?: string; harnessConfigPath?: string; runnerScript?: string; runCount?: number; dryRun?: boolean; artifactRoot?: string; deviceId?: string; appId?: string; launchUrl?: string; env?: Record<string, string>; }
 export interface StartSessionInput { platform: Platform; sessionId?: string; deviceId?: string; appId?: string; policyProfile?: string; phase?: string | null; profile?: RunnerProfile | null; sampleName?: string | null; artifactsRoot?: string; harnessConfigPath?: string; }
 export interface EndSessionInput { sessionId: string; artifacts?: string[]; }

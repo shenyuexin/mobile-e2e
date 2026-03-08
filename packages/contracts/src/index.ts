@@ -27,9 +27,13 @@ export type {
   Session,
   SessionTimelineEvent,
   StartSessionInput,
+  TapElementData,
+  TapElementInput,
   TapInput,
   TerminateAppInput,
   ToolResult,
   ToolStatus,
+  UiBounds,
+  UiPoint,
   TypeTextInput,
 } from "./types.js";
