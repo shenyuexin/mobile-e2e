@@ -9,6 +9,7 @@ import {
   type DeviceInfo,
   type DoctorCheck,
   type DoctorInput,
+  type InspectUiInput,
   type InstallAppInput,
   type LaunchAppInput,
   type ListDevicesInput,
@@ -43,6 +44,15 @@ interface CommandExecution {
   exitCode: number | null;
   stdout: string;
   stderr: string;
+}
+
+interface InspectUiData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  command: string[];
+  exitCode: number | null;
+  content?: string;
 }
 
 interface ScreenshotData {
@@ -1071,6 +1081,77 @@ async function collectInstallStateChecks(repoRoot: string): Promise<DoctorCheck[
   }
 
   return checks;
+}
+
+export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolResult<InspectUiData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? (input.platform === "android" ? "emulator-5554" : "ADA078B9-3C6B-4875-8B85-A7789F368816");
+  const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "ui-dumps", input.sessionId, `${input.platform}-${runnerProfile}.xml`);
+  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
+
+  if (input.platform === "ios") {
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { dryRun: Boolean(input.dryRun), runnerProfile, outputPath: relativeOutputPath, command: [], exitCode: null },
+      nextSuggestions: ["inspect_ui currently supports Android via uiautomator dump. iOS hierarchy export is not yet wired in this repo."],
+    };
+  }
+
+  const dumpCommand = ["adb", "-s", deviceId, "shell", "uiautomator", "dump", "/sdcard/view.xml"];
+  const readCommand = ["adb", "-s", deviceId, "shell", "cat", "/sdcard/view.xml"];
+
+  await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { dryRun: true, runnerProfile, outputPath: relativeOutputPath, command: [...dumpCommand, ...readCommand], exitCode: 0 },
+      nextSuggestions: ["Run inspect_ui without dryRun to capture an actual Android hierarchy dump."],
+    };
+  }
+
+  const dumpExecution = await executeRunner(dumpCommand, repoRoot, process.env);
+  if (dumpExecution.exitCode !== 0) {
+    return {
+      status: "failed",
+      reasonCode: buildFailureReason(dumpExecution.stderr, dumpExecution.exitCode),
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command: dumpCommand, exitCode: dumpExecution.exitCode },
+      nextSuggestions: ["Check Android device state and ensure uiautomator dump is permitted before retrying inspect_ui."],
+    };
+  }
+
+  const readExecution = await executeRunner(readCommand, repoRoot, process.env);
+  if (readExecution.exitCode === 0) {
+    await writeFile(absoluteOutputPath, readExecution.stdout, "utf8");
+  }
+
+  return {
+    status: readExecution.exitCode === 0 ? "success" : "failed",
+    reasonCode: readExecution.exitCode === 0 ? REASON_CODES.ok : buildFailureReason(readExecution.stderr, readExecution.exitCode),
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: readExecution.exitCode === 0 ? [toRelativePath(repoRoot, absoluteOutputPath)] : [],
+    data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command: readCommand, exitCode: readExecution.exitCode, content: readExecution.exitCode === 0 ? readExecution.stdout : undefined },
+    nextSuggestions: readExecution.exitCode === 0 ? [] : ["Check Android device state before retrying inspect_ui."],
+  };
 }
 
 export async function terminateAppWithMaestro(input: TerminateAppInput): Promise<ToolResult<TerminateAppData>> {

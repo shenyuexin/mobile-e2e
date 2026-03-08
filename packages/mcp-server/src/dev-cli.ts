@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { DoctorInput, InstallAppInput, LaunchAppInput, ListDevicesInput, Platform, RunFlowInput, RunnerProfile, ScreenshotInput, StartSessionInput, TerminateAppInput } from "@mobile-e2e-mcp/contracts";
+import type { DoctorInput, InspectUiInput, InstallAppInput, LaunchAppInput, ListDevicesInput, Platform, RunFlowInput, RunnerProfile, ScreenshotInput, StartSessionInput, TerminateAppInput } from "@mobile-e2e-mcp/contracts";
 import { createServer } from "./index.js";
 
 interface CliOptions {
@@ -7,6 +7,7 @@ interface CliOptions {
   doctor: boolean;
   dryRun: boolean;
   includeUnavailable: boolean;
+  inspectUi: boolean;
   installApp: boolean;
   launchApp: boolean;
   listDevices: boolean;
@@ -32,6 +33,7 @@ function parseCliArgs(argv: string[]): CliOptions {
   let doctor = false;
   let dryRun = false;
   let includeUnavailable = false;
+  let inspectUi = false;
   let installApp = false;
   let launchApp = false;
   let listDevices = false;
@@ -55,6 +57,7 @@ function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--doctor") { doctor = true; }
     else if (arg === "--dry-run") { dryRun = true; }
     else if (arg === "--include-unavailable") { includeUnavailable = true; }
+    else if (arg === "--inspect-ui") { inspectUi = true; }
     else if (arg === "--install-app") { installApp = true; }
     else if (arg === "--launch-app") { launchApp = true; }
     else if (arg === "--list-devices") { listDevices = true; }
@@ -72,7 +75,7 @@ function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--session-id" && nextValue) { sessionId = nextValue; index += 1; }
   }
 
-  return { platform, doctor, dryRun, includeUnavailable, installApp, launchApp, listDevices, takeScreenshot, terminateApp, runCount, artifactPath, outputPath, launchUrl, appId, deviceId, runnerProfile, flowPath, harnessConfigPath, sessionId };
+  return { platform, doctor, dryRun, includeUnavailable, inspectUi, installApp, launchApp, listDevices, takeScreenshot, terminateApp, runCount, artifactPath, outputPath, launchUrl, appId, deviceId, runnerProfile, flowPath, harnessConfigPath, sessionId };
 }
 
 async function main(): Promise<void> {
@@ -88,6 +91,13 @@ async function main(): Promise<void> {
   if (cliOptions.listDevices) {
     const result = await server.invoke("list_devices", { includeUnavailable: cliOptions.includeUnavailable } satisfies ListDevicesInput);
     console.log(JSON.stringify({ tools: server.listTools(), listDevicesResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.inspectUi) {
+    const inspectInput: InspectUiInput = { sessionId: cliOptions.sessionId ?? `inspect-${Date.now()}`, platform: cliOptions.platform, runnerProfile: cliOptions.runnerProfile, harnessConfigPath: cliOptions.harnessConfigPath, deviceId: cliOptions.deviceId, outputPath: cliOptions.outputPath, dryRun: cliOptions.dryRun };
+    const result = await server.invoke("inspect_ui", inspectInput);
+    console.log(JSON.stringify({ tools: server.listTools(), inspectUiResult: result }, null, 2));
     if (result.status === "failed") process.exitCode = 1;
     return;
   }
