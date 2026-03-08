@@ -253,3 +253,6 @@ pnpm mcp:stdio
 
 
 当前 `inspect_ui` 在 Android 上除了原始 XML，还会返回结构化摘要，包括节点总数、可点击节点数量、带 content-desc/text 的 sample nodes，作为后续元素级交互的基础输入。
+
+
+当前 iOS `inspect_ui` 不再是假定 simctl 能导出 tree，而是明确依赖 `idb ui describe-all --json --nested`。若环境未安装 `idb-companion` / `fb-idb`，工具会返回配置型 partial/failed 结果并提示安装。

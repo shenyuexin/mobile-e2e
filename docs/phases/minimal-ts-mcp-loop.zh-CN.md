@@ -71,6 +71,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --type-text --p
 - `terminate_app` 实机验证：Android dry-run 与真实终止均成功
 - `inspect_ui` 实机验证：Android hierarchy dump 成功，iOS 明确返回 partial 支持
 - `inspect_ui` 现已附带结构化摘要（节点数、可点击节点、sample nodes），便于后续 `tap` / `type_text` 消费
+- iOS inspect_ui 走 idb 分支：当前环境若未安装 idb，会返回明确的 `CONFIGURATION_ERROR` 与安装建议
 - `tap` 实机验证：Android 坐标点击 dry-run 与真实执行均成功
 - `type_text` 实机验证：Android 文本输入 dry-run 与真实执行均成功
 
