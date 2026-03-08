@@ -15,6 +15,7 @@ export type {
   Session,
   SessionTimelineEvent,
   StartSessionInput,
+  TapInput,
   TerminateAppInput,
   ToolResult,
   ToolStatus,
