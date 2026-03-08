@@ -22,6 +22,7 @@
 9. 新增最小 install_app 工具
 10. 新增最小 launch_app 工具
 11. 新增最小 take_screenshot 工具
+12. 新增最小 terminate_app 工具
 
 ## 当前最小验证入口
 
@@ -45,6 +46,7 @@ printf '%s\n%s\n' '{"id":1,"method":"initialize"}' '{"id":2,"method":"list_tools
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --install-app --platform android --runner-profile native_android --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --launch-app --platform android --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --take-screenshot --platform android --runner-profile phase1 --dry-run
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --terminate-app --platform android --runner-profile phase1 --dry-run
 ```
 
 ## 已验证结果
@@ -60,6 +62,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --take-screensh
 - `install_app` 实机验证：dry-run 成功，真实 Android 安装如实返回 `CONFIGURATION_ERROR` 与人工处理建议
 - `launch_app` 实机验证：phase1 Android/iOS dry-run 成功，Android 真实启动成功
 - `take_screenshot` 实机验证：Android dry-run 成功，真实截图 artifact 已输出
+- `terminate_app` 实机验证：Android dry-run 与真实终止均成功
 
 ## 已知限制
 
