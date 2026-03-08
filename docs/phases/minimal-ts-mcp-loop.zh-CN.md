@@ -20,6 +20,7 @@
 7. 新增最小 `doctor` 与 `list_devices` 诊断入口
 8. 新增最小 stdio transport 入口
 9. 新增最小 install_app 工具
+10. 新增最小 launch_app 工具
 
 ## 当前最小验证入口
 
@@ -41,6 +42,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --list-devices 
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --doctor --include-unavailable
 printf '%s\n%s\n' '{"id":1,"method":"initialize"}' '{"id":2,"method":"list_tools"}' | pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/stdio-server.ts
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --install-app --platform android --runner-profile native_android --dry-run
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --launch-app --platform android --runner-profile phase1 --dry-run
 ```
 
 ## 已验证结果
@@ -54,6 +56,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --install-app -
 - `list_devices` 实机验证：成功返回 Android emulator 与 iOS simulators 的结构化清单
 - `stdio` 实机验证：成功完成 initialize / list_tools / invoke(doctor) 的 stdin/stdout 往返
 - `install_app` 实机验证：dry-run 成功，真实 Android 安装如实返回 `CONFIGURATION_ERROR` 与人工处理建议
+- `launch_app` 实机验证：phase1 Android/iOS dry-run 成功，Android 真实启动成功
 
 ## 已知限制
 
