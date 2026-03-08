@@ -10,6 +10,8 @@ import {
   type DoctorCheck,
   type DoctorInput,
   type InspectUiInput,
+  type InspectUiNode,
+  type InspectUiSummary,
   type InstallAppInput,
   type LaunchAppInput,
   type ListDevicesInput,
@@ -55,6 +57,7 @@ interface InspectUiData {
   command: string[];
   exitCode: number | null;
   content?: string;
+  summary?: InspectUiSummary;
 }
 
 interface TypeTextData {
@@ -201,6 +204,56 @@ function readStringArray(record: Record<string, unknown>, key: string): string[]
   }
 
   return value.filter((item): item is string => typeof item === "string" && item.length > 0);
+}
+
+function decodeXmlText(value: string | undefined): string | undefined {
+  if (!value) {
+    return value;
+  }
+  return value
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&#10;", "\n")
+    .replaceAll("&#39;", "'");
+}
+
+function parseInspectUiSummary(xml: string): InspectUiSummary {
+  const nodes: InspectUiNode[] = [];
+  const nodeRegex = /<node([^>]*)\/?>(?:<\/node>)?/g;
+
+  for (const match of xml.matchAll(nodeRegex)) {
+    const rawAttributes = match[1] ?? "";
+    const attributes = Object.fromEntries(
+      Array.from(rawAttributes.matchAll(/([\w:-]+)="([^"]*)"/g)).map(([, key, value]) => [key, decodeXmlText(value) ?? ""]),
+    );
+
+    const node: InspectUiNode = {
+      index: attributes.index ? Number(attributes.index) : undefined,
+      text: attributes.text || undefined,
+      resourceId: attributes["resource-id"] || undefined,
+      className: attributes.class || undefined,
+      packageName: attributes.package || undefined,
+      contentDesc: attributes["content-desc"] || undefined,
+      clickable: attributes.clickable === "true",
+      enabled: attributes.enabled !== "false",
+      scrollable: attributes.scrollable === "true",
+      bounds: attributes.bounds || undefined,
+    };
+    nodes.push(node);
+  }
+
+  const sampleNodes = nodes.filter((node) => node.clickable || node.text || node.contentDesc || node.resourceId).slice(0, 25);
+  return {
+    totalNodes: nodes.length,
+    clickableNodes: nodes.filter((node) => node.clickable).length,
+    scrollableNodes: nodes.filter((node) => node.scrollable).length,
+    nodesWithText: nodes.filter((node) => Boolean(node.text)).length,
+    nodesWithContentDesc: nodes.filter((node) => Boolean(node.contentDesc)).length,
+    sampleNodes,
+  };
 }
 
 function toRelativePath(repoRoot: string, targetPath: string): string {
@@ -1263,7 +1316,15 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
     durationMs: Date.now() - startTime,
     attempts: 1,
     artifacts: readExecution.exitCode === 0 ? [toRelativePath(repoRoot, absoluteOutputPath)] : [],
-    data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command: readCommand, exitCode: readExecution.exitCode, content: readExecution.exitCode === 0 ? readExecution.stdout : undefined },
+    data: {
+      dryRun: false,
+      runnerProfile,
+      outputPath: relativeOutputPath,
+      command: readCommand,
+      exitCode: readExecution.exitCode,
+      content: readExecution.exitCode === 0 ? readExecution.stdout : undefined,
+      summary: readExecution.exitCode === 0 ? parseInspectUiSummary(readExecution.stdout) : undefined,
+    },
     nextSuggestions: readExecution.exitCode === 0 ? [] : ["Check Android device state before retrying inspect_ui."],
   };
 }
