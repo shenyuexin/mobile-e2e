@@ -320,6 +320,7 @@ export async function main(): Promise<void> {
       harnessConfigPath: cliOptions.harnessConfigPath,
       deviceId: cliOptions.deviceId,
       appId: cliOptions.appId,
+      metroBaseUrl: cliOptions.metroBaseUrl,
       outputPath: cliOptions.outputPath,
       logLines: cliOptions.lines,
       targetId: cliOptions.targetId,

@@ -3856,8 +3856,9 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     : path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics`);
   const effectiveAppId = input.appId ?? selection.appId;
   const includeJsInspector = input.includeJsInspector ?? true;
+  const effectiveMetroBaseUrl = normalizeMetroBaseUrl(input.metroBaseUrl);
   const discoveredTargetsResult = includeJsInspector && !input.targetId && !input.webSocketDebuggerUrl
-    ? await listJsDebugTargetsWithMaestro({ sessionId: input.sessionId, dryRun: input.dryRun })
+    ? await listJsDebugTargetsWithMaestro({ sessionId: input.sessionId, metroBaseUrl: input.metroBaseUrl, dryRun: input.dryRun })
     : undefined;
   const discoveredTarget = discoveredTargetsResult?.status === "success"
     ? selectPreferredJsDebugTarget(discoveredTargetsResult.data.targets)
@@ -4020,6 +4021,8 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       outputPath: relativeOutputPath,
       supportLevel: "full",
       appId: effectiveAppId,
+      jsDebugMetroBaseUrl: includeJsInspector ? effectiveMetroBaseUrl : undefined,
+      jsDebugTargetEndpoint: discoveredTargetsResult?.data.endpoint,
       jsDebugTargetId: effectiveTargetId,
       jsDebugTargetTitle: discoveredTarget?.title,
       logSummary: logsResult.data.summary,
