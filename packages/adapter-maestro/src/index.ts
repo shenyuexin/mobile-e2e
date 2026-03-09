@@ -578,6 +578,41 @@ function buildDebugNarrative(params: {
   return narrative;
 }
 
+function buildSuspectAreas(params: {
+  crashSummary?: LogSummary;
+  logSummary?: LogSummary;
+  jsConsoleSummary?: JsConsoleLogSummary;
+  jsNetworkSummary?: JsNetworkFailureSummary;
+}): string[] {
+  const suspects: string[] = [];
+
+  const topCrash = params.crashSummary?.topSignals[0];
+  if (topCrash) {
+    suspects.push(`Crash suspect: ${topCrash.sample}`);
+  }
+
+  const topLog = params.logSummary?.topSignals[0];
+  if (topLog && (!topCrash || topLog.sample !== topCrash.sample)) {
+    suspects.push(`Runtime log suspect: ${topLog.sample}`);
+  }
+
+  if ((params.jsConsoleSummary?.exceptionCount ?? 0) > 0) {
+    suspects.push(`JS exception suspect: ${String(params.jsConsoleSummary?.exceptionCount ?? 0)} inspector exception event(s) captured.`);
+  }
+
+  const topNetworkStatus = params.jsNetworkSummary?.statusGroups[0];
+  if (topNetworkStatus) {
+    suspects.push(`Network suspect: status ${topNetworkStatus.key} seen ${String(topNetworkStatus.count)} time(s)${topNetworkStatus.sampleUrl ? ` (${topNetworkStatus.sampleUrl})` : ""}.`);
+  }
+
+  const topNetworkError = params.jsNetworkSummary?.errorGroups[0];
+  if (topNetworkError) {
+    suspects.push(`Network error suspect: ${topNetworkError.key} seen ${String(topNetworkError.count)} time(s)${topNetworkError.sampleUrl ? ` (${topNetworkError.sampleUrl})` : ""}.`);
+  }
+
+  return suspects.slice(0, 5);
+}
+
 function buildIosLogPredicateForApp(appId: string): string {
   const escaped = appId.replaceAll("'", "\\'");
   return `eventMessage CONTAINS[c] '${escaped}' OR processImagePath CONTAINS[c] '${escaped}' OR senderImagePath CONTAINS[c] '${escaped}'`;
@@ -605,6 +640,10 @@ function normalizeJsDebugTarget(raw: unknown): JsDebugTarget | undefined {
     deviceName: readNonEmptyString(raw, "deviceName") ?? undefined,
     webSocketDebuggerUrl: readNonEmptyString(raw, "webSocketDebuggerUrl") ?? undefined,
   };
+}
+
+export function selectPreferredJsDebugTarget(targets: JsDebugTarget[]): JsDebugTarget | undefined {
+  return targets.find((target) => target.webSocketDebuggerUrl) ?? targets[0];
 }
 
 function buildInspectorWebSocketUrl(metroBaseUrl: string, targetId: string): string {
@@ -3821,7 +3860,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     ? await listJsDebugTargetsWithMaestro({ sessionId: input.sessionId, dryRun: input.dryRun })
     : undefined;
   const discoveredTarget = discoveredTargetsResult?.status === "success"
-    ? discoveredTargetsResult.data.targets.find((target) => target.webSocketDebuggerUrl) ?? discoveredTargetsResult.data.targets[0]
+    ? selectPreferredJsDebugTarget(discoveredTargetsResult.data.targets)
     : undefined;
   const effectiveTargetId = input.targetId ?? discoveredTarget?.id;
   const effectiveWebSocketDebuggerUrl = input.webSocketDebuggerUrl ?? discoveredTarget?.webSocketDebuggerUrl;
@@ -3891,6 +3930,12 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     ...(diagnosticsResult?.artifacts ?? []),
   ];
   const interestingSignals = mergeSignalSummaries(logsResult.data.summary, crashResult.data.summary);
+  const suspectAreas = buildSuspectAreas({
+    crashSummary: crashResult.data.summary,
+    logSummary: logsResult.data.summary,
+    jsConsoleSummary: jsConsoleResult?.data.summary,
+    jsNetworkSummary: jsNetworkResult?.data.summary,
+  });
   const narrative = buildDebugNarrative({
     appId: effectiveAppId,
     appFilterApplied: logsResult.data.appFilterApplied,
@@ -3939,6 +3984,9 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       "## Top Signals",
       ...(interestingSignals.length > 0 ? interestingSignals.map((signal) => `- [${signal.category}] x${String(signal.count)} ${signal.sample}`) : ["- <no interesting signals detected>"]),
       "",
+      "## Suspect Areas",
+      ...(suspectAreas.length > 0 ? suspectAreas.map((item) => `- ${item}`) : ["- <no prioritized suspects yet>"]),
+      "",
       "## Evidence Paths",
       ...(evidencePaths.length > 0 ? evidencePaths.map((item) => `- ${item}`) : ["- <no evidence paths recorded>"]),
     ].join(String.fromCharCode(10)) + String.fromCharCode(10);
@@ -3978,6 +4026,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       crashSummary: crashResult.data.summary,
       jsConsoleLogCount: jsConsoleResult?.data.collectedCount,
       jsNetworkEventCount: jsNetworkResult?.data.collectedCount,
+      suspectAreas,
       interestingSignals,
       evidencePaths: [...summaryArtifactPath, ...evidencePaths],
       evidenceCount: summaryArtifactPath.length + evidencePaths.length,
