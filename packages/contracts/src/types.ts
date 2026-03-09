@@ -115,6 +115,7 @@ export interface GetLogsInput {
   runnerProfile?: RunnerProfile;
   harnessConfigPath?: string;
   deviceId?: string;
+  appId?: string;
   outputPath?: string;
   lines?: number;
   sinceSeconds?: number;
@@ -143,6 +144,8 @@ export interface GetLogsData {
   lineCount: number;
   linesRequested?: number;
   sinceSeconds: number;
+  appId?: string;
+  appFilterApplied: boolean;
   query?: string;
   content?: string;
   summary?: LogSummary;
@@ -153,6 +156,7 @@ export interface GetCrashSignalsInput {
   runnerProfile?: RunnerProfile;
   harnessConfigPath?: string;
   deviceId?: string;
+  appId?: string;
   outputPath?: string;
   lines?: number;
   dryRun?: boolean;
@@ -166,6 +170,7 @@ export interface GetCrashSignalsData {
   supportLevel: "full" | "partial";
   signalCount: number;
   linesRequested?: number;
+  appId?: string;
   entries: string[];
   content?: string;
   summary?: LogSummary;
@@ -195,6 +200,7 @@ export interface CollectDebugEvidenceInput {
   runnerProfile?: RunnerProfile;
   harnessConfigPath?: string;
   deviceId?: string;
+  appId?: string;
   outputPath?: string;
   logLines?: number;
   sinceSeconds?: number;
@@ -207,6 +213,7 @@ export interface CollectDebugEvidenceData {
   runnerProfile: RunnerProfile;
   outputPath: string;
   supportLevel: "full" | "partial";
+  appId?: string;
   logSummary?: LogSummary;
   crashSummary?: LogSummary;
   interestingSignals: DebugSignalSummary[];
@@ -282,6 +289,26 @@ export interface TypeIntoElementData {
   resolution: UiTargetResolution;
   commands: string[][];
   exitCode: number | null;
+  supportLevel: "full" | "partial";
+}
+export type UiOrchestrationStep = "scroll_resolve" | "tap";
+export interface UiOrchestrationStepResult {
+  step: UiOrchestrationStep;
+  status: ToolStatus;
+  reasonCode: ReasonCode;
+  note?: string;
+}
+export interface ScrollAndTapElementInput extends ScrollAndResolveUiTargetInput {}
+export interface ScrollAndTapElementData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  query: InspectUiQuery;
+  maxSwipes: number;
+  swipeDirection: UiScrollDirection;
+  swipeDurationMs: number;
+  stepResults: UiOrchestrationStepResult[];
+  resolveResult: ScrollAndResolveUiTargetData;
+  tapResult?: TapElementData;
   supportLevel: "full" | "partial";
 }
 export type WaitForUiMode = "visible" | "gone" | "unique";
