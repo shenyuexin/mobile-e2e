@@ -34,3 +34,11 @@ Current evidence-model coverage includes:
 
 - adapter-level dry-run evidence emission checks for screenshot, UI dump, logs, crash signals, diagnostics, and aggregated debug evidence
 - compatibility guarantee that structured `evidence[]` is additive and does not replace the legacy top-level `artifacts[]`
+
+Current regression layers are now explicitly named:
+
+- `pnpm test:adapter` - adapter-only deterministic unit coverage
+- `pnpm test:mcp-server` - server/stdio/dev-cli smoke coverage
+- `pnpm test:unit` - combined no-device regression layer
+- `pnpm test:smoke` - asserted root dry-run validation layer
+- `pnpm test:ci` - build + typecheck + unit + smoke in one CI-oriented sequence
