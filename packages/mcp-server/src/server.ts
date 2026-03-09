@@ -3,6 +3,8 @@ import type {
   DoctorCheck,
   DoctorInput,
   EndSessionInput,
+  GetCrashSignalsData,
+  GetCrashSignalsInput,
   GetLogsData,
   GetLogsInput,
   InspectUiInput,
@@ -33,6 +35,7 @@ import type {
 
 export interface MobileE2EMcpToolRegistry {
   doctor: (input: DoctorInput) => Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>>;
+  get_crash_signals: (input: GetCrashSignalsInput) => Promise<ToolResult<GetCrashSignalsData>>;
   get_logs: (input: GetLogsInput) => Promise<ToolResult<GetLogsData>>;
   inspect_ui: (input: InspectUiInput) => Promise<ToolResult>;
   query_ui: (input: QueryUiInput) => Promise<ToolResult<QueryUiData>>;
@@ -57,10 +60,11 @@ export class MobileE2EMcpServer {
   constructor(private readonly tools: MobileE2EMcpToolRegistry) {}
 
   listTools(): Array<keyof MobileE2EMcpToolRegistry> {
-    return ["doctor", "get_logs", "inspect_ui", "query_ui", "resolve_ui_target", "scroll_and_resolve_ui_target", "install_app", "launch_app", "list_devices", "start_session", "run_flow", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
+    return ["doctor", "get_crash_signals", "get_logs", "inspect_ui", "query_ui", "resolve_ui_target", "scroll_and_resolve_ui_target", "install_app", "launch_app", "list_devices", "start_session", "run_flow", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
   }
 
   async invoke(toolName: "doctor", input: DoctorInput): Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>>;
+  async invoke(toolName: "get_crash_signals", input: GetCrashSignalsInput): Promise<ToolResult<GetCrashSignalsData>>;
   async invoke(toolName: "get_logs", input: GetLogsInput): Promise<ToolResult<GetLogsData>>;
   async invoke(toolName: "inspect_ui", input: InspectUiInput): Promise<ToolResult>;
   async invoke(toolName: "query_ui", input: QueryUiInput): Promise<ToolResult<QueryUiData>>;
@@ -81,9 +85,10 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "end_session", input: EndSessionInput): Promise<ToolResult<{ closed: boolean; endedAt: string }>>;
   async invoke(
     toolName: keyof MobileE2EMcpToolRegistry,
-    input: DoctorInput | GetLogsInput | InspectUiInput | QueryUiInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | InstallAppInput | LaunchAppInput | ListDevicesInput | StartSessionInput | RunFlowInput | ScreenshotInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
+    input: DoctorInput | GetCrashSignalsInput | GetLogsInput | InspectUiInput | QueryUiInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | InstallAppInput | LaunchAppInput | ListDevicesInput | StartSessionInput | RunFlowInput | ScreenshotInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
   ): Promise<
     | ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>
+    | ToolResult<GetCrashSignalsData>
     | ToolResult<GetLogsData>
     | ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>
     | ToolResult<Session>
@@ -97,6 +102,7 @@ export class MobileE2EMcpServer {
     | ToolResult<{ closed: boolean; endedAt: string }>
   > {
     if (toolName === "doctor") return this.tools.doctor(input as DoctorInput);
+    if (toolName === "get_crash_signals") return this.tools.get_crash_signals(input as GetCrashSignalsInput);
     if (toolName === "get_logs") return this.tools.get_logs(input as GetLogsInput);
     if (toolName === "inspect_ui") return this.tools.inspect_ui(input as InspectUiInput);
     if (toolName === "query_ui") return this.tools.query_ui(input as QueryUiInput);

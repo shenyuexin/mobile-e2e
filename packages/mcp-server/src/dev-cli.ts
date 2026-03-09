@@ -1,11 +1,13 @@
-import type { DoctorInput, GetLogsInput, InspectUiInput, InstallAppInput, LaunchAppInput, ListDevicesInput, Platform, QueryUiInput, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, StartSessionInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
+import type { DoctorInput, GetCrashSignalsInput, GetLogsInput, InspectUiInput, InstallAppInput, LaunchAppInput, ListDevicesInput, Platform, QueryUiInput, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, StartSessionInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { createServer } from "./index.js";
 
 interface CliOptions {
   platform: Platform;
   doctor: boolean;
   dryRun: boolean;
+  getCrashSignals: boolean;
   includeUnavailable: boolean;
   getLogs: boolean;
   inspectUi: boolean;
@@ -64,10 +66,11 @@ function parseBooleanArg(value: string | undefined): boolean | undefined {
   return undefined;
 }
 
-function parseCliArgs(argv: string[]): CliOptions {
+export function parseCliArgs(argv: string[]): CliOptions {
   let platform: Platform = "android";
   let doctor = false;
   let dryRun = false;
+  let getCrashSignals = false;
   let includeUnavailable = false;
   let getLogs = false;
   let inspectUi = false;
@@ -119,6 +122,7 @@ function parseCliArgs(argv: string[]): CliOptions {
     if (arg === "--platform" && (nextValue === "android" || nextValue === "ios")) { platform = nextValue; index += 1; }
     else if (arg === "--doctor") { doctor = true; }
     else if (arg === "--dry-run") { dryRun = true; }
+    else if (arg === "--get-crash-signals") { getCrashSignals = true; }
     else if (arg === "--include-unavailable") { includeUnavailable = true; }
     else if (arg === "--get-logs") { getLogs = true; }
     else if (arg === "--inspect-ui") { inspectUi = true; }
@@ -169,6 +173,7 @@ function parseCliArgs(argv: string[]): CliOptions {
     platform,
     doctor,
     dryRun,
+    getCrashSignals,
     includeUnavailable,
     getLogs,
     inspectUi,
@@ -216,7 +221,7 @@ function parseCliArgs(argv: string[]): CliOptions {
   };
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const cliOptions = parseCliArgs(process.argv.slice(2));
   const server = createServer();
 
@@ -229,6 +234,22 @@ async function main(): Promise<void> {
   if (cliOptions.listDevices) {
     const result = await server.invoke("list_devices", { includeUnavailable: cliOptions.includeUnavailable } satisfies ListDevicesInput);
     console.log(JSON.stringify({ tools: server.listTools(), listDevicesResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.getCrashSignals) {
+    const getCrashSignalsInput: GetCrashSignalsInput = {
+      sessionId: cliOptions.sessionId ?? `crash-signals-${Date.now()}`,
+      platform: cliOptions.platform,
+      runnerProfile: cliOptions.runnerProfile,
+      harnessConfigPath: cliOptions.harnessConfigPath,
+      deviceId: cliOptions.deviceId,
+      outputPath: cliOptions.outputPath,
+      lines: cliOptions.lines,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("get_crash_signals", getCrashSignalsInput);
+    console.log(JSON.stringify({ tools: server.listTools(), getCrashSignalsResult: result }, null, 2));
     if (result.status === "failed") process.exitCode = 1;
     return;
   }
@@ -440,8 +461,12 @@ async function main(): Promise<void> {
   if (runResult.status === "failed") process.exitCode = 1;
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
-  console.error(message);
-  process.exitCode = 1;
-});
+const isEntrypoint = process.argv[1] ? fileURLToPath(import.meta.url) === process.argv[1] : false;
+
+if (isEntrypoint) {
+  main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(message);
+    process.exitCode = 1;
+  });
+}

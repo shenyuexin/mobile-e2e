@@ -1,19 +1,20 @@
 import process from "node:process";
 import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 import { createServer } from "./index.js";
 
-interface StdioRequest {
+export interface StdioRequest {
   id?: string | number | null;
   method: string;
   params?: unknown;
 }
 
-interface StdioSuccessResponse {
+export interface StdioSuccessResponse {
   id: string | number | null;
   result: unknown;
 }
 
-interface StdioErrorResponse {
+export interface StdioErrorResponse {
   id: string | number | null;
   error: {
     code: string;
@@ -21,21 +22,22 @@ interface StdioErrorResponse {
   };
 }
 
-function writeResponse(response: StdioSuccessResponse | StdioErrorResponse): void {
+export function writeResponse(response: StdioSuccessResponse | StdioErrorResponse): void {
   process.stdout.write(`${JSON.stringify(response)}
 `);
 }
 
-function toErrorMessage(error: unknown): string {
+export function toErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
   return String(error);
 }
 
-function buildToolList() {
+export function buildToolList() {
   return [
     { name: "doctor", description: "Check command availability and device readiness." },
+    { name: "get_crash_signals", description: "Capture recent Android crash or ANR evidence and inspect the iOS simulator crash reporter tree." },
     { name: "get_logs", description: "Capture recent Android logcat output or recent iOS simulator logs." },
     { name: "inspect_ui", description: "Capture an Android UI hierarchy dump or return partial support for iOS." },
     { name: "query_ui", description: "Query Android hierarchy dumps by selector fields and return partial support for iOS." },
@@ -57,7 +59,7 @@ function buildToolList() {
   ];
 }
 
-async function handleRequest(request: StdioRequest): Promise<unknown> {
+export async function handleRequest(request: StdioRequest): Promise<unknown> {
   const server = createServer();
 
   if (request.method === "ping") {
@@ -84,7 +86,7 @@ async function handleRequest(request: StdioRequest): Promise<unknown> {
   throw new Error(`Unsupported stdio method: ${request.method}`);
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const lineReader = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of lineReader) {
     if (!line.trim()) {
@@ -106,8 +108,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${toErrorMessage(error)}
+const isEntrypoint = process.argv[1] ? fileURLToPath(import.meta.url) === process.argv[1] : false;
+
+if (isEntrypoint) {
+  main().catch((error: unknown) => {
+    process.stderr.write(`${toErrorMessage(error)}
 `);
-  process.exitCode = 1;
-});
+    process.exitCode = 1;
+  });
+}

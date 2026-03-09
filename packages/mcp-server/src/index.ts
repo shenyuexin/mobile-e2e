@@ -1,6 +1,7 @@
 import { MobileE2EMcpServer } from "./server.js";
 import { doctor } from "./tools/doctor.js";
 import { endSession } from "./tools/end-session.js";
+import { getCrashSignals } from "./tools/get-crash-signals.js";
 import { getLogs } from "./tools/get-logs.js";
 import { inspectUi } from "./tools/inspect-ui.js";
 import { installApp } from "./tools/install-app.js";
@@ -22,6 +23,7 @@ import { waitForUi } from "./tools/wait-for-ui.js";
 export function createServer(): MobileE2EMcpServer {
   return new MobileE2EMcpServer({
     doctor,
+    get_crash_signals: getCrashSignals,
     get_logs: getLogs,
     inspect_ui: inspectUi,
     query_ui: queryUi,
