@@ -1,6 +1,8 @@
 import {
   type CollectDebugEvidenceData,
   type CollectDebugEvidenceInput,
+  type CaptureJsConsoleLogsData,
+  type CaptureJsConsoleLogsInput,
   type DescribeCapabilitiesData,
   type DescribeCapabilitiesInput,
   type CollectDiagnosticsData,
@@ -8,8 +10,10 @@ import {
   type DebugSignalSummary,
   type GetCrashSignalsData,
   type GetCrashSignalsInput,
+  type ExecutionEvidence,
   type GetLogsData,
   type GetLogsInput,
+  type InspectUiData,
   type ResolveUiTargetData,
   type ResolveUiTargetInput,
   type DeviceInfo,
@@ -20,6 +24,10 @@ import {
   type InspectUiSummary,
   type InstallAppInput,
   type LaunchAppInput,
+  type ListJsDebugTargetsData,
+  type ListJsDebugTargetsInput,
+  type JsDebugTarget,
+  type JsConsoleLogEntry,
   type ListDevicesInput,
   type LogSummary,
   type Platform,
@@ -99,18 +107,6 @@ interface CommandExecution {
   stderr: string;
 }
 
-interface InspectUiData {
-  dryRun: boolean;
-  runnerProfile: RunnerProfile;
-  outputPath: string;
-  command: string[];
-  exitCode: number | null;
-  supportLevel: "full" | "partial";
-  platformSupportNote?: string;
-  content?: string;
-  summary?: InspectUiSummary;
-}
-
 interface GetLogsCapture {
   relativeOutputPath: string;
   absoluteOutputPath: string;
@@ -142,6 +138,9 @@ const DEFAULT_WAIT_INTERVAL_MS = 500;
 const DEFAULT_GET_LOGS_LINES = 200;
 const DEFAULT_GET_LOGS_SINCE_SECONDS = 60;
 const DEFAULT_GET_CRASH_LINES = 120;
+const DEFAULT_METRO_BASE_URL = "http://127.0.0.1:8081";
+const DEFAULT_METRO_TIMEOUT_MS = 3000;
+const DEFAULT_JS_LOG_MAX_LOGS = 50;
 const DEFAULT_SCROLL_MAX_SWIPES = 3;
 const DEFAULT_SCROLL_DURATION_MS = 250;
 const DEFAULT_WAIT_UNTIL: WaitForUiMode = "visible";
@@ -189,6 +188,7 @@ interface ScreenshotData {
   outputPath: string;
   command: string[];
   exitCode: number | null;
+  evidence?: ExecutionEvidence[];
 }
 
 interface TerminateAppData {
@@ -306,6 +306,10 @@ function buildIdbCommand(baseArgs: string[]): string[] {
   const idbCliPath = resolveIdbCliPath() ?? "idb";
   const companionPath = resolveIdbCompanionPath();
   return companionPath ? [idbCliPath, "--companion-path", companionPath, ...baseArgs] : [idbCliPath, ...baseArgs];
+}
+
+function buildExecutionEvidence(kind: ExecutionEvidence["kind"], pathValue: string, supportLevel: "full" | "partial", description: string): ExecutionEvidence {
+  return { kind, path: pathValue, supportLevel, description };
 }
 
 const DEFAULT_RUNNER_PROFILE: RunnerProfile = "phase1";
@@ -569,6 +573,59 @@ function buildDebugNarrative(params: {
 function buildIosLogPredicateForApp(appId: string): string {
   const escaped = appId.replaceAll("'", "\\'");
   return `eventMessage CONTAINS[c] '${escaped}' OR processImagePath CONTAINS[c] '${escaped}' OR senderImagePath CONTAINS[c] '${escaped}'`;
+}
+
+function normalizeMetroBaseUrl(value: string | undefined): string {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed.replace(/\/+$/, "") : DEFAULT_METRO_BASE_URL;
+}
+
+function normalizeJsDebugTarget(raw: unknown): JsDebugTarget | undefined {
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+
+  const id = readNonEmptyString(raw, "id") ?? readNonEmptyString(raw, "deviceId");
+  if (!id) {
+    return undefined;
+  }
+
+  return {
+    id,
+    title: readNonEmptyString(raw, "title") ?? undefined,
+    description: readNonEmptyString(raw, "description") ?? undefined,
+    deviceName: readNonEmptyString(raw, "deviceName") ?? undefined,
+    webSocketDebuggerUrl: readNonEmptyString(raw, "webSocketDebuggerUrl") ?? undefined,
+  };
+}
+
+function buildInspectorWebSocketUrl(metroBaseUrl: string, targetId: string): string {
+  const base = new URL(metroBaseUrl);
+  base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+  base.pathname = "/inspector/debug";
+  base.search = `target=${encodeURIComponent(targetId)}`;
+  return base.toString();
+}
+
+function normalizeConsoleArguments(rawArgs: unknown): string {
+  if (!Array.isArray(rawArgs)) {
+    return "";
+  }
+
+  return rawArgs
+    .map((item) => {
+      if (!isRecord(item)) {
+        return "";
+      }
+      const value = readNonEmptyString(item, "value");
+      if (value) {
+        return value;
+      }
+      const description = readNonEmptyString(item, "description");
+      return description ?? "";
+    })
+    .filter((item) => item.length > 0)
+    .join(" ");
 }
 
 async function resolveAndroidAppPid(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
@@ -2859,7 +2916,7 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
         durationMs: Date.now() - startTime,
         attempts: 1,
         artifacts: [],
-        data: { dryRun: true, runnerProfile, outputPath: iosRelativeOutputPath, command: idbCommand, exitCode: 0, supportLevel: "partial", platformSupportNote: "iOS inspect_ui captures hierarchy through idb; query and action parity remain partial." },
+        data: { dryRun: true, runnerProfile, outputPath: iosRelativeOutputPath, command: idbCommand, exitCode: 0, supportLevel: "partial", evidence: [buildExecutionEvidence("ui_dump", iosRelativeOutputPath, "partial", "Planned iOS UI hierarchy artifact path.")], platformSupportNote: "iOS inspect_ui captures hierarchy through idb; query and action parity remain partial." },
         nextSuggestions: ["Run inspect_ui without dryRun to capture an actual iOS hierarchy dump through idb."],
       };
     }
@@ -2898,6 +2955,7 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
         command: idbCommand,
         exitCode: idbExecution.exitCode,
         supportLevel: "partial",
+        evidence: idbExecution.exitCode === 0 ? [buildExecutionEvidence("ui_dump", iosRelativeOutputPath, "partial", "Captured iOS UI hierarchy artifact.")] : undefined,
         platformSupportNote: "iOS inspect_ui can capture hierarchy artifacts, but downstream query/action tooling is still partial compared with Android.",
         content: idbExecution.exitCode === 0 ? idbExecution.stdout : undefined,
         summary: idbExecution.exitCode === 0 ? parseIosInspectSummary(idbExecution.stdout) : undefined,
@@ -2917,8 +2975,8 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
-      artifacts: [],
-      data: { dryRun: true, runnerProfile, outputPath: relativeOutputPath, command: [...dumpCommand, ...readCommand], exitCode: 0, supportLevel: "full" },
+        artifacts: [],
+        data: { dryRun: true, runnerProfile, outputPath: relativeOutputPath, command: [...dumpCommand, ...readCommand], exitCode: 0, supportLevel: "full", evidence: [buildExecutionEvidence("ui_dump", relativeOutputPath, "full", "Planned Android UI hierarchy artifact path.")] },
       nextSuggestions: ["Run inspect_ui without dryRun to capture an actual Android hierarchy dump."],
     };
   }
@@ -2956,6 +3014,7 @@ export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolR
       command: readCommand,
       exitCode: readExecution.exitCode,
       supportLevel: "full",
+      evidence: readExecution.exitCode === 0 ? [buildExecutionEvidence("ui_dump", relativeOutputPath, "full", "Captured Android UI hierarchy artifact.")] : undefined,
       content: readExecution.exitCode === 0 ? readExecution.stdout : undefined,
       summary: readExecution.exitCode === 0 ? parseInspectUiSummary(readExecution.stdout) : undefined,
     },
@@ -3068,12 +3127,13 @@ export async function queryUiWithMaestro(input: QueryUiInput): Promise<ToolResul
         runnerProfile,
         outputPath: iosRelativeOutputPath,
         query,
-        command: idbCommand,
-        exitCode: idbExecution.exitCode,
-        result: { query, totalMatches: 0, matches: [] },
-        supportLevel: "partial",
-        content: idbExecution.exitCode === 0 ? idbExecution.stdout : undefined,
-        summary: idbExecution.exitCode === 0 ? parseIosInspectSummary(idbExecution.stdout) : undefined,
+          command: idbCommand,
+          exitCode: idbExecution.exitCode,
+          result: { query, totalMatches: 0, matches: [] },
+          supportLevel: "partial",
+          evidence: idbExecution.exitCode === 0 ? [buildExecutionEvidence("ui_dump", iosRelativeOutputPath, "partial", "Captured iOS hierarchy artifact for partial query support.")] : undefined,
+          content: idbExecution.exitCode === 0 ? idbExecution.stdout : undefined,
+          summary: idbExecution.exitCode === 0 ? parseIosInspectSummary(idbExecution.stdout) : undefined,
       },
       nextSuggestions: idbExecution.exitCode === 0
         ? ["This repo can capture iOS hierarchy output, but query_ui does not yet provide equivalent structured iOS matching. Use inspect_ui content/artifacts for manual inspection."]
@@ -3105,6 +3165,7 @@ export async function queryUiWithMaestro(input: QueryUiInput): Promise<ToolResul
         exitCode: 0,
         result: { query, totalMatches: 0, matches: [] },
         supportLevel: "full",
+        evidence: [buildExecutionEvidence("ui_dump", relativeOutputPath, "full", "Planned Android query_ui hierarchy artifact path.")],
       },
       nextSuggestions: ["Run query_ui without dryRun to capture an Android hierarchy dump and return matched nodes."],
     };
@@ -3158,6 +3219,7 @@ export async function queryUiWithMaestro(input: QueryUiInput): Promise<ToolResul
       exitCode: readExecution.exitCode,
       result: { query, ...queryResult },
       supportLevel: "full",
+      evidence: readExecution.exitCode === 0 ? [buildExecutionEvidence("ui_dump", relativeOutputPath, "full", "Captured Android query_ui hierarchy artifact.")] : undefined,
       content: readExecution.exitCode === 0 ? readExecution.stdout : undefined,
       summary,
     },
@@ -3221,7 +3283,7 @@ export async function takeScreenshotWithMaestro(input: ScreenshotInput): Promise
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: { dryRun: true, runnerProfile, outputPath: relativeOutputPath, command, exitCode: 0 },
+      data: { dryRun: true, runnerProfile, outputPath: relativeOutputPath, command, exitCode: 0, evidence: [buildExecutionEvidence("screenshot", relativeOutputPath, input.platform === "android" ? "full" : "partial", "Planned screenshot artifact path.")] },
       nextSuggestions: ["Run take_screenshot without dryRun to capture an actual screenshot."],
     };
   }
@@ -3246,7 +3308,7 @@ export async function takeScreenshotWithMaestro(input: ScreenshotInput): Promise
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [toRelativePath(repoRoot, absoluteOutputPath)],
-      data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command, exitCode: execution.exitCode },
+      data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command, exitCode: execution.exitCode, evidence: [buildExecutionEvidence("screenshot", relativeOutputPath, "full", "Captured Android screenshot artifact.")] },
       nextSuggestions: execution.exitCode === 0 ? [] : ["Check device state before retrying take_screenshot."],
     };
   }
@@ -3259,7 +3321,7 @@ export async function takeScreenshotWithMaestro(input: ScreenshotInput): Promise
     durationMs: Date.now() - startTime,
     attempts: 1,
     artifacts: execution.exitCode === 0 ? [toRelativePath(repoRoot, absoluteOutputPath)] : [],
-    data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command, exitCode: execution.exitCode },
+    data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command, exitCode: execution.exitCode, evidence: execution.exitCode === 0 ? [buildExecutionEvidence("screenshot", relativeOutputPath, "full", "Captured iOS screenshot artifact.")] : undefined },
     nextSuggestions: execution.exitCode === 0 ? [] : ["Check simulator boot state before retrying take_screenshot."],
   };
 }
@@ -3317,6 +3379,7 @@ export async function getLogsWithMaestro(input: GetLogsInput): Promise<ToolResul
         sinceSeconds: capture.sinceSeconds,
         appId,
         appFilterApplied: capture.appFilterApplied,
+        evidence: [buildExecutionEvidence("log", capture.relativeOutputPath, capture.supportLevel, "Planned log capture artifact path.")],
         query: input.query,
         summary: buildLogSummary("", input.query),
       },
@@ -3348,6 +3411,7 @@ export async function getLogsWithMaestro(input: GetLogsInput): Promise<ToolResul
       sinceSeconds: capture.sinceSeconds,
       appId,
       appFilterApplied: capture.appFilterApplied,
+      evidence: execution.exitCode === 0 ? [buildExecutionEvidence("log", capture.relativeOutputPath, capture.supportLevel, "Captured log artifact.")] : undefined,
       query: input.query,
       content: execution.exitCode === 0 ? execution.stdout : undefined,
       summary: execution.exitCode === 0 ? buildLogSummary(execution.stdout, input.query) : undefined,
@@ -3390,6 +3454,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
         linesRequested: capture.linesRequested,
         appId,
         entries: [],
+        evidence: [buildExecutionEvidence("crash_signal", capture.relativeOutputPath, capture.supportLevel, "Planned crash-signal artifact path.")],
         summary: buildLogSummary(""),
       },
       nextSuggestions: ["Run get_crash_signals without dryRun to capture live crash and ANR evidence."],
@@ -3439,6 +3504,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
         linesRequested: capture.linesRequested,
         appId,
         entries,
+        evidence: exitCode === 0 ? [buildExecutionEvidence("crash_signal", capture.relativeOutputPath, capture.supportLevel, "Captured crash-signal artifact.")] : undefined,
         content: exitCode === 0 ? content : undefined,
         summary: exitCode === 0 ? buildLogSummary(content) : undefined,
       },
@@ -3466,6 +3532,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
         linesRequested: capture.linesRequested,
         appId,
         entries: [],
+        evidence: undefined,
         summary: buildLogSummary(""),
       },
       nextSuggestions: ["Check simulator boot state before retrying get_crash_signals."],
@@ -3521,6 +3588,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
       linesRequested: capture.linesRequested,
       appId,
       entries,
+      evidence: [buildExecutionEvidence("crash_signal", capture.relativeOutputPath, capture.supportLevel, "Captured crash-signal artifact.")],
       content,
       summary: buildLogSummary(content),
     },
@@ -3558,6 +3626,7 @@ export async function collectDiagnosticsWithMaestro(input: CollectDiagnosticsInp
         supportLevel: capture.supportLevel,
         artifactCount: 0,
         artifacts: [],
+        evidence: [buildExecutionEvidence("diagnostics_bundle", capture.relativeOutputPath, capture.supportLevel, "Planned diagnostics bundle output path.")],
       },
       nextSuggestions: ["Run collect_diagnostics without dryRun to capture a real Android bugreport or iOS simulator diagnostics bundle."],
     };
@@ -3581,6 +3650,7 @@ export async function collectDiagnosticsWithMaestro(input: CollectDiagnosticsInp
         supportLevel: capture.supportLevel,
         artifactCount: 0,
         artifacts: [],
+        evidence: undefined,
       },
       nextSuggestions: [input.platform === "android"
         ? "Check adb connectivity and available device storage before retrying collect_diagnostics."
@@ -3609,6 +3679,7 @@ export async function collectDiagnosticsWithMaestro(input: CollectDiagnosticsInp
       supportLevel: capture.supportLevel,
       artifactCount: collectedArtifacts.length,
       artifacts,
+      evidence: artifacts.map((artifactPath) => buildExecutionEvidence("diagnostics_bundle", artifactPath, capture.supportLevel, "Captured diagnostics bundle or diagnostics root artifact.")),
     },
     nextSuggestions: [],
   };
@@ -3731,12 +3802,108 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       interestingSignals,
       evidencePaths: [...summaryArtifactPath, ...evidencePaths],
       evidenceCount: summaryArtifactPath.length + evidencePaths.length,
+      evidence: [
+        ...summaryArtifactPath.map((artifactPath) => buildExecutionEvidence("debug_summary", artifactPath, "full", "Generated summarized debug evidence report.")),
+        ...(logsResult.data.evidence ?? []),
+        ...(crashResult.data.evidence ?? []),
+        ...(diagnosticsResult?.data.evidence ?? []),
+      ],
       narrative,
     },
     nextSuggestions: status === "success"
       ? []
       : ["Use the debug evidence summary first; escalate to collect_diagnostics only when the summarized log and crash signals are still inconclusive."],
   };
+}
+
+export async function listJsDebugTargetsWithMaestro(input: ListJsDebugTargetsInput): Promise<ToolResult<ListJsDebugTargetsData>> {
+  const startTime = Date.now();
+  const sessionId = input.sessionId ?? `js-debug-targets-${Date.now()}`;
+  const metroBaseUrl = normalizeMetroBaseUrl(input.metroBaseUrl);
+  const endpoint = `${metroBaseUrl}/json/list`;
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        metroBaseUrl,
+        endpoint,
+        targetCount: 0,
+        targets: [],
+      },
+      nextSuggestions: ["Run list_js_debug_targets without dryRun while Metro is running to discover debuggable RN targets."],
+    };
+  }
+
+  const controller = new AbortController();
+  const timeoutMs = normalizePositiveInteger(input.timeoutMs, DEFAULT_METRO_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(endpoint, { signal: controller.signal });
+    if (!response.ok) {
+      return {
+        status: "failed",
+        reasonCode: REASON_CODES.configurationError,
+        sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          metroBaseUrl,
+          endpoint,
+          targetCount: 0,
+          targets: [],
+        },
+        nextSuggestions: ["Ensure Metro is running and exposing /json/list before retrying list_js_debug_targets."],
+      };
+    }
+
+    const parsed: unknown = await response.json();
+    const targets = Array.isArray(parsed) ? parsed.map(normalizeJsDebugTarget).filter((value): value is JsDebugTarget => value !== undefined) : [];
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        metroBaseUrl,
+        endpoint,
+        targetCount: targets.length,
+        targets,
+      },
+      nextSuggestions: targets.length === 0 ? ["Metro responded, but no JS debug targets are currently attached."] : [],
+    };
+  } catch {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        metroBaseUrl,
+        endpoint,
+        targetCount: 0,
+        targets: [],
+      },
+      nextSuggestions: ["Start Metro or Expo dev server and verify that /json/list is reachable before retrying list_js_debug_targets."],
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function launchAppWithMaestro(input: LaunchAppInput): Promise<ToolResult<LaunchAppData>> {
