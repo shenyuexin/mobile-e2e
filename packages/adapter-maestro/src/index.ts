@@ -30,6 +30,8 @@ import {
   type RunFlowInput,
   type RunnerProfile,
   type ScreenshotInput,
+  type ScrollAndTapElementData,
+  type ScrollAndTapElementInput,
   type ScrollAndResolveUiTargetData,
   type ScrollAndResolveUiTargetInput,
   type TapElementData,
@@ -40,6 +42,7 @@ import {
   type TypeTextInput,
   type TypeIntoElementData,
   type TypeIntoElementInput,
+  type UiOrchestrationStepResult,
   type UiScrollDirection,
   type WaitForUiData,
   type WaitForUiInput,
@@ -48,7 +51,7 @@ import {
 } from "@mobile-e2e-mcp/contracts";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -115,6 +118,8 @@ interface GetLogsCapture {
   supportLevel: "full" | "partial";
   linesRequested?: number;
   sinceSeconds: number;
+  appId?: string;
+  appFilterApplied: boolean;
 }
 
 interface GetCrashSignalsCapture {
@@ -456,6 +461,15 @@ function classifyDebugSignal(line: string): DebugSignalSummary["category"] {
 
 function isInterestingDebugLine(line: string): boolean {
   const normalized = line.toLowerCase();
+  if (
+    line.startsWith("#")
+    || normalized.includes("<no crash entries found>")
+    || normalized.includes("<no crash snippets collected>")
+    || normalized.includes("/library/logs/crashreporter")
+    || normalized.endsWith("crashreporter")
+  ) {
+    return false;
+  }
   return normalized.includes("fatal")
     || normalized.includes("exception")
     || normalized.includes("error")
@@ -519,12 +533,20 @@ function mergeSignalSummaries(...summaries: Array<LogSummary | undefined>): Debu
 }
 
 function buildDebugNarrative(params: {
+  appId?: string;
+  appFilterApplied: boolean;
   logSummary?: LogSummary;
   crashSummary?: LogSummary;
   includeDiagnostics: boolean;
   diagnosticsArtifacts: number;
 }): string[] {
   const narrative: string[] = [];
+
+  if (params.appId) {
+    narrative.push(params.appFilterApplied
+      ? `Evidence capture is scoped to app ${params.appId}.`
+      : `Evidence capture is not app-scoped yet for ${params.appId}; results may include device-wide noise.`);
+  }
 
   if (params.crashSummary && params.crashSummary.topSignals.length > 0) {
     const topCrash = params.crashSummary.topSignals[0];
@@ -544,11 +566,28 @@ function buildDebugNarrative(params: {
   return narrative;
 }
 
+function buildIosLogPredicateForApp(appId: string): string {
+  const escaped = appId.replaceAll("'", "\\'");
+  return `eventMessage CONTAINS[c] '${escaped}' OR processImagePath CONTAINS[c] '${escaped}' OR senderImagePath CONTAINS[c] '${escaped}'`;
+}
+
+async function resolveAndroidAppPid(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
+  const execution = await executeRunner(["adb", "-s", deviceId, "shell", "pidof", appId], repoRoot, process.env);
+  if (execution.exitCode !== 0) {
+    return undefined;
+  }
+
+  const candidate = execution.stdout.trim().split(/\s+/)[0];
+  return candidate && /^\d+$/.test(candidate) ? candidate : undefined;
+}
+
 function buildGetLogsCapture(
   repoRoot: string,
   input: GetLogsInput,
   runnerProfile: RunnerProfile,
   deviceId: string,
+  appId?: string,
+  appFilterApplied = false,
 ): GetLogsCapture {
   const sinceSeconds = normalizePositiveInteger(input.sinceSeconds, DEFAULT_GET_LOGS_SINCE_SECONDS);
   const linesRequested = input.platform === "android" ? normalizePositiveInteger(input.lines, DEFAULT_GET_LOGS_LINES) : undefined;
@@ -564,6 +603,8 @@ function buildGetLogsCapture(
       supportLevel: "full",
       linesRequested,
       sinceSeconds,
+      appId,
+      appFilterApplied,
     };
   }
 
@@ -574,6 +615,8 @@ function buildGetLogsCapture(
     supportLevel: "full",
     linesRequested,
     sinceSeconds,
+    appId,
+    appFilterApplied,
   };
 }
 
@@ -657,6 +700,34 @@ async function listRelativeFiles(rootPath: string): Promise<string[]> {
     }
 
     return output.sort();
+  } catch {
+    return [];
+  }
+}
+
+interface RelativeFileEntry {
+  relativePath: string;
+  absolutePath: string;
+  mtimeMs: number;
+}
+
+async function listRelativeFileEntries(rootPath: string, prefix = ""): Promise<RelativeFileEntry[]> {
+  try {
+    const entries = await readdir(rootPath, { withFileTypes: true });
+    const output: RelativeFileEntry[] = [];
+
+    for (const entry of entries) {
+      const entryPath = path.join(rootPath, entry.name);
+      const relativePath = prefix ? path.posix.join(prefix, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        output.push(...(await listRelativeFileEntries(entryPath, relativePath)));
+      } else {
+        const metadata = await stat(entryPath);
+        output.push({ relativePath, absolutePath: entryPath, mtimeMs: metadata.mtimeMs });
+      }
+    }
+
+    return output.sort((left, right) => right.mtimeMs - left.mtimeMs);
   } catch {
     return [];
   }
@@ -2109,6 +2180,75 @@ export async function typeIntoElementWithMaestro(input: TypeIntoElementInput): P
   };
 }
 
+export async function scrollAndTapElementWithMaestro(input: ScrollAndTapElementInput): Promise<ToolResult<ScrollAndTapElementData>> {
+  const startTime = Date.now();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const stepResults: UiOrchestrationStepResult[] = [];
+  const resolveResult = await scrollAndResolveUiTargetWithMaestro(input);
+
+  stepResults.push({ step: "scroll_resolve", status: resolveResult.status, reasonCode: resolveResult.reasonCode, note: resolveResult.nextSuggestions[0] });
+  if (resolveResult.status !== "success") {
+    return {
+      status: resolveResult.status,
+      reasonCode: resolveResult.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: resolveResult.attempts,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        query: resolveResult.data.query,
+        maxSwipes: resolveResult.data.maxSwipes,
+        swipeDirection: resolveResult.data.swipeDirection,
+        swipeDurationMs: resolveResult.data.swipeDurationMs,
+        stepResults,
+        resolveResult: resolveResult.data,
+        supportLevel: resolveResult.data.supportLevel,
+      },
+      nextSuggestions: resolveResult.nextSuggestions,
+    };
+  }
+
+  const tapResult = await tapElementWithMaestro({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile: input.runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    outputPath: input.outputPath,
+    resourceId: input.resourceId,
+    contentDesc: input.contentDesc,
+    text: input.text,
+    className: input.className,
+    clickable: input.clickable,
+    limit: input.limit,
+    dryRun: input.dryRun,
+  });
+  stepResults.push({ step: "tap", status: tapResult.status, reasonCode: tapResult.reasonCode, note: tapResult.nextSuggestions[0] });
+  return {
+    status: tapResult.status,
+    reasonCode: tapResult.reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: resolveResult.attempts + tapResult.attempts,
+    artifacts: [...resolveResult.artifacts, ...tapResult.artifacts],
+    data: {
+      dryRun: Boolean(input.dryRun),
+      runnerProfile,
+      query: resolveResult.data.query,
+      maxSwipes: resolveResult.data.maxSwipes,
+      swipeDirection: resolveResult.data.swipeDirection,
+      swipeDurationMs: resolveResult.data.swipeDurationMs,
+      stepResults,
+      resolveResult: resolveResult.data,
+      tapResult: tapResult.data,
+      supportLevel: tapResult.data.supportLevel,
+    },
+    nextSuggestions: tapResult.nextSuggestions,
+  };
+}
+
 export async function waitForUiWithMaestro(input: WaitForUiInput): Promise<ToolResult<WaitForUiData>> {
   const startTime = Date.now();
   const repoRoot = resolveRepoPath();
@@ -3130,7 +3270,30 @@ export async function getLogsWithMaestro(input: GetLogsInput): Promise<ToolResul
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
   const deviceId = input.deviceId ?? selection.deviceId ?? (input.platform === "android" ? "emulator-5554" : "ADA078B9-3C6B-4875-8B85-A7789F368816");
-  const capture = buildGetLogsCapture(repoRoot, input, runnerProfile, deviceId);
+  const appId = input.appId ?? selection.appId;
+  let capture = buildGetLogsCapture(repoRoot, input, runnerProfile, deviceId, appId, false);
+
+  if (appId) {
+    if (input.platform === "android" && !input.dryRun) {
+      const pid = await resolveAndroidAppPid(repoRoot, deviceId, appId);
+      if (pid) {
+        capture = {
+          ...capture,
+          command: ["adb", "-s", deviceId, "logcat", "--pid", pid, "-d", "-t", String(capture.linesRequested ?? DEFAULT_GET_LOGS_LINES)],
+          appFilterApplied: true,
+        };
+      }
+    }
+
+    if (input.platform === "ios") {
+      const predicate = buildIosLogPredicateForApp(appId);
+      capture = {
+        ...capture,
+        command: ["xcrun", "simctl", "spawn", deviceId, "log", "show", "--style", "compact", "--last", `${String(capture.sinceSeconds)}s`, "--predicate", predicate],
+        appFilterApplied: true,
+      };
+    }
+  }
 
   await mkdir(path.dirname(capture.absoluteOutputPath), { recursive: true });
 
@@ -3152,6 +3315,8 @@ export async function getLogsWithMaestro(input: GetLogsInput): Promise<ToolResul
         lineCount: 0,
         linesRequested: capture.linesRequested,
         sinceSeconds: capture.sinceSeconds,
+        appId,
+        appFilterApplied: capture.appFilterApplied,
         query: input.query,
         summary: buildLogSummary("", input.query),
       },
@@ -3181,6 +3346,8 @@ export async function getLogsWithMaestro(input: GetLogsInput): Promise<ToolResul
       lineCount: execution.exitCode === 0 ? countNonEmptyLines(execution.stdout) : 0,
       linesRequested: capture.linesRequested,
       sinceSeconds: capture.sinceSeconds,
+      appId,
+      appFilterApplied: capture.appFilterApplied,
       query: input.query,
       content: execution.exitCode === 0 ? execution.stdout : undefined,
       summary: execution.exitCode === 0 ? buildLogSummary(execution.stdout, input.query) : undefined,
@@ -3199,6 +3366,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
   const deviceId = input.deviceId ?? selection.deviceId ?? (input.platform === "android" ? "emulator-5554" : "ADA078B9-3C6B-4875-8B85-A7789F368816");
+  const appId = input.appId ?? selection.appId;
   const capture = buildGetCrashSignalsCapture(repoRoot, input, runnerProfile, deviceId);
 
   await mkdir(path.dirname(capture.absoluteOutputPath), { recursive: true });
@@ -3220,6 +3388,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
         supportLevel: capture.supportLevel,
         signalCount: 0,
         linesRequested: capture.linesRequested,
+        appId,
         entries: [],
         summary: buildLogSummary(""),
       },
@@ -3227,8 +3396,12 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
     };
   }
 
-  if (input.platform === "android") {
-    const [crashCommand, anrCommand] = capture.commands;
+    if (input.platform === "android") {
+    const pid = appId ? await resolveAndroidAppPid(repoRoot, deviceId, appId) : undefined;
+    const [baseCrashCommand, anrCommand] = capture.commands;
+    const crashCommand = pid
+      ? ["adb", "-s", deviceId, "logcat", "--pid", pid, "-d", "-b", "crash", "-t", String(capture.linesRequested)]
+      : baseCrashCommand;
     const crashExecution = await executeRunner(crashCommand, repoRoot, process.env);
     const anrExecution = await executeRunner(anrCommand, repoRoot, process.env);
     const entries = anrExecution.exitCode === 0
@@ -3259,11 +3432,12 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
         dryRun: false,
         runnerProfile,
         outputPath: capture.relativeOutputPath,
-        commands: capture.commands,
+        commands: [crashCommand, anrCommand],
         exitCode,
         supportLevel: capture.supportLevel,
         signalCount: entries.length + countNonEmptyLines(crashExecution.stdout),
         linesRequested: capture.linesRequested,
+        appId,
         entries,
         content: exitCode === 0 ? content : undefined,
         summary: exitCode === 0 ? buildLogSummary(content) : undefined,
@@ -3290,6 +3464,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
         supportLevel: capture.supportLevel,
         signalCount: 0,
         linesRequested: capture.linesRequested,
+        appId,
         entries: [],
         summary: buildLogSummary(""),
       },
@@ -3299,13 +3474,32 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
 
   const simulatorHome = homeExecution.stdout.trim();
   const crashRoot = path.join(simulatorHome, "Library", "Logs", "CrashReporter");
-  const entries = await listRelativeFiles(crashRoot);
+  const crashEntries = await listRelativeFileEntries(crashRoot);
+  const filteredCrashEntries = appId
+    ? crashEntries.filter((entry) => entry.relativePath.toLowerCase().includes(appId.toLowerCase()) || entry.absolutePath.toLowerCase().includes(appId.toLowerCase()))
+    : crashEntries;
+  const selectedCrashEntries = filteredCrashEntries.slice(0, 3);
+  const entries = selectedCrashEntries.map((entry) => entry.relativePath);
+  const crashSnippets: string[] = [];
+
+  for (const entry of selectedCrashEntries) {
+    const snippet = await readFile(entry.absolutePath, "utf8").catch(() => "");
+    if (snippet.trim().length > 0) {
+      crashSnippets.push(`## ${entry.relativePath}`);
+      crashSnippets.push(...snippet.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10)).slice(0, 80));
+      crashSnippets.push("");
+    }
+  }
+
   const content = [
     "# iOS simulator crash reporter root",
     crashRoot,
     "",
     "# Crash reporter entries",
     entries.length > 0 ? entries.join(String.fromCharCode(10)) : "<no crash entries found>",
+    "",
+    "# Crash reporter snippets",
+    crashSnippets.length > 0 ? crashSnippets.join(String.fromCharCode(10)) : "<no crash snippets collected>",
   ].join(String.fromCharCode(10)) + String.fromCharCode(10);
   await writeFile(capture.absoluteOutputPath, content, "utf8");
 
@@ -3323,13 +3517,14 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
       commands: capture.commands,
       exitCode: homeExecution.exitCode,
       supportLevel: capture.supportLevel,
-      signalCount: entries.length,
+      signalCount: filteredCrashEntries.length,
       linesRequested: capture.linesRequested,
+      appId,
       entries,
       content,
       summary: buildLogSummary(content),
     },
-    nextSuggestions: entries.length === 0 ? ["No simulator crash reporter files were found. Re-run after reproducing a crash or ANR-like issue."] : [],
+    nextSuggestions: filteredCrashEntries.length === 0 ? ["No simulator crash reporter files were found for the current scope. Re-run after reproducing a crash or broaden the app filter."] : [],
   };
 }
 
@@ -3423,6 +3618,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
   const startTime = Date.now();
   const repoRoot = resolveRepoPath();
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
   const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.md`);
   const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
   const logOutputPath = path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.logs.txt`);
@@ -3430,6 +3626,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
   const diagnosticsOutputPath = input.platform === "android"
     ? path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics.zip`)
     : path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics`);
+  const effectiveAppId = input.appId ?? selection.appId;
 
   const logsResult = await getLogsWithMaestro({
     sessionId: input.sessionId,
@@ -3437,6 +3634,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     runnerProfile,
     harnessConfigPath: input.harnessConfigPath,
     deviceId: input.deviceId,
+    appId: effectiveAppId,
     outputPath: logOutputPath,
     lines: input.logLines,
     sinceSeconds: input.sinceSeconds,
@@ -3449,6 +3647,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     runnerProfile,
     harnessConfigPath: input.harnessConfigPath,
     deviceId: input.deviceId,
+    appId: effectiveAppId,
     outputPath: crashOutputPath,
     lines: input.logLines,
     dryRun: input.dryRun,
@@ -3472,6 +3671,8 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
   ];
   const interestingSignals = mergeSignalSummaries(logsResult.data.summary, crashResult.data.summary);
   const narrative = buildDebugNarrative({
+    appId: effectiveAppId,
+    appFilterApplied: logsResult.data.appFilterApplied,
     logSummary: logsResult.data.summary,
     crashSummary: crashResult.data.summary,
     includeDiagnostics: Boolean(input.includeDiagnostics),
@@ -3485,6 +3686,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       "# Debug Evidence Summary",
       `- Platform: ${input.platform}`,
       `- Runner profile: ${runnerProfile}`,
+      `- App: ${effectiveAppId ?? "<unknown>"}`,
       `- Query: ${input.query ?? "<none>"}`,
       "",
       "## Narrative",
@@ -3523,6 +3725,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       runnerProfile,
       outputPath: relativeOutputPath,
       supportLevel: "full",
+      appId: effectiveAppId,
       logSummary: logsResult.data.summary,
       crashSummary: crashResult.data.summary,
       interestingSignals,
