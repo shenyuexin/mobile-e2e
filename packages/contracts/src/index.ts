@@ -4,6 +4,8 @@ export type {
   DoctorCheck,
   DoctorInput,
   EndSessionInput,
+  GetCrashSignalsData,
+  GetCrashSignalsInput,
   GetLogsData,
   GetLogsInput,
   InspectUiInput,

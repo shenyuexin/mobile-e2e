@@ -110,6 +110,28 @@ export interface GetLogsData {
   sinceSeconds: number;
   content?: string;
 }
+export interface GetCrashSignalsInput {
+  sessionId: string;
+  platform: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  outputPath?: string;
+  lines?: number;
+  dryRun?: boolean;
+}
+export interface GetCrashSignalsData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  commands: string[][];
+  exitCode: number | null;
+  supportLevel: "full" | "partial";
+  signalCount: number;
+  linesRequested?: number;
+  entries: string[];
+  content?: string;
+}
 export interface InspectUiInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; outputPath?: string; dryRun?: boolean; }
 export interface InspectUiQueryInput extends InspectUiInput, InspectUiQuery {}
 export interface QueryUiInput extends InspectUiQueryInput {}
