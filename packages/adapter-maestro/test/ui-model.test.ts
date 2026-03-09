@@ -372,6 +372,15 @@ test("selectPreferredJsDebugTarget falls back to the first target when needed", 
   assert.equal(selected?.id, "first");
 });
 
+test("selectPreferredJsDebugTarget prefers React Native and Expo metadata when multiple sockets exist", () => {
+  const selected = selectPreferredJsDebugTarget([
+    { id: "chrome", title: "Chrome debugger", webSocketDebuggerUrl: "ws://127.0.0.1:8081/inspector/debug?target=chrome" },
+    { id: "expo", title: "Expo React Native Hermes", webSocketDebuggerUrl: "ws://127.0.0.1:8081/inspector/debug?target=expo" },
+  ]);
+
+  assert.equal(selected?.id, "expo");
+});
+
 test("tapElementWithMaestro reports configuration errors without a selector", async () => {
   const result = await tapElementWithMaestro({
     sessionId: "test-tap-config",
