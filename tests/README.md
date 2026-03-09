@@ -42,3 +42,8 @@ Current regression layers are now explicitly named:
 - `pnpm test:unit` - combined no-device regression layer
 - `pnpm test:smoke` - asserted root dry-run validation layer
 - `pnpm test:ci` - build + typecheck + unit + smoke in one CI-oriented sequence
+
+Current GitHub Actions CI scope:
+
+- `.github/workflows/ci.yml` runs on `ubuntu-latest` because the current workflow is intentionally limited to no-device, no-simulator regression layers
+- real Android emulator and real iOS simulator/device regression are still separate future lanes and should not be inferred from the current Ubuntu-only workflow
