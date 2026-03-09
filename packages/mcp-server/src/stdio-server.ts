@@ -36,6 +36,9 @@ export function toErrorMessage(error: unknown): string {
 
 export function buildToolList() {
   return [
+    { name: "collect_debug_evidence", description: "Capture AI-friendly summarized debug evidence from logs and crash signals, with optional diagnostics escalation." },
+    { name: "collect_diagnostics", description: "Capture an Android bugreport bundle or an iOS simulator diagnostics bundle." },
+    { name: "describe_capabilities", description: "Return the current platform capability profile before invoking platform-specific tools." },
     { name: "doctor", description: "Check command availability and device readiness." },
     { name: "get_crash_signals", description: "Capture recent Android crash or ANR evidence and inspect the iOS simulator crash reporter tree." },
     { name: "get_logs", description: "Capture recent Android logcat output or recent iOS simulator logs." },

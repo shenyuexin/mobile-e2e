@@ -1,4 +1,10 @@
 import type {
+  CollectDebugEvidenceData,
+  CollectDebugEvidenceInput,
+  CollectDiagnosticsData,
+  CollectDiagnosticsInput,
+  DescribeCapabilitiesData,
+  DescribeCapabilitiesInput,
   DeviceInfo,
   DoctorCheck,
   DoctorInput,
@@ -34,6 +40,9 @@ import type {
 } from "@mobile-e2e-mcp/contracts";
 
 export interface MobileE2EMcpToolRegistry {
+  collect_debug_evidence: (input: CollectDebugEvidenceInput) => Promise<ToolResult<CollectDebugEvidenceData>>;
+  collect_diagnostics: (input: CollectDiagnosticsInput) => Promise<ToolResult<CollectDiagnosticsData>>;
+  describe_capabilities: (input: DescribeCapabilitiesInput) => Promise<ToolResult<DescribeCapabilitiesData>>;
   doctor: (input: DoctorInput) => Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>>;
   get_crash_signals: (input: GetCrashSignalsInput) => Promise<ToolResult<GetCrashSignalsData>>;
   get_logs: (input: GetLogsInput) => Promise<ToolResult<GetLogsData>>;
@@ -60,9 +69,12 @@ export class MobileE2EMcpServer {
   constructor(private readonly tools: MobileE2EMcpToolRegistry) {}
 
   listTools(): Array<keyof MobileE2EMcpToolRegistry> {
-    return ["doctor", "get_crash_signals", "get_logs", "inspect_ui", "query_ui", "resolve_ui_target", "scroll_and_resolve_ui_target", "install_app", "launch_app", "list_devices", "start_session", "run_flow", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
+    return ["collect_debug_evidence", "collect_diagnostics", "describe_capabilities", "doctor", "get_crash_signals", "get_logs", "inspect_ui", "query_ui", "resolve_ui_target", "scroll_and_resolve_ui_target", "install_app", "launch_app", "list_devices", "start_session", "run_flow", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
   }
 
+  async invoke(toolName: "collect_debug_evidence", input: CollectDebugEvidenceInput): Promise<ToolResult<CollectDebugEvidenceData>>;
+  async invoke(toolName: "collect_diagnostics", input: CollectDiagnosticsInput): Promise<ToolResult<CollectDiagnosticsData>>;
+  async invoke(toolName: "describe_capabilities", input: DescribeCapabilitiesInput): Promise<ToolResult<DescribeCapabilitiesData>>;
   async invoke(toolName: "doctor", input: DoctorInput): Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>>;
   async invoke(toolName: "get_crash_signals", input: GetCrashSignalsInput): Promise<ToolResult<GetCrashSignalsData>>;
   async invoke(toolName: "get_logs", input: GetLogsInput): Promise<ToolResult<GetLogsData>>;
@@ -85,8 +97,11 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "end_session", input: EndSessionInput): Promise<ToolResult<{ closed: boolean; endedAt: string }>>;
   async invoke(
     toolName: keyof MobileE2EMcpToolRegistry,
-    input: DoctorInput | GetCrashSignalsInput | GetLogsInput | InspectUiInput | QueryUiInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | InstallAppInput | LaunchAppInput | ListDevicesInput | StartSessionInput | RunFlowInput | ScreenshotInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
+    input: CollectDebugEvidenceInput | CollectDiagnosticsInput | DescribeCapabilitiesInput | DoctorInput | GetCrashSignalsInput | GetLogsInput | InspectUiInput | QueryUiInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | InstallAppInput | LaunchAppInput | ListDevicesInput | StartSessionInput | RunFlowInput | ScreenshotInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
   ): Promise<
+    | ToolResult<CollectDebugEvidenceData>
+    | ToolResult<CollectDiagnosticsData>
+    | ToolResult<DescribeCapabilitiesData>
     | ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>
     | ToolResult<GetCrashSignalsData>
     | ToolResult<GetLogsData>
@@ -101,6 +116,9 @@ export class MobileE2EMcpServer {
     | ToolResult
     | ToolResult<{ closed: boolean; endedAt: string }>
   > {
+    if (toolName === "collect_debug_evidence") return this.tools.collect_debug_evidence(input as CollectDebugEvidenceInput);
+    if (toolName === "collect_diagnostics") return this.tools.collect_diagnostics(input as CollectDiagnosticsInput);
+    if (toolName === "describe_capabilities") return this.tools.describe_capabilities(input as DescribeCapabilitiesInput);
     if (toolName === "doctor") return this.tools.doctor(input as DoctorInput);
     if (toolName === "get_crash_signals") return this.tools.get_crash_signals(input as GetCrashSignalsInput);
     if (toolName === "get_logs") return this.tools.get_logs(input as GetLogsInput);

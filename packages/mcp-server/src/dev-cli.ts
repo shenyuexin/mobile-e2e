@@ -1,9 +1,12 @@
-import type { DoctorInput, GetCrashSignalsInput, GetLogsInput, InspectUiInput, InstallAppInput, LaunchAppInput, ListDevicesInput, Platform, QueryUiInput, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, StartSessionInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
+import type { CollectDebugEvidenceInput, CollectDiagnosticsInput, DescribeCapabilitiesInput, DoctorInput, GetCrashSignalsInput, GetLogsInput, InspectUiInput, InstallAppInput, LaunchAppInput, ListDevicesInput, Platform, QueryUiInput, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, StartSessionInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { createServer } from "./index.js";
 
 interface CliOptions {
+  collectDebugEvidence: boolean;
+  collectDiagnostics: boolean;
+  describeCapabilities: boolean;
   platform: Platform;
   doctor: boolean;
   dryRun: boolean;
@@ -29,6 +32,7 @@ interface CliOptions {
   outputPath?: string;
   lines?: number;
   sinceSeconds?: number;
+  includeDiagnostics?: boolean;
   x?: number;
   y?: number;
   launchUrl?: string;
@@ -68,6 +72,9 @@ function parseBooleanArg(value: string | undefined): boolean | undefined {
 
 export function parseCliArgs(argv: string[]): CliOptions {
   let platform: Platform = "android";
+  let collectDebugEvidence = false;
+  let collectDiagnostics = false;
+  let describeCapabilities = false;
   let doctor = false;
   let dryRun = false;
   let getCrashSignals = false;
@@ -92,6 +99,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let outputPath: string | undefined;
   let lines: number | undefined;
   let sinceSeconds: number | undefined;
+  let includeDiagnostics: boolean | undefined;
   let x: number | undefined;
   let y: number | undefined;
   let launchUrl: string | undefined;
@@ -120,6 +128,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
     const arg = argv[index];
     const nextValue = argv[index + 1];
     if (arg === "--platform" && (nextValue === "android" || nextValue === "ios")) { platform = nextValue; index += 1; }
+    else if (arg === "--collect-debug-evidence") { collectDebugEvidence = true; }
+    else if (arg === "--collect-diagnostics") { collectDiagnostics = true; }
+    else if (arg === "--describe-capabilities") { describeCapabilities = true; }
     else if (arg === "--doctor") { doctor = true; }
     else if (arg === "--dry-run") { dryRun = true; }
     else if (arg === "--get-crash-signals") { getCrashSignals = true; }
@@ -144,6 +155,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--output-path" && nextValue) { outputPath = nextValue; index += 1; }
     else if (arg === "--lines" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) lines = Math.floor(parsed); index += 1; }
     else if (arg === "--since-seconds" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) sinceSeconds = Math.floor(parsed); index += 1; }
+    else if (arg === "--include-diagnostics" && nextValue) { includeDiagnostics = parseBooleanArg(nextValue); index += 1; }
     else if (arg === "--x" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed)) x = parsed; index += 1; }
     else if (arg === "--y" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed)) y = parsed; index += 1; }
     else if (arg === "--launch-url" && nextValue) { launchUrl = nextValue; index += 1; }
@@ -170,6 +182,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
   }
 
   return {
+    collectDebugEvidence,
+    collectDiagnostics,
+    describeCapabilities,
     platform,
     doctor,
     dryRun,
@@ -195,6 +210,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     outputPath,
     lines,
     sinceSeconds,
+    includeDiagnostics,
     x,
     y,
     launchUrl,
@@ -225,6 +241,51 @@ export async function main(): Promise<void> {
   const cliOptions = parseCliArgs(process.argv.slice(2));
   const server = createServer();
 
+  if (cliOptions.collectDebugEvidence) {
+    const collectDebugEvidenceInput: CollectDebugEvidenceInput = {
+      sessionId: cliOptions.sessionId ?? `debug-evidence-${Date.now()}`,
+      platform: cliOptions.platform,
+      runnerProfile: cliOptions.runnerProfile,
+      harnessConfigPath: cliOptions.harnessConfigPath,
+      deviceId: cliOptions.deviceId,
+      outputPath: cliOptions.outputPath,
+      logLines: cliOptions.lines,
+      sinceSeconds: cliOptions.sinceSeconds,
+      query: cliOptions.queryText ?? cliOptions.text,
+      includeDiagnostics: cliOptions.includeDiagnostics,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("collect_debug_evidence", collectDebugEvidenceInput);
+    console.log(JSON.stringify({ tools: server.listTools(), collectDebugEvidenceResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.collectDiagnostics) {
+    const collectDiagnosticsInput: CollectDiagnosticsInput = {
+      sessionId: cliOptions.sessionId ?? `diagnostics-${Date.now()}`,
+      platform: cliOptions.platform,
+      runnerProfile: cliOptions.runnerProfile,
+      harnessConfigPath: cliOptions.harnessConfigPath,
+      deviceId: cliOptions.deviceId,
+      outputPath: cliOptions.outputPath,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("collect_diagnostics", collectDiagnosticsInput);
+    console.log(JSON.stringify({ tools: server.listTools(), collectDiagnosticsResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.describeCapabilities) {
+    const describeCapabilitiesInput: DescribeCapabilitiesInput = {
+      sessionId: cliOptions.sessionId ?? `capabilities-${Date.now()}`,
+      platform: cliOptions.platform,
+      runnerProfile: cliOptions.runnerProfile ?? null,
+    };
+    const result = await server.invoke("describe_capabilities", describeCapabilitiesInput);
+    console.log(JSON.stringify({ tools: server.listTools(), describeCapabilitiesResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
   if (cliOptions.doctor) {
     const result = await server.invoke("doctor", { includeUnavailable: cliOptions.includeUnavailable } satisfies DoctorInput);
     console.log(JSON.stringify({ tools: server.listTools(), doctorResult: result }, null, 2));
@@ -263,6 +324,7 @@ export async function main(): Promise<void> {
       outputPath: cliOptions.outputPath,
       lines: cliOptions.lines,
       sinceSeconds: cliOptions.sinceSeconds,
+      query: cliOptions.queryText ?? cliOptions.text,
       dryRun: cliOptions.dryRun,
     };
     const result = await server.invoke("get_logs", getLogsInput);
