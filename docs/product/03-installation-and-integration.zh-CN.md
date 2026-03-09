@@ -292,9 +292,20 @@ pnpm mcp:stdio
 在这三条原始取证链路之上，当前仓库还新增了一个面向 AI 调试器的 `collect_debug_evidence`：
 
 - 默认复用 `get_logs` + `get_crash_signals`，返回一份压缩后的 `narrative`、`interestingSignals`、`logSummary`、`crashSummary`
+- 现在也会尽量合并 `capture_js_console_logs` 与 `capture_js_network_events` 的快照结果，让同一份 packet 同时覆盖 native + JS 两层证据
 - 可以通过 `--text <keyword>` 先做关键词聚焦，减少 AI 在无关日志上的 token 消耗
 - 可以通过 `--include-diagnostics true` 在摘要仍不够时再升级到重型 diagnostics 包
+- 如果 Metro inspector 不可达，工具会诚实返回 partial，并在 `narrative` 里说明 JS 证据层缺失，而不是假装已经覆盖 JS runtime
 - 这条链路的目标就是让 AI 先看“高价值摘要”，只有在摘要不够时再回头读原始 artifact
+
+参考 `react-native-debugger-mcp` 的工作流，当前仓库还新增了两条 RN/Expo inspector 入口：
+
+- `list_js_debug_targets`：读取 Metro 的 `/json/list`，让 AI 先发现当前有哪些可调试 JS target
+- `capture_js_console_logs`：通过 inspector WebSocket 做一次性 `Runtime.consoleAPICalled` / `Runtime.exceptionThrown` snapshot
+- `capture_js_console_logs` 现在会把 JS exception 结构化到 `exceptionType`、`sourceUrl`、`lineNumber`、`columnNumber`、`stackFrames`
+- `capture_js_network_events`：通过 inspector WebSocket 做一次性 `Network.*` snapshot，优先提取失败请求和错误状态
+- 这三条能力当前是“发现 + 快照”层，不替代 native logs；更适合解决 JS 逻辑错误、console 输出、unhandled exception、请求失败这类问题
+- 当前环境下如果 Metro 没启动，会快速返回 `configurationError`，避免 AI 长时间卡在不可达的 debug 通道上
 
 当前仓库也已经补了一个最小动作桥接层 `tap_element`：
 

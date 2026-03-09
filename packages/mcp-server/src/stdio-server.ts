@@ -36,6 +36,8 @@ export function toErrorMessage(error: unknown): string {
 
 export function buildToolList() {
   return [
+    { name: "capture_js_console_logs", description: "Capture one-shot React Native or Expo JS console events through the Metro inspector WebSocket." },
+    { name: "capture_js_network_events", description: "Capture one-shot React Native or Expo JS network events through the Metro inspector WebSocket." },
     { name: "collect_debug_evidence", description: "Capture AI-friendly summarized debug evidence from logs and crash signals, with optional diagnostics escalation." },
     { name: "collect_diagnostics", description: "Capture an Android bugreport bundle or an iOS simulator diagnostics bundle." },
     { name: "describe_capabilities", description: "Return the current platform capability profile before invoking platform-specific tools." },
@@ -48,6 +50,7 @@ export function buildToolList() {
     { name: "scroll_and_resolve_ui_target", description: "Scroll Android UI containers while trying to resolve a selector to a single actionable target." },
     { name: "scroll_and_tap_element", description: "Scroll Android UI containers until a target resolves, then tap the resolved element." },
     { name: "install_app", description: "Install a native or flutter artifact onto a target device/simulator." },
+    { name: "list_js_debug_targets", description: "Discover React Native or Expo JS debug targets from the Metro inspector endpoint." },
     { name: "launch_app", description: "Launch the selected app or Expo URL on a target device/simulator." },
     { name: "list_devices", description: "List Android devices and iOS simulators." },
     { name: "take_screenshot", description: "Capture a screenshot from a target device or simulator." },

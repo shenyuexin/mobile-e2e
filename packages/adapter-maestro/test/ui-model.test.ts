@@ -19,7 +19,7 @@ import {
   resolveFirstTapTarget,
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
-import { buildCapabilityProfile, buildLogSummary, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, describeCapabilitiesWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, inspectUiWithMaestro, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, typeIntoElementWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildInspectorExceptionLogEntry, buildLogSummary, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, describeCapabilitiesWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, inspectUiWithMaestro, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, typeIntoElementWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -278,6 +278,38 @@ test("buildLogSummary extracts top debug signals and honors query filtering", ()
   assert.equal(summary.query, "androidruntime");
   assert.equal(summary.topSignals[0]?.category, "crash");
   assert.equal(summary.sampleLines.length, 2);
+});
+
+test("buildInspectorExceptionLogEntry extracts source and stack frames", () => {
+  const entry = buildInspectorExceptionLogEntry({
+    timestamp: 123,
+    exceptionDetails: {
+      text: "TypeError: undefined is not an object",
+      url: "index.bundle",
+      lineNumber: 42,
+      columnNumber: 7,
+      exception: {
+        className: "TypeError",
+        description: "TypeError: undefined is not an object (evaluating 'foo.bar')",
+      },
+      stackTrace: {
+        callFrames: [
+          { functionName: "renderScreen", url: "App.tsx", lineNumber: 10, columnNumber: 2 },
+          { functionName: "performWork", url: "renderer.js", lineNumber: 88, columnNumber: 14 },
+        ],
+      },
+    },
+  });
+
+  assert.equal(entry.level, "exception");
+  assert.equal(entry.text, "TypeError: undefined is not an object");
+  assert.equal(entry.timestamp, 123);
+  assert.equal(entry.sourceUrl, "index.bundle");
+  assert.equal(entry.lineNumber, 42);
+  assert.equal(entry.columnNumber, 7);
+  assert.equal(entry.exceptionType, "TypeError");
+  assert.equal(entry.stackFrames?.length, 2);
+  assert.equal(entry.stackFrames?.[0]?.functionName, "renderScreen");
 });
 
 test("tapElementWithMaestro reports configuration errors without a selector", async () => {

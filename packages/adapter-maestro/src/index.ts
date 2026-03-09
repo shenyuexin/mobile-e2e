@@ -3,6 +3,8 @@ import {
   type CollectDebugEvidenceInput,
   type CaptureJsConsoleLogsData,
   type CaptureJsConsoleLogsInput,
+  type CaptureJsNetworkEventsData,
+  type CaptureJsNetworkEventsInput,
   type DescribeCapabilitiesData,
   type DescribeCapabilitiesInput,
   type CollectDiagnosticsData,
@@ -28,6 +30,8 @@ import {
   type ListJsDebugTargetsInput,
   type JsDebugTarget,
   type JsConsoleLogEntry,
+  type JsNetworkEvent,
+  type JsStackFrame,
   type ListDevicesInput,
   type LogSummary,
   type Platform,
@@ -141,6 +145,7 @@ const DEFAULT_GET_CRASH_LINES = 120;
 const DEFAULT_METRO_BASE_URL = "http://127.0.0.1:8081";
 const DEFAULT_METRO_TIMEOUT_MS = 3000;
 const DEFAULT_JS_LOG_MAX_LOGS = 50;
+const DEFAULT_JS_NETWORK_MAX_EVENTS = 30;
 const DEFAULT_SCROLL_MAX_SWIPES = 3;
 const DEFAULT_SCROLL_DURATION_MS = 250;
 const DEFAULT_WAIT_UNTIL: WaitForUiMode = "visible";
@@ -626,6 +631,54 @@ function normalizeConsoleArguments(rawArgs: unknown): string {
     })
     .filter((item) => item.length > 0)
     .join(" ");
+}
+
+function normalizeStackFrames(rawStackTrace: unknown): JsStackFrame[] | undefined {
+  if (!isRecord(rawStackTrace) || !Array.isArray(rawStackTrace.callFrames)) {
+    return undefined;
+  }
+
+  const frames = rawStackTrace.callFrames
+    .map((frame): JsStackFrame | undefined => {
+      if (!isRecord(frame)) {
+        return undefined;
+      }
+
+      return {
+        functionName: readNonEmptyString(frame, "functionName") ?? undefined,
+        url: readNonEmptyString(frame, "url") ?? undefined,
+        lineNumber: typeof frame.lineNumber === "number" ? frame.lineNumber : undefined,
+        columnNumber: typeof frame.columnNumber === "number" ? frame.columnNumber : undefined,
+      };
+    })
+    .filter((frame): frame is JsStackFrame => frame !== undefined);
+
+  return frames.length > 0 ? frames : undefined;
+}
+
+export function buildInspectorExceptionLogEntry(params: unknown): JsConsoleLogEntry {
+  const safeParams = isRecord(params) ? params : {};
+  const details = isRecord(safeParams.exceptionDetails) ? safeParams.exceptionDetails : {};
+  const exception = isRecord(details.exception) ? details.exception : {};
+
+  return {
+    level: "exception",
+    text: readNonEmptyString(details, "text") ?? readNonEmptyString(exception, "description") ?? readNonEmptyString(details, "exceptionId") ?? "Runtime.exceptionThrown",
+    timestamp: typeof safeParams.timestamp === "number" ? safeParams.timestamp : undefined,
+    sourceUrl: readNonEmptyString(details, "url") ?? undefined,
+    lineNumber: typeof details.lineNumber === "number" ? details.lineNumber : undefined,
+    columnNumber: typeof details.columnNumber === "number" ? details.columnNumber : undefined,
+    exceptionType: readNonEmptyString(exception, "className") ?? undefined,
+    stackFrames: normalizeStackFrames(details.stackTrace),
+  };
+}
+
+function shouldKeepNetworkEvent(event: JsNetworkEvent, failuresOnly: boolean): boolean {
+  if (!failuresOnly) {
+    return true;
+  }
+
+  return Boolean(event.errorText) || (typeof event.status === "number" && event.status >= 400);
 }
 
 async function resolveAndroidAppPid(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
@@ -3698,6 +3751,15 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     ? path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics.zip`)
     : path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics`);
   const effectiveAppId = input.appId ?? selection.appId;
+  const includeJsInspector = input.includeJsInspector ?? true;
+  const discoveredTargetsResult = includeJsInspector && !input.targetId && !input.webSocketDebuggerUrl
+    ? await listJsDebugTargetsWithMaestro({ sessionId: input.sessionId, dryRun: input.dryRun })
+    : undefined;
+  const discoveredTarget = discoveredTargetsResult?.status === "success"
+    ? discoveredTargetsResult.data.targets.find((target) => target.webSocketDebuggerUrl) ?? discoveredTargetsResult.data.targets[0]
+    : undefined;
+  const effectiveTargetId = input.targetId ?? discoveredTarget?.id;
+  const effectiveWebSocketDebuggerUrl = input.webSocketDebuggerUrl ?? discoveredTarget?.webSocketDebuggerUrl;
 
   const logsResult = await getLogsWithMaestro({
     sessionId: input.sessionId,
@@ -3734,6 +3796,29 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       dryRun: input.dryRun,
     })
     : undefined;
+  const jsConsoleResult = includeJsInspector
+    ? await captureJsConsoleLogsWithMaestro({
+      sessionId: input.sessionId,
+      metroBaseUrl: undefined,
+      targetId: effectiveTargetId,
+      webSocketDebuggerUrl: effectiveWebSocketDebuggerUrl,
+      maxLogs: input.logLines,
+      timeoutMs: undefined,
+      dryRun: input.dryRun,
+    })
+    : undefined;
+  const jsNetworkResult = includeJsInspector
+    ? await captureJsNetworkEventsWithMaestro({
+      sessionId: input.sessionId,
+      metroBaseUrl: undefined,
+      targetId: effectiveTargetId,
+      webSocketDebuggerUrl: effectiveWebSocketDebuggerUrl,
+      maxEvents: input.logLines,
+      timeoutMs: undefined,
+      failuresOnly: true,
+      dryRun: input.dryRun,
+    })
+    : undefined;
 
   const evidencePaths = [
     ...logsResult.artifacts,
@@ -3749,6 +3834,21 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     includeDiagnostics: Boolean(input.includeDiagnostics),
     diagnosticsArtifacts: diagnosticsResult?.data.artifactCount ?? 0,
   });
+  if (jsConsoleResult) {
+    narrative.push(jsConsoleResult.status === "success"
+      ? `JS console snapshot collected ${String(jsConsoleResult.data.collectedCount)} event(s).`
+      : "JS console snapshot was unavailable; check Metro inspector availability.");
+  }
+  if (jsNetworkResult) {
+    narrative.push(jsNetworkResult.status === "success"
+      ? `JS network snapshot collected ${String(jsNetworkResult.data.collectedCount)} event(s).`
+      : "JS network snapshot was unavailable; check Metro inspector availability.");
+  }
+  if (includeJsInspector && discoveredTargetsResult) {
+    narrative.push(discoveredTarget
+      ? `Metro target auto-discovery selected ${discoveredTarget.id}${discoveredTarget.title ? ` (${discoveredTarget.title})` : ""}.`
+      : "Metro target auto-discovery did not find a debuggable JS target.");
+  }
 
   await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
 
@@ -3759,9 +3859,17 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       `- Runner profile: ${runnerProfile}`,
       `- App: ${effectiveAppId ?? "<unknown>"}`,
       `- Query: ${input.query ?? "<none>"}`,
+      `- JS inspector enabled: ${includeJsInspector ? "yes" : "no"}`,
+      `- JS target: ${effectiveTargetId ?? "<none>"}`,
       "",
       "## Narrative",
       ...narrative.map((line) => `- ${line}`),
+      "",
+      "## JS Console Events",
+      ...(jsConsoleResult?.data.logs?.length ? jsConsoleResult.data.logs.map((entry) => `- [${entry.level}] ${entry.text}`) : ["- <no JS console events captured>"]),
+      "",
+      "## JS Network Events",
+      ...(jsNetworkResult?.data.events?.length ? jsNetworkResult.data.events.map((entry) => `- [${entry.status ?? "pending"}] ${entry.method ?? "GET"} ${entry.url ?? "<unknown>"}${entry.errorText ? ` :: ${entry.errorText}` : ""}`) : ["- <no JS network events captured>"]),
       "",
       "## Top Signals",
       ...(interestingSignals.length > 0 ? interestingSignals.map((signal) => `- [${signal.category}] x${String(signal.count)} ${signal.sample}`) : ["- <no interesting signals detected>"]),
@@ -3772,16 +3880,18 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     await writeFile(absoluteOutputPath, report, "utf8");
   }
 
-  const allSucceeded = logsResult.status === "success" && crashResult.status === "success" && (!diagnosticsResult || diagnosticsResult.status === "success");
-  const anySucceeded = logsResult.status === "success" || crashResult.status === "success" || diagnosticsResult?.status === "success";
+  const jsConsoleOk = !jsConsoleResult || jsConsoleResult.status === "success";
+  const jsNetworkOk = !jsNetworkResult || jsNetworkResult.status === "success";
+  const allSucceeded = logsResult.status === "success" && crashResult.status === "success" && (!diagnosticsResult || diagnosticsResult.status === "success") && jsConsoleOk && jsNetworkOk;
+  const anySucceeded = logsResult.status === "success" || crashResult.status === "success" || diagnosticsResult?.status === "success" || jsConsoleResult?.status === "success" || jsNetworkResult?.status === "success";
   const status = allSucceeded ? "success" : anySucceeded ? "partial" : "failed";
   const reasonCode = allSucceeded
     ? REASON_CODES.ok
     : logsResult.reasonCode !== REASON_CODES.ok
-      ? logsResult.reasonCode
-      : crashResult.reasonCode !== REASON_CODES.ok
-        ? crashResult.reasonCode
-        : diagnosticsResult?.reasonCode ?? REASON_CODES.adapterError;
+        ? logsResult.reasonCode
+        : crashResult.reasonCode !== REASON_CODES.ok
+          ? crashResult.reasonCode
+          : diagnosticsResult?.reasonCode ?? jsConsoleResult?.reasonCode ?? jsNetworkResult?.reasonCode ?? REASON_CODES.adapterError;
   const summaryArtifactPath = input.dryRun ? [] : [relativeOutputPath];
 
   return {
@@ -3797,8 +3907,12 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       outputPath: relativeOutputPath,
       supportLevel: "full",
       appId: effectiveAppId,
+      jsDebugTargetId: effectiveTargetId,
+      jsDebugTargetTitle: discoveredTarget?.title,
       logSummary: logsResult.data.summary,
       crashSummary: crashResult.data.summary,
+      jsConsoleLogCount: jsConsoleResult?.data.collectedCount,
+      jsNetworkEventCount: jsNetworkResult?.data.collectedCount,
       interestingSignals,
       evidencePaths: [...summaryArtifactPath, ...evidencePaths],
       evidenceCount: summaryArtifactPath.length + evidencePaths.length,
@@ -3807,6 +3921,8 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
         ...(logsResult.data.evidence ?? []),
         ...(crashResult.data.evidence ?? []),
         ...(diagnosticsResult?.data.evidence ?? []),
+        ...(jsConsoleResult?.data.logs?.length ? [buildExecutionEvidence("log", "metro://console-snapshot", "partial", "Captured JS console snapshot from Metro inspector.")] : []),
+        ...(jsNetworkResult?.data.events?.length ? [buildExecutionEvidence("log", "metro://network-snapshot", "partial", "Captured JS network snapshot from Metro inspector.")] : []),
       ],
       narrative,
     },
@@ -3904,6 +4020,330 @@ export async function listJsDebugTargetsWithMaestro(input: ListJsDebugTargetsInp
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function captureJsConsoleLogsWithMaestro(input: CaptureJsConsoleLogsInput): Promise<ToolResult<CaptureJsConsoleLogsData>> {
+  const startTime = Date.now();
+  const sessionId = input.sessionId ?? `js-console-logs-${Date.now()}`;
+  const metroBaseUrl = normalizeMetroBaseUrl(input.metroBaseUrl);
+  const timeoutMs = normalizePositiveInteger(input.timeoutMs, DEFAULT_METRO_TIMEOUT_MS);
+  const maxLogs = normalizePositiveInteger(input.maxLogs, DEFAULT_JS_LOG_MAX_LOGS);
+  const webSocketDebuggerUrl = input.webSocketDebuggerUrl ?? (input.targetId ? buildInspectorWebSocketUrl(metroBaseUrl, input.targetId) : "");
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        metroBaseUrl,
+        targetId: input.targetId,
+        webSocketDebuggerUrl,
+        collectedCount: 0,
+        logs: [],
+      },
+      nextSuggestions: ["Run capture_js_console_logs without dryRun while Metro inspector is available and provide targetId or webSocketDebuggerUrl."],
+    };
+  }
+
+  if (!webSocketDebuggerUrl) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        metroBaseUrl,
+        targetId: input.targetId,
+        webSocketDebuggerUrl,
+        collectedCount: 0,
+        logs: [],
+      },
+      nextSuggestions: ["Call list_js_debug_targets first, then pass targetId or webSocketDebuggerUrl into capture_js_console_logs."],
+    };
+  }
+
+  const logs: JsConsoleLogEntry[] = [];
+  const ws = new WebSocket(webSocketDebuggerUrl);
+
+  return await new Promise<ToolResult<CaptureJsConsoleLogsData>>((resolve) => {
+    let settled = false;
+    let messageId = 1;
+    const finish = (result: ToolResult<CaptureJsConsoleLogsData>) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch {
+        return resolve(result);
+      }
+      resolve(result);
+    };
+
+    const timer = setTimeout(() => {
+      finish({
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          metroBaseUrl,
+          targetId: input.targetId,
+          webSocketDebuggerUrl,
+          collectedCount: logs.length,
+          logs,
+        },
+        nextSuggestions: logs.length === 0 ? ["No JS console events arrived before timeout. Confirm the target is active and emitting logs."] : [],
+      });
+    }, timeoutMs);
+
+    ws.addEventListener("open", () => {
+      ws.send(JSON.stringify({ id: messageId++, method: "Runtime.enable" }));
+    });
+
+    ws.addEventListener("message", (event) => {
+      try {
+        const message = JSON.parse(String(event.data));
+        if (message?.method === "Runtime.consoleAPICalled") {
+          const params = isRecord(message.params) ? message.params : {};
+          logs.push({
+            level: readNonEmptyString(params, "type") ?? "log",
+            text: normalizeConsoleArguments(params.args),
+            timestamp: typeof params.timestamp === "number" ? params.timestamp : undefined,
+          });
+        }
+        if (message?.method === "Runtime.exceptionThrown") {
+          const params = isRecord(message.params) ? message.params : {};
+          logs.push(buildInspectorExceptionLogEntry(params));
+        }
+        if (logs.length >= maxLogs) {
+          finish({
+            status: "success",
+            reasonCode: REASON_CODES.ok,
+            sessionId,
+            durationMs: Date.now() - startTime,
+            attempts: 1,
+            artifacts: [],
+            data: {
+              dryRun: false,
+              metroBaseUrl,
+              targetId: input.targetId,
+              webSocketDebuggerUrl,
+              collectedCount: logs.length,
+              logs,
+            },
+            nextSuggestions: [],
+          });
+        }
+      } catch {
+        return;
+      }
+    });
+
+    ws.addEventListener("error", () => {
+      finish({
+        status: "failed",
+        reasonCode: REASON_CODES.configurationError,
+        sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          metroBaseUrl,
+          targetId: input.targetId,
+          webSocketDebuggerUrl,
+          collectedCount: logs.length,
+          logs,
+        },
+        nextSuggestions: ["Ensure the Metro inspector WebSocket is reachable and that the selected JS target is still attached."],
+      });
+    });
+  });
+}
+
+export async function captureJsNetworkEventsWithMaestro(input: CaptureJsNetworkEventsInput): Promise<ToolResult<CaptureJsNetworkEventsData>> {
+  const startTime = Date.now();
+  const sessionId = input.sessionId ?? `js-network-events-${Date.now()}`;
+  const metroBaseUrl = normalizeMetroBaseUrl(input.metroBaseUrl);
+  const timeoutMs = normalizePositiveInteger(input.timeoutMs, DEFAULT_METRO_TIMEOUT_MS);
+  const maxEvents = normalizePositiveInteger(input.maxEvents, DEFAULT_JS_NETWORK_MAX_EVENTS);
+  const failuresOnly = input.failuresOnly ?? true;
+  const webSocketDebuggerUrl = input.webSocketDebuggerUrl ?? (input.targetId ? buildInspectorWebSocketUrl(metroBaseUrl, input.targetId) : "");
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        metroBaseUrl,
+        targetId: input.targetId,
+        webSocketDebuggerUrl,
+        collectedCount: 0,
+        failuresOnly,
+        events: [],
+      },
+      nextSuggestions: ["Run capture_js_network_events without dryRun while Metro inspector is available and provide targetId or webSocketDebuggerUrl."],
+    };
+  }
+
+  if (!webSocketDebuggerUrl) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        metroBaseUrl,
+        targetId: input.targetId,
+        webSocketDebuggerUrl,
+        collectedCount: 0,
+        failuresOnly,
+        events: [],
+      },
+      nextSuggestions: ["Call list_js_debug_targets first, then pass targetId or webSocketDebuggerUrl into capture_js_network_events."],
+    };
+  }
+
+  const events = new Map<string, JsNetworkEvent>();
+  const ws = new WebSocket(webSocketDebuggerUrl);
+
+  return await new Promise<ToolResult<CaptureJsNetworkEventsData>>((resolve) => {
+    let settled = false;
+    let messageId = 1;
+    const finish = (result: ToolResult<CaptureJsNetworkEventsData>) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch {
+        return resolve(result);
+      }
+      resolve(result);
+    };
+
+    const snapshot = () => [...events.values()].filter((event) => shouldKeepNetworkEvent(event, failuresOnly)).slice(0, maxEvents);
+    const timer = setTimeout(() => {
+      const collected = snapshot();
+      finish({
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          metroBaseUrl,
+          targetId: input.targetId,
+          webSocketDebuggerUrl,
+          collectedCount: collected.length,
+          failuresOnly,
+          events: collected,
+        },
+        nextSuggestions: collected.length === 0 ? ["No matching JS network events arrived before timeout. Confirm the target is active and issuing requests."] : [],
+      });
+    }, timeoutMs);
+
+    ws.addEventListener("open", () => {
+      ws.send(JSON.stringify({ id: messageId++, method: "Network.enable" }));
+    });
+
+    ws.addEventListener("message", (event) => {
+      try {
+        const message = JSON.parse(String(event.data));
+        const params = isRecord(message?.params) ? message.params : {};
+        const requestId = readNonEmptyString(params, "requestId");
+        if (!requestId) {
+          return;
+        }
+
+        const current = events.get(requestId) ?? { requestId };
+        if (message?.method === "Network.requestWillBeSent") {
+          const request = isRecord(params.request) ? params.request : {};
+          current.url = readNonEmptyString(request, "url") ?? current.url;
+          current.method = readNonEmptyString(request, "method") ?? current.method;
+        }
+        if (message?.method === "Network.responseReceived") {
+          const response = isRecord(params.response) ? params.response : {};
+          current.url = readNonEmptyString(response, "url") ?? current.url;
+          current.status = typeof response.status === "number" ? response.status : current.status;
+          current.statusText = readNonEmptyString(response, "statusText") ?? current.statusText;
+          current.mimeType = readNonEmptyString(response, "mimeType") ?? current.mimeType;
+        }
+        if (message?.method === "Network.loadingFailed") {
+          current.errorText = readNonEmptyString(params, "errorText") ?? current.errorText;
+        }
+
+        events.set(requestId, current);
+
+        if (snapshot().length >= maxEvents) {
+          const collected = snapshot();
+          finish({
+            status: "success",
+            reasonCode: REASON_CODES.ok,
+            sessionId,
+            durationMs: Date.now() - startTime,
+            attempts: 1,
+            artifacts: [],
+            data: {
+              dryRun: false,
+              metroBaseUrl,
+              targetId: input.targetId,
+              webSocketDebuggerUrl,
+              collectedCount: collected.length,
+              failuresOnly,
+              events: collected,
+            },
+            nextSuggestions: [],
+          });
+        }
+      } catch {
+        return;
+      }
+    });
+
+    ws.addEventListener("error", () => {
+      finish({
+        status: "failed",
+        reasonCode: REASON_CODES.configurationError,
+        sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          metroBaseUrl,
+          targetId: input.targetId,
+          webSocketDebuggerUrl,
+          collectedCount: snapshot().length,
+          failuresOnly,
+          events: snapshot(),
+        },
+        nextSuggestions: ["Ensure the Metro inspector WebSocket is reachable and that the selected JS target is still attached."],
+      });
+    });
+  });
 }
 
 export async function launchAppWithMaestro(input: LaunchAppInput): Promise<ToolResult<LaunchAppData>> {

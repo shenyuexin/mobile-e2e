@@ -1,9 +1,11 @@
-import type { CollectDebugEvidenceInput, CollectDiagnosticsInput, DescribeCapabilitiesInput, DoctorInput, GetCrashSignalsInput, GetLogsInput, InspectUiInput, InstallAppInput, LaunchAppInput, ListDevicesInput, Platform, QueryUiInput, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, ScrollAndTapElementInput, StartSessionInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
+import type { CaptureJsConsoleLogsInput, CaptureJsNetworkEventsInput, CollectDebugEvidenceInput, CollectDiagnosticsInput, DescribeCapabilitiesInput, DoctorInput, GetCrashSignalsInput, GetLogsInput, InspectUiInput, InstallAppInput, LaunchAppInput, ListDevicesInput, ListJsDebugTargetsInput, Platform, QueryUiInput, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, ScrollAndTapElementInput, StartSessionInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { createServer } from "./index.js";
 
 interface CliOptions {
+  captureJsConsoleLogs: boolean;
+  captureJsNetworkEvents: boolean;
   collectDebugEvidence: boolean;
   collectDiagnostics: boolean;
   describeCapabilities: boolean;
@@ -15,6 +17,7 @@ interface CliOptions {
   getLogs: boolean;
   inspectUi: boolean;
   installApp: boolean;
+  listJsDebugTargets: boolean;
   launchApp: boolean;
   listDevices: boolean;
   queryUi: boolean;
@@ -51,7 +54,13 @@ interface CliOptions {
   flowPath?: string;
   harnessConfigPath?: string;
   sessionId?: string;
+  metroBaseUrl?: string;
+  targetId?: string;
+  webSocketDebuggerUrl?: string;
   timeoutMs?: number;
+  maxLogs?: number;
+  maxEvents?: number;
+  failuresOnly?: boolean;
   intervalMs?: number;
   waitUntil?: WaitForUiMode;
   maxSwipes?: number;
@@ -73,6 +82,8 @@ function parseBooleanArg(value: string | undefined): boolean | undefined {
 
 export function parseCliArgs(argv: string[]): CliOptions {
   let platform: Platform = "android";
+  let captureJsConsoleLogs = false;
+  let captureJsNetworkEvents = false;
   let collectDebugEvidence = false;
   let collectDiagnostics = false;
   let describeCapabilities = false;
@@ -83,6 +94,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let getLogs = false;
   let inspectUi = false;
   let installApp = false;
+  let listJsDebugTargets = false;
   let launchApp = false;
   let listDevices = false;
   let queryUi = false;
@@ -119,7 +131,13 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let flowPath: string | undefined;
   let harnessConfigPath: string | undefined;
   let sessionId: string | undefined;
+  let metroBaseUrl: string | undefined;
+  let targetId: string | undefined;
+  let webSocketDebuggerUrl: string | undefined;
   let timeoutMs: number | undefined;
+  let maxLogs: number | undefined;
+  let maxEvents: number | undefined;
+  let failuresOnly: boolean | undefined;
   let intervalMs: number | undefined;
   let waitUntil: WaitForUiMode | undefined;
   let maxSwipes: number | undefined;
@@ -130,6 +148,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
     const arg = argv[index];
     const nextValue = argv[index + 1];
     if (arg === "--platform" && (nextValue === "android" || nextValue === "ios")) { platform = nextValue; index += 1; }
+    else if (arg === "--capture-js-console-logs") { captureJsConsoleLogs = true; }
+    else if (arg === "--capture-js-network-events") { captureJsNetworkEvents = true; }
     else if (arg === "--collect-debug-evidence") { collectDebugEvidence = true; }
     else if (arg === "--collect-diagnostics") { collectDiagnostics = true; }
     else if (arg === "--describe-capabilities") { describeCapabilities = true; }
@@ -140,6 +160,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--get-logs") { getLogs = true; }
     else if (arg === "--inspect-ui") { inspectUi = true; }
     else if (arg === "--install-app") { installApp = true; }
+    else if (arg === "--list-js-debug-targets") { listJsDebugTargets = true; }
     else if (arg === "--launch-app") { launchApp = true; }
     else if (arg === "--list-devices") { listDevices = true; }
     else if (arg === "--query-ui") { queryUi = true; }
@@ -176,7 +197,13 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--flow-path" && nextValue) { flowPath = nextValue; index += 1; }
     else if (arg === "--harness-config-path" && nextValue) { harnessConfigPath = nextValue; index += 1; }
     else if (arg === "--session-id" && nextValue) { sessionId = nextValue; index += 1; }
+    else if (arg === "--metro-base-url" && nextValue) { metroBaseUrl = nextValue; index += 1; }
+    else if (arg === "--target-id" && nextValue) { targetId = nextValue; index += 1; }
+    else if (arg === "--websocket-debugger-url" && nextValue) { webSocketDebuggerUrl = nextValue; index += 1; }
     else if (arg === "--timeout-ms" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) timeoutMs = Math.floor(parsed); index += 1; }
+    else if (arg === "--max-logs" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) maxLogs = Math.floor(parsed); index += 1; }
+    else if (arg === "--max-events" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) maxEvents = Math.floor(parsed); index += 1; }
+    else if (arg === "--failures-only" && nextValue) { failuresOnly = parseBooleanArg(nextValue); index += 1; }
     else if (arg === "--interval-ms" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) intervalMs = Math.floor(parsed); index += 1; }
     else if (arg === "--wait-until" && isWaitForUiMode(nextValue)) { waitUntil = nextValue; index += 1; }
     else if (arg === "--max-swipes" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 0) maxSwipes = Math.floor(parsed); index += 1; }
@@ -185,6 +212,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
   }
 
   return {
+    captureJsConsoleLogs,
+    captureJsNetworkEvents,
     collectDebugEvidence,
     collectDiagnostics,
     describeCapabilities,
@@ -196,6 +225,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     getLogs,
     inspectUi,
     installApp,
+    listJsDebugTargets,
     launchApp,
     listDevices,
     queryUi,
@@ -232,7 +262,13 @@ export function parseCliArgs(argv: string[]): CliOptions {
     flowPath,
     harnessConfigPath,
     sessionId,
+    metroBaseUrl,
+    targetId,
+    webSocketDebuggerUrl,
     timeoutMs,
+    maxLogs,
+    maxEvents,
+    failuresOnly,
     intervalMs,
     waitUntil,
     maxSwipes,
@@ -245,6 +281,37 @@ export async function main(): Promise<void> {
   const cliOptions = parseCliArgs(process.argv.slice(2));
   const server = createServer();
 
+  if (cliOptions.captureJsConsoleLogs) {
+    const captureJsConsoleLogsInput: CaptureJsConsoleLogsInput = {
+      sessionId: cliOptions.sessionId,
+      metroBaseUrl: cliOptions.metroBaseUrl,
+      targetId: cliOptions.targetId,
+      webSocketDebuggerUrl: cliOptions.webSocketDebuggerUrl,
+      maxLogs: cliOptions.maxLogs,
+      timeoutMs: cliOptions.timeoutMs,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("capture_js_console_logs", captureJsConsoleLogsInput);
+    console.log(JSON.stringify({ tools: server.listTools(), captureJsConsoleLogsResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.captureJsNetworkEvents) {
+    const captureJsNetworkEventsInput: CaptureJsNetworkEventsInput = {
+      sessionId: cliOptions.sessionId,
+      metroBaseUrl: cliOptions.metroBaseUrl,
+      targetId: cliOptions.targetId,
+      webSocketDebuggerUrl: cliOptions.webSocketDebuggerUrl,
+      maxEvents: cliOptions.maxEvents,
+      timeoutMs: cliOptions.timeoutMs,
+      failuresOnly: cliOptions.failuresOnly,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("capture_js_network_events", captureJsNetworkEventsInput);
+    console.log(JSON.stringify({ tools: server.listTools(), captureJsNetworkEventsResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
   if (cliOptions.collectDebugEvidence) {
     const collectDebugEvidenceInput: CollectDebugEvidenceInput = {
       sessionId: cliOptions.sessionId ?? `debug-evidence-${Date.now()}`,
@@ -255,6 +322,9 @@ export async function main(): Promise<void> {
       appId: cliOptions.appId,
       outputPath: cliOptions.outputPath,
       logLines: cliOptions.lines,
+      targetId: cliOptions.targetId,
+      webSocketDebuggerUrl: cliOptions.webSocketDebuggerUrl,
+      includeJsInspector: true,
       sinceSeconds: cliOptions.sinceSeconds,
       query: cliOptions.queryText ?? cliOptions.text,
       includeDiagnostics: cliOptions.includeDiagnostics,
@@ -300,6 +370,18 @@ export async function main(): Promise<void> {
   if (cliOptions.listDevices) {
     const result = await server.invoke("list_devices", { includeUnavailable: cliOptions.includeUnavailable } satisfies ListDevicesInput);
     console.log(JSON.stringify({ tools: server.listTools(), listDevicesResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.listJsDebugTargets) {
+    const listJsDebugTargetsInput: ListJsDebugTargetsInput = {
+      sessionId: cliOptions.sessionId,
+      metroBaseUrl: cliOptions.metroBaseUrl,
+      timeoutMs: cliOptions.timeoutMs,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("list_js_debug_targets", listJsDebugTargetsInput);
+    console.log(JSON.stringify({ tools: server.listTools(), listJsDebugTargetsResult: result }, null, 2));
     if (result.status === "failed") process.exitCode = 1;
     return;
   }

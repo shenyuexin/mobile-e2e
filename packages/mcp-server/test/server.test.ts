@@ -7,9 +7,12 @@ test("createServer lists newly added UI tools", () => {
   const tools = server.listTools();
 
   assert.ok(tools.includes("collect_debug_evidence"));
+  assert.ok(tools.includes("capture_js_console_logs"));
+  assert.ok(tools.includes("capture_js_network_events"));
   assert.ok(tools.includes("collect_diagnostics"));
   assert.ok(tools.includes("describe_capabilities"));
   assert.ok(tools.includes("get_crash_signals"));
+  assert.ok(tools.includes("list_js_debug_targets"));
   assert.ok(tools.includes("query_ui"));
   assert.ok(tools.includes("resolve_ui_target"));
   assert.ok(tools.includes("wait_for_ui"));
@@ -184,4 +187,46 @@ test("server invoke supports collect_debug_evidence Android dry-run", async () =
   assert.equal(result.data.supportLevel, "full");
   assert.equal(result.data.evidenceCount, 0);
   assert.equal(result.data.logSummary?.query, "error");
+  assert.equal(result.data.jsDebugTargetId, undefined);
+  assert.equal(result.data.jsConsoleLogCount, 0);
+  assert.equal(result.data.jsNetworkEventCount, 0);
+});
+
+test("server invoke supports list_js_debug_targets dry-run", async () => {
+  const server = createServer();
+  const result = await server.invoke("list_js_debug_targets", {
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.targetCount, 0);
+  assert.equal(result.data.endpoint, "http://127.0.0.1:8081/json/list");
+});
+
+test("server invoke supports capture_js_console_logs dry-run", async () => {
+  const server = createServer();
+  const result = await server.invoke("capture_js_console_logs", {
+    dryRun: true,
+    targetId: "demo-target",
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.collectedCount, 0);
+  assert.equal(result.data.webSocketDebuggerUrl, "ws://127.0.0.1:8081/inspector/debug?target=demo-target");
+});
+
+test("server invoke supports capture_js_network_events dry-run", async () => {
+  const server = createServer();
+  const result = await server.invoke("capture_js_network_events", {
+    dryRun: true,
+    targetId: "demo-target",
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.collectedCount, 0);
+  assert.equal(result.data.failuresOnly, true);
+  assert.equal(result.data.webSocketDebuggerUrl, "ws://127.0.0.1:8081/inspector/debug?target=demo-target");
 });

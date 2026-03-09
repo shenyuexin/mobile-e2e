@@ -75,6 +75,52 @@ test("parseCliArgs captures collect_debug_evidence flags", () => {
   assert.equal(options.dryRun, true);
 });
 
+test("parseCliArgs captures capture_js_console_logs flags", () => {
+  const options = parseCliArgs([
+    "--capture-js-console-logs",
+    "--target-id", "demo-target",
+    "--max-logs", "10",
+    "--timeout-ms", "1500",
+    "--dry-run",
+  ]);
+
+  assert.equal(options.captureJsConsoleLogs, true);
+  assert.equal(options.targetId, "demo-target");
+  assert.equal(options.maxLogs, 10);
+  assert.equal(options.timeoutMs, 1500);
+  assert.equal(options.dryRun, true);
+});
+
+test("parseCliArgs captures capture_js_network_events flags", () => {
+  const options = parseCliArgs([
+    "--capture-js-network-events",
+    "--target-id", "demo-target",
+    "--max-events", "12",
+    "--failures-only", "true",
+    "--dry-run",
+  ]);
+
+  assert.equal(options.captureJsNetworkEvents, true);
+  assert.equal(options.targetId, "demo-target");
+  assert.equal(options.maxEvents, 12);
+  assert.equal(options.failuresOnly, true);
+  assert.equal(options.dryRun, true);
+});
+
+test("parseCliArgs captures list_js_debug_targets flags", () => {
+  const options = parseCliArgs([
+    "--list-js-debug-targets",
+    "--metro-base-url", "http://127.0.0.1:8081",
+    "--timeout-ms", "1500",
+    "--dry-run",
+  ]);
+
+  assert.equal(options.listJsDebugTargets, true);
+  assert.equal(options.metroBaseUrl, "http://127.0.0.1:8081");
+  assert.equal(options.timeoutMs, 1500);
+  assert.equal(options.dryRun, true);
+});
+
 test("parseCliArgs captures scroll_and_resolve_ui_target flags", () => {
   const options = parseCliArgs([
     "--scroll-and-resolve-ui-target",
@@ -288,7 +334,7 @@ test("main dispatches collect_debug_evidence Android dry-run through the CLI", a
     collectDebugEvidenceResult: {
       status: string;
       reasonCode: string;
-      data: { supportLevel: string; logSummary?: { query?: string } };
+      data: { supportLevel: string; logSummary?: { query?: string }; jsDebugTargetId?: string; jsConsoleLogCount?: number; jsNetworkEventCount?: number };
     };
   };
 
@@ -296,4 +342,64 @@ test("main dispatches collect_debug_evidence Android dry-run through the CLI", a
   assert.equal(output.collectDebugEvidenceResult.reasonCode, "OK");
   assert.equal(output.collectDebugEvidenceResult.data.supportLevel, "full");
   assert.equal(output.collectDebugEvidenceResult.data.logSummary?.query, "error");
+  assert.equal(output.collectDebugEvidenceResult.data.jsDebugTargetId, undefined);
+  assert.equal(output.collectDebugEvidenceResult.data.jsConsoleLogCount, 0);
+  assert.equal(output.collectDebugEvidenceResult.data.jsNetworkEventCount, 0);
+});
+
+test("main dispatches list_js_debug_targets dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--list-js-debug-targets",
+    "--dry-run",
+  ]) as {
+    listJsDebugTargetsResult: {
+      status: string;
+      reasonCode: string;
+      data: { targetCount: number; endpoint: string };
+    };
+  };
+
+  assert.equal(output.listJsDebugTargetsResult.status, "success");
+  assert.equal(output.listJsDebugTargetsResult.reasonCode, "OK");
+  assert.equal(output.listJsDebugTargetsResult.data.targetCount, 0);
+  assert.equal(output.listJsDebugTargetsResult.data.endpoint, "http://127.0.0.1:8081/json/list");
+});
+
+test("main dispatches capture_js_console_logs dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--capture-js-console-logs",
+    "--target-id", "demo-target",
+    "--dry-run",
+  ]) as {
+    captureJsConsoleLogsResult: {
+      status: string;
+      reasonCode: string;
+      data: { collectedCount: number; webSocketDebuggerUrl: string };
+    };
+  };
+
+  assert.equal(output.captureJsConsoleLogsResult.status, "success");
+  assert.equal(output.captureJsConsoleLogsResult.reasonCode, "OK");
+  assert.equal(output.captureJsConsoleLogsResult.data.collectedCount, 0);
+  assert.equal(output.captureJsConsoleLogsResult.data.webSocketDebuggerUrl, "ws://127.0.0.1:8081/inspector/debug?target=demo-target");
+});
+
+test("main dispatches capture_js_network_events dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--capture-js-network-events",
+    "--target-id", "demo-target",
+    "--dry-run",
+  ]) as {
+    captureJsNetworkEventsResult: {
+      status: string;
+      reasonCode: string;
+      data: { collectedCount: number; failuresOnly: boolean; webSocketDebuggerUrl: string };
+    };
+  };
+
+  assert.equal(output.captureJsNetworkEventsResult.status, "success");
+  assert.equal(output.captureJsNetworkEventsResult.reasonCode, "OK");
+  assert.equal(output.captureJsNetworkEventsResult.data.collectedCount, 0);
+  assert.equal(output.captureJsNetworkEventsResult.data.failuresOnly, true);
+  assert.equal(output.captureJsNetworkEventsResult.data.webSocketDebuggerUrl, "ws://127.0.0.1:8081/inspector/debug?target=demo-target");
 });

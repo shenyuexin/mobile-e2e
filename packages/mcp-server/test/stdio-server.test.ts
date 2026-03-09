@@ -7,7 +7,10 @@ test("buildToolList includes the new UI tools", () => {
   const toolNames = tools.map((tool) => tool.name);
 
   assert.ok(toolNames.includes("query_ui"));
+  assert.ok(toolNames.includes("capture_js_console_logs"));
+  assert.ok(toolNames.includes("capture_js_network_events"));
   assert.ok(toolNames.includes("collect_debug_evidence"));
+  assert.ok(toolNames.includes("list_js_debug_targets"));
   assert.ok(toolNames.includes("describe_capabilities"));
   assert.ok(toolNames.includes("resolve_ui_target"));
   assert.ok(toolNames.includes("wait_for_ui"));
@@ -23,7 +26,10 @@ test("handleRequest returns stdio initialize payload", async () => {
 
   assert.equal(typedResult.name, "mobile-e2e-mcp");
   assert.equal(typedResult.protocol, "minimal-stdio-v1");
+  assert.ok(typedResult.tools.some((tool) => tool.name === "capture_js_console_logs"));
+  assert.ok(typedResult.tools.some((tool) => tool.name === "capture_js_network_events"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "collect_debug_evidence"));
+  assert.ok(typedResult.tools.some((tool) => tool.name === "list_js_debug_targets"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "get_crash_signals"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "describe_capabilities"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "wait_for_ui"));
@@ -111,7 +117,10 @@ test("handleRequest supports tools/list alias", async () => {
   const typedResult = result as Array<{ name: string }>;
 
   assert.ok(typedResult.some((tool) => tool.name === "query_ui"));
+  assert.ok(typedResult.some((tool) => tool.name === "capture_js_console_logs"));
+  assert.ok(typedResult.some((tool) => tool.name === "capture_js_network_events"));
   assert.ok(typedResult.some((tool) => tool.name === "collect_debug_evidence"));
+  assert.ok(typedResult.some((tool) => tool.name === "list_js_debug_targets"));
   assert.ok(typedResult.some((tool) => tool.name === "wait_for_ui"));
 });
 

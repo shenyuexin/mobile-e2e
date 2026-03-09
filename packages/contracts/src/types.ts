@@ -215,6 +215,9 @@ export interface CollectDebugEvidenceInput {
   appId?: string;
   outputPath?: string;
   logLines?: number;
+  targetId?: string;
+  webSocketDebuggerUrl?: string;
+  includeJsInspector?: boolean;
   sinceSeconds?: number;
   query?: string;
   includeDiagnostics?: boolean;
@@ -226,8 +229,12 @@ export interface CollectDebugEvidenceData {
   outputPath: string;
   supportLevel: "full" | "partial";
   appId?: string;
+  jsDebugTargetId?: string;
+  jsDebugTargetTitle?: string;
   logSummary?: LogSummary;
   crashSummary?: LogSummary;
+  jsConsoleLogCount?: number;
+  jsNetworkEventCount?: number;
   interestingSignals: DebugSignalSummary[];
   evidencePaths: string[];
   evidenceCount: number;
@@ -258,6 +265,17 @@ export interface JsConsoleLogEntry {
   level: string;
   text: string;
   timestamp?: number;
+  sourceUrl?: string;
+  lineNumber?: number;
+  columnNumber?: number;
+  exceptionType?: string;
+  stackFrames?: JsStackFrame[];
+}
+export interface JsStackFrame {
+  functionName?: string;
+  url?: string;
+  lineNumber?: number;
+  columnNumber?: number;
 }
 export interface CaptureJsConsoleLogsInput {
   sessionId?: string;
@@ -275,6 +293,34 @@ export interface CaptureJsConsoleLogsData {
   webSocketDebuggerUrl: string;
   collectedCount: number;
   logs: JsConsoleLogEntry[];
+}
+export interface JsNetworkEvent {
+  requestId: string;
+  url?: string;
+  method?: string;
+  status?: number;
+  statusText?: string;
+  errorText?: string;
+  mimeType?: string;
+}
+export interface CaptureJsNetworkEventsInput {
+  sessionId?: string;
+  metroBaseUrl?: string;
+  targetId?: string;
+  webSocketDebuggerUrl?: string;
+  maxEvents?: number;
+  timeoutMs?: number;
+  failuresOnly?: boolean;
+  dryRun?: boolean;
+}
+export interface CaptureJsNetworkEventsData {
+  dryRun: boolean;
+  metroBaseUrl: string;
+  targetId?: string;
+  webSocketDebuggerUrl: string;
+  collectedCount: number;
+  failuresOnly: boolean;
+  events: JsNetworkEvent[];
 }
 export interface DescribeCapabilitiesInput {
   sessionId?: string;

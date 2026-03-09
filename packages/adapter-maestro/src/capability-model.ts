@@ -9,6 +9,8 @@ function buildToolCapability(toolName: string, supportLevel: CapabilitySupportLe
 
 function buildAndroidToolCapabilities(): ToolCapability[] {
   return [
+    buildToolCapability("capture_js_console_logs", PARTIAL, "JS console capture requires a running Metro inspector target and is available when the RN/Expo debug runtime is attached.", false),
+    buildToolCapability("capture_js_network_events", PARTIAL, "JS network capture requires a running Metro inspector target and is available when the RN/Expo debug runtime is attached.", false),
     buildToolCapability("collect_debug_evidence", FULL, "Android debug evidence summarization is supported through log and crash digest capture."),
     buildToolCapability("describe_capabilities", FULL, "Capability discovery is fully supported for Android sessions and devices.", false),
     buildToolCapability("collect_diagnostics", FULL, "Android diagnostics collection is supported through adb bugreport capture."),
@@ -37,6 +39,8 @@ function buildAndroidToolCapabilities(): ToolCapability[] {
 
 function buildIosToolCapabilities(): ToolCapability[] {
   return [
+    buildToolCapability("capture_js_console_logs", PARTIAL, "JS console capture requires a running Metro inspector target and is available when the RN/Expo debug runtime is attached.", false),
+    buildToolCapability("capture_js_network_events", PARTIAL, "JS network capture requires a running Metro inspector target and is available when the RN/Expo debug runtime is attached.", false),
     buildToolCapability("collect_debug_evidence", FULL, "iOS simulator debug evidence summarization is supported through log and crash digest capture."),
     buildToolCapability("describe_capabilities", FULL, "Capability discovery is fully supported for iOS sessions and simulators.", false),
     buildToolCapability("collect_diagnostics", FULL, "iOS simulator diagnostics bundle capture is supported."),

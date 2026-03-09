@@ -1,4 +1,8 @@
 import type {
+  CaptureJsConsoleLogsData,
+  CaptureJsConsoleLogsInput,
+  CaptureJsNetworkEventsData,
+  CaptureJsNetworkEventsInput,
   CollectDebugEvidenceData,
   CollectDebugEvidenceInput,
   CollectDiagnosticsData,
@@ -16,6 +20,8 @@ import type {
   InspectUiInput,
   InstallAppInput,
   LaunchAppInput,
+  ListJsDebugTargetsData,
+  ListJsDebugTargetsInput,
   ListDevicesInput,
   QueryUiData,
   QueryUiInput,
@@ -42,6 +48,8 @@ import type {
 } from "@mobile-e2e-mcp/contracts";
 
 export interface MobileE2EMcpToolRegistry {
+  capture_js_console_logs: (input: CaptureJsConsoleLogsInput) => Promise<ToolResult<CaptureJsConsoleLogsData>>;
+  capture_js_network_events: (input: CaptureJsNetworkEventsInput) => Promise<ToolResult<CaptureJsNetworkEventsData>>;
   collect_debug_evidence: (input: CollectDebugEvidenceInput) => Promise<ToolResult<CollectDebugEvidenceData>>;
   collect_diagnostics: (input: CollectDiagnosticsInput) => Promise<ToolResult<CollectDiagnosticsData>>;
   describe_capabilities: (input: DescribeCapabilitiesInput) => Promise<ToolResult<DescribeCapabilitiesData>>;
@@ -54,6 +62,7 @@ export interface MobileE2EMcpToolRegistry {
   scroll_and_resolve_ui_target: (input: ScrollAndResolveUiTargetInput) => Promise<ToolResult<ScrollAndResolveUiTargetData>>;
   scroll_and_tap_element: (input: ScrollAndTapElementInput) => Promise<ToolResult<ScrollAndTapElementData>>;
   install_app: (input: InstallAppInput) => Promise<ToolResult>;
+  list_js_debug_targets: (input: ListJsDebugTargetsInput) => Promise<ToolResult<ListJsDebugTargetsData>>;
   launch_app: (input: LaunchAppInput) => Promise<ToolResult>;
   list_devices: (input: ListDevicesInput) => Promise<ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>>;
   start_session: (input: StartSessionInput) => Promise<ToolResult<Session>>;
@@ -72,9 +81,11 @@ export class MobileE2EMcpServer {
   constructor(private readonly tools: MobileE2EMcpToolRegistry) {}
 
   listTools(): Array<keyof MobileE2EMcpToolRegistry> {
-    return ["collect_debug_evidence", "collect_diagnostics", "describe_capabilities", "doctor", "get_crash_signals", "get_logs", "inspect_ui", "query_ui", "resolve_ui_target", "scroll_and_resolve_ui_target", "scroll_and_tap_element", "install_app", "launch_app", "list_devices", "start_session", "run_flow", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
+    return ["capture_js_console_logs", "capture_js_network_events", "collect_debug_evidence", "collect_diagnostics", "describe_capabilities", "doctor", "get_crash_signals", "get_logs", "inspect_ui", "query_ui", "resolve_ui_target", "scroll_and_resolve_ui_target", "scroll_and_tap_element", "install_app", "list_js_debug_targets", "launch_app", "list_devices", "start_session", "run_flow", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
   }
 
+  async invoke(toolName: "capture_js_console_logs", input: CaptureJsConsoleLogsInput): Promise<ToolResult<CaptureJsConsoleLogsData>>;
+  async invoke(toolName: "capture_js_network_events", input: CaptureJsNetworkEventsInput): Promise<ToolResult<CaptureJsNetworkEventsData>>;
   async invoke(toolName: "collect_debug_evidence", input: CollectDebugEvidenceInput): Promise<ToolResult<CollectDebugEvidenceData>>;
   async invoke(toolName: "collect_diagnostics", input: CollectDiagnosticsInput): Promise<ToolResult<CollectDiagnosticsData>>;
   async invoke(toolName: "describe_capabilities", input: DescribeCapabilitiesInput): Promise<ToolResult<DescribeCapabilitiesData>>;
@@ -87,6 +98,7 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "scroll_and_resolve_ui_target", input: ScrollAndResolveUiTargetInput): Promise<ToolResult<ScrollAndResolveUiTargetData>>;
   async invoke(toolName: "scroll_and_tap_element", input: ScrollAndTapElementInput): Promise<ToolResult<ScrollAndTapElementData>>;
   async invoke(toolName: "install_app", input: InstallAppInput): Promise<ToolResult>;
+  async invoke(toolName: "list_js_debug_targets", input: ListJsDebugTargetsInput): Promise<ToolResult<ListJsDebugTargetsData>>;
   async invoke(toolName: "launch_app", input: LaunchAppInput): Promise<ToolResult>;
   async invoke(toolName: "list_devices", input: ListDevicesInput): Promise<ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>>;
   async invoke(toolName: "start_session", input: StartSessionInput): Promise<ToolResult<Session>>;
@@ -101,14 +113,17 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "end_session", input: EndSessionInput): Promise<ToolResult<{ closed: boolean; endedAt: string }>>;
   async invoke(
     toolName: keyof MobileE2EMcpToolRegistry,
-    input: CollectDebugEvidenceInput | CollectDiagnosticsInput | DescribeCapabilitiesInput | DoctorInput | GetCrashSignalsInput | GetLogsInput | InspectUiInput | QueryUiInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | ScrollAndTapElementInput | InstallAppInput | LaunchAppInput | ListDevicesInput | StartSessionInput | RunFlowInput | ScreenshotInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
+    input: CaptureJsConsoleLogsInput | CaptureJsNetworkEventsInput | CollectDebugEvidenceInput | CollectDiagnosticsInput | DescribeCapabilitiesInput | DoctorInput | GetCrashSignalsInput | GetLogsInput | InspectUiInput | QueryUiInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | ScrollAndTapElementInput | InstallAppInput | ListJsDebugTargetsInput | LaunchAppInput | ListDevicesInput | StartSessionInput | RunFlowInput | ScreenshotInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
   ): Promise<
+    | ToolResult<CaptureJsConsoleLogsData>
+    | ToolResult<CaptureJsNetworkEventsData>
     | ToolResult<CollectDebugEvidenceData>
     | ToolResult<CollectDiagnosticsData>
     | ToolResult<DescribeCapabilitiesData>
     | ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>
     | ToolResult<GetCrashSignalsData>
     | ToolResult<GetLogsData>
+    | ToolResult<ListJsDebugTargetsData>
     | ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>
     | ToolResult<Session>
     | ToolResult<QueryUiData>
@@ -121,6 +136,8 @@ export class MobileE2EMcpServer {
     | ToolResult
     | ToolResult<{ closed: boolean; endedAt: string }>
   > {
+    if (toolName === "capture_js_console_logs") return this.tools.capture_js_console_logs(input as CaptureJsConsoleLogsInput);
+    if (toolName === "capture_js_network_events") return this.tools.capture_js_network_events(input as CaptureJsNetworkEventsInput);
     if (toolName === "collect_debug_evidence") return this.tools.collect_debug_evidence(input as CollectDebugEvidenceInput);
     if (toolName === "collect_diagnostics") return this.tools.collect_diagnostics(input as CollectDiagnosticsInput);
     if (toolName === "describe_capabilities") return this.tools.describe_capabilities(input as DescribeCapabilitiesInput);
@@ -133,6 +150,7 @@ export class MobileE2EMcpServer {
     if (toolName === "scroll_and_resolve_ui_target") return this.tools.scroll_and_resolve_ui_target(input as ScrollAndResolveUiTargetInput);
     if (toolName === "scroll_and_tap_element") return this.tools.scroll_and_tap_element(input as ScrollAndTapElementInput);
     if (toolName === "install_app") return this.tools.install_app(input as InstallAppInput);
+    if (toolName === "list_js_debug_targets") return this.tools.list_js_debug_targets(input as ListJsDebugTargetsInput);
     if (toolName === "launch_app") return this.tools.launch_app(input as LaunchAppInput);
     if (toolName === "list_devices") return this.tools.list_devices(input as ListDevicesInput);
     if (toolName === "start_session") return this.tools.start_session(input as StartSessionInput);

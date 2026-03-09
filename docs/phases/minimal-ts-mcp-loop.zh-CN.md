@@ -30,6 +30,8 @@
 17. 新增最小 get_crash_signals 工具
 18. 新增最小 collect_diagnostics 工具
 19. 新增最小 collect_debug_evidence 工具
+20. 新增最小 list_js_debug_targets / capture_js_console_logs 工具
+21. 新增最小 capture_js_network_events，并把 JS inspector 证据并入 collect_debug_evidence
 
 ## 当前最小验证入口
 
@@ -93,6 +95,9 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --get-crash-sig
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-diagnostics --platform android --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-diagnostics --platform ios --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-debug-evidence --platform android --runner-profile phase1 --lines 80 --text error --dry-run
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --list-js-debug-targets --dry-run
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --capture-js-console-logs --target-id demo-target --dry-run
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --capture-js-network-events --target-id demo-target --dry-run
 ```
 
 ## 已验证结果
@@ -122,6 +127,9 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-debug
 - `get_crash_signals` 实机验证：Android 已通过 crash log buffer + `/data/anr` 目录抓取最近 crash / ANR 信号；iOS simulator 已通过 `simctl getenv <UDID> HOME` 定位 `Library/Logs/CrashReporter` 并输出 crash manifest
 - `collect_diagnostics` 实机验证：Android 已通过 `adb bugreport` 生成诊断 zip；iOS simulator 已通过非交互 `simctl diagnose --no-archive` 生成诊断目录
 - `collect_debug_evidence` 实机验证：Android 已返回 AI 友好的 log/crash 摘要与 evidence packet；iOS simulator 在无 crash 时会返回空摘要而不是把 manifest 头部误判成 crash
+- `list_js_debug_targets` / `capture_js_console_logs` 已完成 dry-run 与无 Metro 环境下的真实失败语义验证；当 Metro inspector 可达时可直接接入 RN/Expo JS 调试面
+- `capture_js_network_events` 已完成 dry-run 与无 Metro 环境下的真实失败语义验证；`collect_debug_evidence` 现在会尝试一并收集 JS console + JS network snapshot，并在 Metro 不可达时诚实降级为 partial
+- `capture_js_console_logs` 当前已补到结构化 exception 字段，AI 可直接读取 source/line/stack，而不是只看扁平错误文本
 - `resolve_ui_target` 会把多候选显式标成 `ambiguous`，不再让元素动作悄悄点第一个命中
 - `tap_element` 现已改为依赖 resolution 结果，只在 `resolved` 状态下执行点击；若是 `ambiguous` / `no_match` / `missing_bounds` 会返回 partial
 - `type_into_element` 会先聚焦已解析的 Android 节点，再执行 `adb shell input text`
@@ -148,6 +156,8 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-debug
 - `get_crash_signals` 当前优先做“近期 crash/ANR 证据采集”：Android 读取 crash buffer 与 `/data/anr` 文件名，iOS simulator 输出 `CrashReporter` 树 manifest；尚未做 app 级过滤或 `.ips` 结构化解析
 - `collect_diagnostics` 当前优先做“一次性环境取证包”：Android 输出 `bugreport.zip`，iOS simulator 输出 `simctl diagnose` 目录；暂不做二次压缩、裁剪或隐私脱敏
 - `collect_debug_evidence` 当前会把 `get_logs` + `get_crash_signals` 压成 AI 可读摘要，并可选升级到 diagnostics；当前摘要仍是启发式分类，不是完整根因分析器
+- `list_js_debug_targets` / `capture_js_console_logs` 是借鉴 RN debugger MCP 的第一层：先做 Metro target discovery，再做一次性 JS console snapshot；当前还没有更深的 Network / Runtime evaluate / app state probe
+- `capture_js_network_events` 是第二层 RN inspector snapshot：优先抓失败请求/异常响应；当前还没有 request body、response body、HAR 导出或 Runtime.evaluate 级状态探针
 
 ## 下一轮建议
 

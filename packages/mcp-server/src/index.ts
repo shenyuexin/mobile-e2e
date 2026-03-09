@@ -1,4 +1,6 @@
 import { MobileE2EMcpServer } from "./server.js";
+import { captureJsConsoleLogs } from "./tools/capture-js-console-logs.js";
+import { captureJsNetworkEvents } from "./tools/capture-js-network-events.js";
 import { collectDebugEvidence } from "./tools/collect-debug-evidence.js";
 import { collectDiagnostics } from "./tools/collect-diagnostics.js";
 import { describeCapabilities } from "./tools/describe-capabilities.js";
@@ -8,6 +10,7 @@ import { getCrashSignals } from "./tools/get-crash-signals.js";
 import { getLogs } from "./tools/get-logs.js";
 import { inspectUi } from "./tools/inspect-ui.js";
 import { installApp } from "./tools/install-app.js";
+import { listJsDebugTargets } from "./tools/list-js-debug-targets.js";
 import { launchApp } from "./tools/launch-app.js";
 import { listDevices } from "./tools/list-devices.js";
 import { queryUi } from "./tools/query-ui.js";
@@ -26,6 +29,8 @@ import { waitForUi } from "./tools/wait-for-ui.js";
 
 export function createServer(): MobileE2EMcpServer {
   return new MobileE2EMcpServer({
+    capture_js_console_logs: captureJsConsoleLogs,
+    capture_js_network_events: captureJsNetworkEvents,
     collect_debug_evidence: collectDebugEvidence,
     collect_diagnostics: collectDiagnostics,
     describe_capabilities: describeCapabilities,
@@ -38,6 +43,7 @@ export function createServer(): MobileE2EMcpServer {
     scroll_and_resolve_ui_target: scrollAndResolveUiTarget,
     scroll_and_tap_element: scrollAndTapElement,
     install_app: installApp,
+    list_js_debug_targets: listJsDebugTargets,
     launch_app: launchApp,
     list_devices: listDevices,
     start_session: startSession,
