@@ -24,3 +24,8 @@ Capability discovery coverage now also lives in the same stack:
 - adapter-level profile building and discovery results
 - server/stdio/dev-cli smoke coverage for `describe_capabilities`
 - root dry-run validation for session-attached capabilities and explicit capability discovery
+
+Current orchestration-layer coverage also includes:
+
+- adapter/server/stdio/dev-cli smoke coverage for `scroll_and_tap_element`
+- root dry-run validation for the new scroll-then-tap composed action

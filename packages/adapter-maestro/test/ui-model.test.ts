@@ -19,7 +19,7 @@ import {
   resolveFirstTapTarget,
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
-import { buildCapabilityProfile, buildLogSummary, describeCapabilitiesWithMaestro, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, tapElementWithMaestro, typeIntoElementWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildLogSummary, describeCapabilitiesWithMaestro, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, tapElementWithMaestro, typeIntoElementWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -432,4 +432,32 @@ test("describeCapabilitiesWithMaestro returns a capability profile", async () =>
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.capabilities.platform, "ios");
   assert.equal(result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "inspect_ui")?.supportLevel, "partial");
+});
+
+test("scrollAndTapElementWithMaestro keeps iOS partial and unsupported", async () => {
+  const result = await scrollAndTapElementWithMaestro({
+    sessionId: "test-scroll-tap-ios",
+    platform: "ios",
+    contentDesc: "View products",
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "partial");
+  assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
+  assert.equal(result.data.supportLevel, "partial");
+  assert.equal(result.data.resolveResult.resolution.status, "unsupported");
+});
+
+test("scrollAndTapElementWithMaestro keeps Android dry-run as preview-only partial result", async () => {
+  const result = await scrollAndTapElementWithMaestro({
+    sessionId: "test-scroll-tap-android",
+    platform: "android",
+    contentDesc: "View products",
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "partial");
+  assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
+  assert.equal(result.data.supportLevel, "full");
+  assert.equal(result.data.resolveResult.resolution.status, "not_executed");
 });

@@ -94,6 +94,21 @@ test("parseCliArgs captures scroll_and_resolve_ui_target flags", () => {
   assert.equal(options.dryRun, true);
 });
 
+test("parseCliArgs captures scroll_and_tap_element flags", () => {
+  const options = parseCliArgs([
+    "--scroll-and-tap-element",
+    "--platform", "android",
+    "--content-desc", "View products",
+    "--max-swipes", "2",
+    "--dry-run",
+  ]);
+
+  assert.equal(options.scrollAndTapElement, true);
+  assert.equal(options.queryContentDesc, "View products");
+  assert.equal(options.maxSwipes, 2);
+  assert.equal(options.dryRun, true);
+});
+
 test("parseCliArgs keeps text value for query_ui paths", () => {
   const options = parseCliArgs([
     "--query-ui",
@@ -158,6 +173,27 @@ test("main dispatches scroll_and_resolve_ui_target Android dry-run through the C
   assert.equal(output.scrollAndResolveUiTargetResult.data.resolution.status, "not_executed");
   assert.equal(output.scrollAndResolveUiTargetResult.data.maxSwipes, 2);
   assert.equal(output.scrollAndResolveUiTargetResult.data.swipeDirection, "up");
+});
+
+test("main dispatches scroll_and_tap_element Android dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--scroll-and-tap-element",
+    "--platform", "android",
+    "--content-desc", "View products",
+    "--max-swipes", "2",
+    "--dry-run",
+  ]) as {
+    scrollAndTapElementResult: {
+      status: string;
+      reasonCode: string;
+      data: { supportLevel: string; resolveResult: { resolution: { status: string } } };
+    };
+  };
+
+  assert.equal(output.scrollAndTapElementResult.status, "partial");
+  assert.equal(output.scrollAndTapElementResult.reasonCode, "UNSUPPORTED_OPERATION");
+  assert.equal(output.scrollAndTapElementResult.data.supportLevel, "full");
+  assert.equal(output.scrollAndTapElementResult.data.resolveResult.resolution.status, "not_executed");
 });
 
 test("main dispatches type_into_element iOS dry-run through the CLI", async () => {

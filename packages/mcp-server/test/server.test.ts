@@ -14,6 +14,7 @@ test("createServer lists newly added UI tools", () => {
   assert.ok(tools.includes("resolve_ui_target"));
   assert.ok(tools.includes("wait_for_ui"));
   assert.ok(tools.includes("scroll_and_resolve_ui_target"));
+  assert.ok(tools.includes("scroll_and_tap_element"));
   assert.ok(tools.includes("tap_element"));
   assert.ok(tools.includes("type_into_element"));
 });
@@ -92,6 +93,22 @@ test("server invoke keeps scroll_and_resolve_ui_target Android dry-run semantics
   assert.equal(result.data.supportLevel, "full");
   assert.equal(result.data.resolution.status, "not_executed");
   assert.equal(result.data.maxSwipes, 2);
+});
+
+test("server invoke keeps scroll_and_tap_element Android dry-run semantics", async () => {
+  const server = createServer();
+  const result = await server.invoke("scroll_and_tap_element", {
+    sessionId: "server-scroll-tap-dry-run",
+    platform: "android",
+    contentDesc: "View products",
+    maxSwipes: 2,
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "partial");
+  assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
+  assert.equal(result.data.supportLevel, "full");
+  assert.equal(result.data.resolveResult.resolution.status, "not_executed");
 });
 
 test("server invoke keeps type_into_element iOS partial semantics", async () => {

@@ -123,6 +123,17 @@ const validationCases: ValidationCase[] = [
     },
   },
   {
+    name: "scroll_and_tap_element Android dry-run",
+    cliArgs: ["--scroll-and-tap-element", "--platform", "android", "--content-desc", "View products", "--max-swipes", "2", "--dry-run"],
+    validate: (result) => {
+      const typed = result as { scrollAndTapElementResult: { status: string; reasonCode: string; data: { supportLevel: string; resolveResult: { resolution: { status: string } } } } };
+      assert.equal(typed.scrollAndTapElementResult.status, "partial");
+      assert.equal(typed.scrollAndTapElementResult.reasonCode, "UNSUPPORTED_OPERATION");
+      assert.equal(typed.scrollAndTapElementResult.data.supportLevel, "full");
+      assert.equal(typed.scrollAndTapElementResult.data.resolveResult.resolution.status, "not_executed");
+    },
+  },
+  {
     name: "type_into_element iOS dry-run",
     cliArgs: ["--type-into-element", "--platform", "ios", "--content-desc", "View products", "--value", "hello", "--dry-run"],
     validate: (result) => {

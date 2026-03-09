@@ -29,6 +29,7 @@
 16. 新增最小 get_logs 工具
 17. 新增最小 get_crash_signals 工具
 18. 新增最小 collect_diagnostics 工具
+19. 新增最小 collect_debug_evidence 工具
 
 ## 当前最小验证入口
 
@@ -91,6 +92,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --get-crash-sig
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --get-crash-signals --platform ios --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-diagnostics --platform android --runner-profile phase1 --dry-run
 pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-diagnostics --platform ios --runner-profile phase1 --dry-run
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-debug-evidence --platform android --runner-profile phase1 --lines 80 --text error --dry-run
 ```
 
 ## 已验证结果
@@ -119,11 +121,13 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-diagn
 - `get_logs` 实机验证：Android 已通过 `adb logcat -d -t <N>` 捕获最近日志；iOS simulator 已通过 `xcrun simctl spawn <UDID> log show --style compact --last <Ns>` 捕获最近日志
 - `get_crash_signals` 实机验证：Android 已通过 crash log buffer + `/data/anr` 目录抓取最近 crash / ANR 信号；iOS simulator 已通过 `simctl getenv <UDID> HOME` 定位 `Library/Logs/CrashReporter` 并输出 crash manifest
 - `collect_diagnostics` 实机验证：Android 已通过 `adb bugreport` 生成诊断 zip；iOS simulator 已通过非交互 `simctl diagnose --no-archive` 生成诊断目录
+- `collect_debug_evidence` 实机验证：Android 已返回 AI 友好的 log/crash 摘要与 evidence packet；iOS simulator 在无 crash 时会返回空摘要而不是把 manifest 头部误判成 crash
 - `resolve_ui_target` 会把多候选显式标成 `ambiguous`，不再让元素动作悄悄点第一个命中
 - `tap_element` 现已改为依赖 resolution 结果，只在 `resolved` 状态下执行点击；若是 `ambiguous` / `no_match` / `missing_bounds` 会返回 partial
 - `type_into_element` 会先聚焦已解析的 Android 节点，再执行 `adb shell input text`
 - `wait_for_ui` 会在 Android 上轮询 hierarchy，支持等待“出现 / 消失 / 唯一命中”三种模式；若 hierarchy 连续两次抓取或读取失败，则会尽快返回真实 adapter/device failure，而不是误报成 `TIMEOUT`
 - `scroll_and_resolve_ui_target` 会在 Android 上循环执行 capture + swipe，直到解析出目标、出现歧义、或达到 `maxSwipes`
+- `scroll_and_tap_element` 现已把“滚动查找 + 解析目标 + 执行点击”收敛成一个编排层动作，减少上层 agent 手动串联 `scroll_and_resolve_ui_target` 再 `tap_element` 的需要
 - `pnpm test:unit`：已覆盖 fixture 驱动的 UI 解析、查询、bounds/action bridge 与 iOS summary 回归
 - `packages/adapter-maestro` 的 unit tests 现已额外锁住 `resolve_ui_target` / `tap_element` / `type_into_element` / `wait_for_ui` / `scroll_and_resolve_ui_target` 的无设备 envelope 语义（配置错误、Android dry-run、iOS partial）
 - `packages/mcp-server` 的 smoke tests 现已覆盖 `createServer` / `handleRequest` / `parseCliArgs` / `main()` 的关键无设备路径，包括 stdio `initialize` / `tools/list` / `tools/call` 和 dev CLI 的 query / wait dry-run dispatch
@@ -142,6 +146,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-diagn
 - `get_logs` 当前优先覆盖 Android `logcat` 与 iOS simulator 最近窗口日志；尚未区分更细粒度的 crash-only / app-scoped filter
 - `get_crash_signals` 当前优先做“近期 crash/ANR 证据采集”：Android 读取 crash buffer 与 `/data/anr` 文件名，iOS simulator 输出 `CrashReporter` 树 manifest；尚未做 app 级过滤或 `.ips` 结构化解析
 - `collect_diagnostics` 当前优先做“一次性环境取证包”：Android 输出 `bugreport.zip`，iOS simulator 输出 `simctl diagnose` 目录；暂不做二次压缩、裁剪或隐私脱敏
+- `collect_debug_evidence` 当前会把 `get_logs` + `get_crash_signals` 压成 AI 可读摘要，并可选升级到 diagnostics；当前摘要仍是启发式分类，不是完整根因分析器
 
 ## 下一轮建议
 

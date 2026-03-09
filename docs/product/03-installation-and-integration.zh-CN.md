@@ -272,14 +272,14 @@ pnpm mcp:stdio
 
 - Android 走 `adb -s <device> logcat -d -t <N>`，适合抓取最近若干行 logcat
 - iOS simulator 走 `xcrun simctl spawn <UDID> log show --style compact --last <Ns>`，适合抓取最近时间窗口日志
-- 返回会包含 `outputPath`、底层 `command`、`lineCount`、`sinceSeconds` 与原始 `content`
+- 返回会包含 `outputPath`、底层 `command`、`lineCount`、`sinceSeconds`、原始 `content`，以及 AI 友好的 `summary`
 - 这条链路当前定位为“诊断/取证”，不是更高层的 crash 归因或 app 级过滤系统
 
 当前仓库还新增了一个最小 crash/ANR 证据工具 `get_crash_signals`：
 
 - Android 会同时读取 `adb logcat -d -b crash -t <N>` 与 `/data/anr` 目录，用于抓取近期 crash buffer 与 ANR 文件名
 - iOS simulator 会通过 `xcrun simctl getenv <UDID> HOME` 定位 simulator data root，并输出 `Library/Logs/CrashReporter` 树下的 manifest
-- 返回会包含 `outputPath`、底层 `commands`、`signalCount`、`entries` 与原始 `content`
+- 返回会包含 `outputPath`、底层 `commands`、`signalCount`、`entries`、原始 `content`，以及 AI 友好的 `summary`
 - 这条链路当前定位仍是“证据采集”，不是完整的 crash 归因、`.ips` 解析器或 app 级过滤系统
 
 当前仓库还新增了一个最小一键诊断包工具 `collect_diagnostics`：
@@ -288,6 +288,13 @@ pnpm mcp:stdio
 - iOS simulator 走非交互 `simctl diagnose --no-archive`，输出 simulator 诊断目录
 - 返回会包含 `outputPath`、底层 `commands` 与收集到的 `artifacts`
 - 这条链路适合一次性取证，不适合作为高频步骤；当前也不做额外压缩、脱敏或内容裁剪
+
+在这三条原始取证链路之上，当前仓库还新增了一个面向 AI 调试器的 `collect_debug_evidence`：
+
+- 默认复用 `get_logs` + `get_crash_signals`，返回一份压缩后的 `narrative`、`interestingSignals`、`logSummary`、`crashSummary`
+- 可以通过 `--text <keyword>` 先做关键词聚焦，减少 AI 在无关日志上的 token 消耗
+- 可以通过 `--include-diagnostics true` 在摘要仍不够时再升级到重型 diagnostics 包
+- 这条链路的目标就是让 AI 先看“高价值摘要”，只有在摘要不够时再回头读原始 artifact
 
 当前仓库也已经补了一个最小动作桥接层 `tap_element`：
 
@@ -367,3 +374,5 @@ pnpm mcp:stdio
 顶层 `pnpm run validate:dry-run` 现已不再只是串联命令退出码，而是通过 `scripts/validate-dry-run.ts` 真实调用 dev CLI dry-run，并断言返回 JSON 的关键语义字段（如 `status`、`reasonCode`、`supportLevel` 与部分 tool-specific data）。
 
 当前还新增了一个 capability discovery 入口：`describe_capabilities`。它会返回当前 `platform` / `runnerProfile` 下的 tool capability matrix；同时 `start_session` 和 `list_devices` 的返回结果也会附带 capability profile，方便调用方在动作前先判断 Android full support 与 iOS partial/unsupported 的边界。
+
+在编排层方面，当前还新增了一个最小组合动作：`scroll_and_tap_element`。它会先复用现有的 `scroll_and_resolve_ui_target` 做滚动查找，再在目标明确后执行点击，避免调用方自己手动分两次请求完成同一个“滚动后点击”的意图。
