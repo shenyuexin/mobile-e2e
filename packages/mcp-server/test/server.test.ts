@@ -64,6 +64,8 @@ test("server invoke keeps query_ui Android dry-run semantics", async () => {
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.supportLevel, "full");
   assert.equal(result.data.result.totalMatches, 0);
+  assert.equal(result.data.evidence?.[0]?.kind, "ui_dump");
+  assert.equal(result.data.evidence?.[0]?.supportLevel, "full");
 });
 
 test("server invoke keeps wait_for_ui iOS partial semantics", async () => {
@@ -190,6 +192,8 @@ test("server invoke supports collect_debug_evidence Android dry-run", async () =
   assert.equal(result.data.jsDebugTargetId, undefined);
   assert.equal(result.data.jsConsoleLogCount, 0);
   assert.equal(result.data.jsNetworkEventCount, 0);
+  assert.equal(result.data.evidence?.some((item) => item.kind === "log"), true);
+  assert.equal(result.data.evidence?.some((item) => item.kind === "crash_signal"), true);
 });
 
 test("server invoke supports list_js_debug_targets dry-run", async () => {

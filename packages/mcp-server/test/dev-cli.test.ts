@@ -173,12 +173,14 @@ test("main dispatches query_ui Android dry-run through the CLI", async () => {
     "--content-desc", "View products",
     "--dry-run",
   ]) as {
-    queryUiResult: { status: string; reasonCode: string; data: { supportLevel: string } };
+    queryUiResult: { status: string; reasonCode: string; data: { supportLevel: string; evidence?: Array<{ kind: string; supportLevel: string }> } };
   };
 
   assert.equal(output.queryUiResult.status, "success");
   assert.equal(output.queryUiResult.reasonCode, "OK");
   assert.equal(output.queryUiResult.data.supportLevel, "full");
+  assert.equal(output.queryUiResult.data.evidence?.[0]?.kind, "ui_dump");
+  assert.equal(output.queryUiResult.data.evidence?.[0]?.supportLevel, "full");
 });
 
 test("main dispatches wait_for_ui iOS dry-run through the CLI", async () => {
@@ -334,7 +336,7 @@ test("main dispatches collect_debug_evidence Android dry-run through the CLI", a
     collectDebugEvidenceResult: {
       status: string;
       reasonCode: string;
-      data: { supportLevel: string; logSummary?: { query?: string }; jsDebugTargetId?: string; jsConsoleLogCount?: number; jsNetworkEventCount?: number };
+      data: { supportLevel: string; logSummary?: { query?: string }; jsDebugTargetId?: string; jsConsoleLogCount?: number; jsNetworkEventCount?: number; evidence?: Array<{ kind: string }> };
     };
   };
 
@@ -345,6 +347,8 @@ test("main dispatches collect_debug_evidence Android dry-run through the CLI", a
   assert.equal(output.collectDebugEvidenceResult.data.jsDebugTargetId, undefined);
   assert.equal(output.collectDebugEvidenceResult.data.jsConsoleLogCount, 0);
   assert.equal(output.collectDebugEvidenceResult.data.jsNetworkEventCount, 0);
+  assert.equal(output.collectDebugEvidenceResult.data.evidence?.some((item) => item.kind === "log"), true);
+  assert.equal(output.collectDebugEvidenceResult.data.evidence?.some((item) => item.kind === "crash_signal"), true);
 });
 
 test("main dispatches list_js_debug_targets dry-run through the CLI", async () => {
