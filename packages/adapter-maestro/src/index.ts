@@ -3,6 +3,7 @@ import {
   type CollectDebugEvidenceInput,
   type CaptureJsConsoleLogsData,
   type CaptureJsConsoleLogsInput,
+  type JsConsoleLogSummary,
   type CaptureJsNetworkEventsData,
   type CaptureJsNetworkEventsInput,
   type DescribeCapabilitiesData,
@@ -29,8 +30,10 @@ import {
   type ListJsDebugTargetsData,
   type ListJsDebugTargetsInput,
   type JsDebugTarget,
+  type JsFailureGroup,
   type JsConsoleLogEntry,
   type JsNetworkEvent,
+  type JsNetworkFailureSummary,
   type JsStackFrame,
   type ListDevicesInput,
   type LogSummary,
@@ -646,9 +649,11 @@ function normalizeStackFrames(rawStackTrace: unknown): JsStackFrame[] | undefine
 
       return {
         functionName: readNonEmptyString(frame, "functionName") ?? undefined,
+        scriptId: readNonEmptyString(frame, "scriptId") ?? undefined,
         url: readNonEmptyString(frame, "url") ?? undefined,
         lineNumber: typeof frame.lineNumber === "number" ? frame.lineNumber : undefined,
         columnNumber: typeof frame.columnNumber === "number" ? frame.columnNumber : undefined,
+        native: typeof frame.native === "boolean" ? frame.native : undefined,
       };
     })
     .filter((frame): frame is JsStackFrame => frame !== undefined);
@@ -660,16 +665,76 @@ export function buildInspectorExceptionLogEntry(params: unknown): JsConsoleLogEn
   const safeParams = isRecord(params) ? params : {};
   const details = isRecord(safeParams.exceptionDetails) ? safeParams.exceptionDetails : {};
   const exception = isRecord(details.exception) ? details.exception : {};
+  const stackFrames = normalizeStackFrames(details.stackTrace);
 
   return {
     level: "exception",
     text: readNonEmptyString(details, "text") ?? readNonEmptyString(exception, "description") ?? readNonEmptyString(details, "exceptionId") ?? "Runtime.exceptionThrown",
     timestamp: typeof safeParams.timestamp === "number" ? safeParams.timestamp : undefined,
+    exceptionId: typeof details.exceptionId === "number" ? details.exceptionId : undefined,
+    executionContextId: typeof details.executionContextId === "number" ? details.executionContextId : undefined,
     sourceUrl: readNonEmptyString(details, "url") ?? undefined,
     lineNumber: typeof details.lineNumber === "number" ? details.lineNumber : undefined,
     columnNumber: typeof details.columnNumber === "number" ? details.columnNumber : undefined,
     exceptionType: readNonEmptyString(exception, "className") ?? undefined,
-    stackFrames: normalizeStackFrames(details.stackTrace),
+    exceptionDescription: readNonEmptyString(exception, "description") ?? undefined,
+    stackTraceText: readNonEmptyString(exception, "description") ?? undefined,
+    remote: typeof exception.subtype === "string" ? exception.subtype === "error" : undefined,
+    stackFrameCount: stackFrames?.length,
+    stackFrames,
+  };
+}
+
+export function buildJsConsoleLogSummary(logs: JsConsoleLogEntry[]): JsConsoleLogSummary {
+  const levelCounts = logs.reduce<Record<string, number>>((acc, entry) => {
+    acc[entry.level] = (acc[entry.level] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    totalLogs: logs.length,
+    exceptionCount: logs.filter((entry) => entry.level === "exception").length,
+    levelCounts,
+  };
+}
+
+function buildFailureGroups(values: Array<{ key?: string; sampleUrl?: string }>): JsFailureGroup[] {
+  const groups = new Map<string, JsFailureGroup>();
+  for (const value of values) {
+    if (!value.key) {
+      continue;
+    }
+    const current = groups.get(value.key) ?? { key: value.key, count: 0, sampleUrl: value.sampleUrl };
+    current.count += 1;
+    current.sampleUrl ??= value.sampleUrl;
+    groups.set(value.key, current);
+  }
+
+  return [...groups.values()].sort((left, right) => right.count - left.count || left.key.localeCompare(right.key));
+}
+
+export function buildJsNetworkFailureSummary(events: JsNetworkEvent[]): JsNetworkFailureSummary {
+  const failedEvents = events.filter((event) => Boolean(event.errorText) || (typeof event.status === "number" && event.status >= 400));
+
+  return {
+    totalTrackedRequests: events.length,
+    failedRequestCount: failedEvents.length,
+    clientErrors: failedEvents.filter((event) => typeof event.status === "number" && event.status >= 400 && event.status < 500).length,
+    serverErrors: failedEvents.filter((event) => typeof event.status === "number" && event.status >= 500).length,
+    networkErrors: failedEvents.filter((event) => Boolean(event.errorText)).length,
+    statusGroups: buildFailureGroups(failedEvents.map((event) => ({ key: typeof event.status === "number" ? String(event.status) : undefined, sampleUrl: event.url }))),
+    errorGroups: buildFailureGroups(failedEvents.map((event) => ({ key: event.errorText, sampleUrl: event.url }))),
+    hostGroups: buildFailureGroups(failedEvents.map((event) => {
+      if (!event.url) {
+        return { key: undefined, sampleUrl: undefined };
+      }
+      try {
+        const parsed = new URL(event.url);
+        return { key: parsed.host, sampleUrl: event.url };
+      } catch {
+        return { key: undefined, sampleUrl: event.url };
+      }
+    })),
   };
 }
 
@@ -4045,6 +4110,7 @@ export async function captureJsConsoleLogsWithMaestro(input: CaptureJsConsoleLog
         webSocketDebuggerUrl,
         collectedCount: 0,
         logs: [],
+        summary: buildJsConsoleLogSummary([]),
       },
       nextSuggestions: ["Run capture_js_console_logs without dryRun while Metro inspector is available and provide targetId or webSocketDebuggerUrl."],
     };
@@ -4058,14 +4124,15 @@ export async function captureJsConsoleLogsWithMaestro(input: CaptureJsConsoleLog
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: {
-        dryRun: false,
-        metroBaseUrl,
-        targetId: input.targetId,
-        webSocketDebuggerUrl,
-        collectedCount: 0,
-        logs: [],
-      },
+        data: {
+          dryRun: false,
+          metroBaseUrl,
+          targetId: input.targetId,
+          webSocketDebuggerUrl,
+          collectedCount: 0,
+          logs: [],
+          summary: buildJsConsoleLogSummary([]),
+        },
       nextSuggestions: ["Call list_js_debug_targets first, then pass targetId or webSocketDebuggerUrl into capture_js_console_logs."],
     };
   }
@@ -4103,6 +4170,7 @@ export async function captureJsConsoleLogsWithMaestro(input: CaptureJsConsoleLog
           webSocketDebuggerUrl,
           collectedCount: logs.length,
           logs,
+          summary: buildJsConsoleLogSummary(logs),
         },
         nextSuggestions: logs.length === 0 ? ["No JS console events arrived before timeout. Confirm the target is active and emitting logs."] : [],
       });
@@ -4142,6 +4210,7 @@ export async function captureJsConsoleLogsWithMaestro(input: CaptureJsConsoleLog
               webSocketDebuggerUrl,
               collectedCount: logs.length,
               logs,
+              summary: buildJsConsoleLogSummary(logs),
             },
             nextSuggestions: [],
           });
@@ -4166,6 +4235,7 @@ export async function captureJsConsoleLogsWithMaestro(input: CaptureJsConsoleLog
           webSocketDebuggerUrl,
           collectedCount: logs.length,
           logs,
+          summary: buildJsConsoleLogSummary(logs),
         },
         nextSuggestions: ["Ensure the Metro inspector WebSocket is reachable and that the selected JS target is still attached."],
       });
@@ -4198,6 +4268,7 @@ export async function captureJsNetworkEventsWithMaestro(input: CaptureJsNetworkE
         collectedCount: 0,
         failuresOnly,
         events: [],
+        summary: buildJsNetworkFailureSummary([]),
       },
       nextSuggestions: ["Run capture_js_network_events without dryRun while Metro inspector is available and provide targetId or webSocketDebuggerUrl."],
     };
@@ -4211,15 +4282,16 @@ export async function captureJsNetworkEventsWithMaestro(input: CaptureJsNetworkE
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: {
-        dryRun: false,
-        metroBaseUrl,
-        targetId: input.targetId,
-        webSocketDebuggerUrl,
-        collectedCount: 0,
-        failuresOnly,
-        events: [],
-      },
+        data: {
+          dryRun: false,
+          metroBaseUrl,
+          targetId: input.targetId,
+          webSocketDebuggerUrl,
+          collectedCount: 0,
+          failuresOnly,
+          events: [],
+          summary: buildJsNetworkFailureSummary([]),
+        },
       nextSuggestions: ["Call list_js_debug_targets first, then pass targetId or webSocketDebuggerUrl into capture_js_network_events."],
     };
   }
@@ -4260,6 +4332,7 @@ export async function captureJsNetworkEventsWithMaestro(input: CaptureJsNetworkE
           collectedCount: collected.length,
           failuresOnly,
           events: collected,
+          summary: buildJsNetworkFailureSummary(collected),
         },
         nextSuggestions: collected.length === 0 ? ["No matching JS network events arrived before timeout. Confirm the target is active and issuing requests."] : [],
       });
@@ -4314,6 +4387,7 @@ export async function captureJsNetworkEventsWithMaestro(input: CaptureJsNetworkE
               collectedCount: collected.length,
               failuresOnly,
               events: collected,
+              summary: buildJsNetworkFailureSummary(collected),
             },
             nextSuggestions: [],
           });
@@ -4339,6 +4413,7 @@ export async function captureJsNetworkEventsWithMaestro(input: CaptureJsNetworkE
           collectedCount: snapshot().length,
           failuresOnly,
           events: snapshot(),
+          summary: buildJsNetworkFailureSummary(snapshot()),
         },
         nextSuggestions: ["Ensure the Metro inspector WebSocket is reachable and that the selected JS target is still attached."],
       });
