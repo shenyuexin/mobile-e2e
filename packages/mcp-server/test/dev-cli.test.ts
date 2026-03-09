@@ -1,6 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseCliArgs } from "../src/dev-cli.ts";
+import { main, parseCliArgs } from "../src/dev-cli.ts";
+
+async function runCli(argv: string[]): Promise<unknown> {
+  const originalArgv = process.argv;
+  const originalExitCode = process.exitCode;
+  const originalLog = console.log;
+  const messages: string[] = [];
+
+  process.argv = [originalArgv[0] ?? "node", originalArgv[1] ?? "dev-cli.ts", ...argv];
+  process.exitCode = 0;
+  console.log = (message?: unknown, ...optional: unknown[]) => {
+    messages.push([message, ...optional].map((item) => String(item)).join(" "));
+  };
+
+  try {
+    await main();
+  } finally {
+    process.argv = originalArgv;
+    process.exitCode = originalExitCode;
+    console.log = originalLog;
+  }
+
+  assert.equal(messages.length > 0, true);
+  return JSON.parse(messages[messages.length - 1] ?? "null");
+}
 
 test("parseCliArgs captures wait_for_ui flags", () => {
   const options = parseCliArgs([
@@ -19,6 +43,35 @@ test("parseCliArgs captures wait_for_ui flags", () => {
   assert.equal(options.waitUntil, "unique");
   assert.equal(options.timeoutMs, 3000);
   assert.equal(options.intervalMs, 250);
+  assert.equal(options.dryRun, true);
+});
+
+test("parseCliArgs captures describe_capabilities flags", () => {
+  const options = parseCliArgs([
+    "--describe-capabilities",
+    "--platform", "ios",
+    "--runner-profile", "phase1",
+  ]);
+
+  assert.equal(options.describeCapabilities, true);
+  assert.equal(options.platform, "ios");
+  assert.equal(options.runnerProfile, "phase1");
+});
+
+test("parseCliArgs captures collect_debug_evidence flags", () => {
+  const options = parseCliArgs([
+    "--collect-debug-evidence",
+    "--platform", "android",
+    "--text", "timeout",
+    "--lines", "80",
+    "--include-diagnostics", "true",
+    "--dry-run",
+  ]);
+
+  assert.equal(options.collectDebugEvidence, true);
+  assert.equal(options.text, "timeout");
+  assert.equal(options.lines, 80);
+  assert.equal(options.includeDiagnostics, true);
   assert.equal(options.dryRun, true);
 });
 
@@ -50,4 +103,161 @@ test("parseCliArgs keeps text value for query_ui paths", () => {
 
   assert.equal(options.queryUi, true);
   assert.equal(options.text, "Cart is empty");
+});
+
+test("main dispatches query_ui Android dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--query-ui",
+    "--platform", "android",
+    "--content-desc", "View products",
+    "--dry-run",
+  ]) as {
+    queryUiResult: { status: string; reasonCode: string; data: { supportLevel: string } };
+  };
+
+  assert.equal(output.queryUiResult.status, "success");
+  assert.equal(output.queryUiResult.reasonCode, "OK");
+  assert.equal(output.queryUiResult.data.supportLevel, "full");
+});
+
+test("main dispatches wait_for_ui iOS dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--wait-for-ui",
+    "--platform", "ios",
+    "--content-desc", "View products",
+    "--dry-run",
+  ]) as {
+    waitForUiResult: { status: string; reasonCode: string; data: { supportLevel: string; polls: number } };
+  };
+
+  assert.equal(output.waitForUiResult.status, "partial");
+  assert.equal(output.waitForUiResult.reasonCode, "UNSUPPORTED_OPERATION");
+  assert.equal(output.waitForUiResult.data.supportLevel, "partial");
+  assert.equal(output.waitForUiResult.data.polls, 0);
+});
+
+test("main dispatches scroll_and_resolve_ui_target Android dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--scroll-and-resolve-ui-target",
+    "--platform", "android",
+    "--content-desc", "View products",
+    "--max-swipes", "2",
+    "--swipe-direction", "up",
+    "--dry-run",
+  ]) as {
+    scrollAndResolveUiTargetResult: {
+      status: string;
+      reasonCode: string;
+      data: { supportLevel: string; resolution: { status: string }; maxSwipes: number; swipeDirection: string };
+    };
+  };
+
+  assert.equal(output.scrollAndResolveUiTargetResult.status, "partial");
+  assert.equal(output.scrollAndResolveUiTargetResult.reasonCode, "UNSUPPORTED_OPERATION");
+  assert.equal(output.scrollAndResolveUiTargetResult.data.supportLevel, "full");
+  assert.equal(output.scrollAndResolveUiTargetResult.data.resolution.status, "not_executed");
+  assert.equal(output.scrollAndResolveUiTargetResult.data.maxSwipes, 2);
+  assert.equal(output.scrollAndResolveUiTargetResult.data.swipeDirection, "up");
+});
+
+test("main dispatches type_into_element iOS dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--type-into-element",
+    "--platform", "ios",
+    "--content-desc", "View products",
+    "--value", "hello",
+    "--dry-run",
+  ]) as {
+    typeIntoElementResult: {
+      status: string;
+      reasonCode: string;
+      data: { supportLevel: string; resolution: { status: string }; value: string };
+    };
+  };
+
+  assert.equal(output.typeIntoElementResult.status, "partial");
+  assert.equal(output.typeIntoElementResult.reasonCode, "UNSUPPORTED_OPERATION");
+  assert.equal(output.typeIntoElementResult.data.supportLevel, "partial");
+  assert.equal(output.typeIntoElementResult.data.resolution.status, "unsupported");
+  assert.equal(output.typeIntoElementResult.data.value, "hello");
+});
+
+test("main dispatches resolve_ui_target Android dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--resolve-ui-target",
+    "--platform", "android",
+    "--content-desc", "View products",
+    "--dry-run",
+  ]) as {
+    resolveUiTargetResult: {
+      status: string;
+      reasonCode: string;
+      data: { supportLevel: string; resolution: { status: string } };
+    };
+  };
+
+  assert.equal(output.resolveUiTargetResult.status, "partial");
+  assert.equal(output.resolveUiTargetResult.reasonCode, "UNSUPPORTED_OPERATION");
+  assert.equal(output.resolveUiTargetResult.data.supportLevel, "full");
+  assert.equal(output.resolveUiTargetResult.data.resolution.status, "not_executed");
+});
+
+test("main dispatches tap_element iOS dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--tap-element",
+    "--platform", "ios",
+    "--content-desc", "View products",
+    "--dry-run",
+  ]) as {
+    tapElementResult: {
+      status: string;
+      reasonCode: string;
+      data: { supportLevel: string; resolution?: { status: string } };
+    };
+  };
+
+  assert.equal(output.tapElementResult.status, "partial");
+  assert.equal(output.tapElementResult.reasonCode, "UNSUPPORTED_OPERATION");
+  assert.equal(output.tapElementResult.data.supportLevel, "partial");
+  assert.equal(output.tapElementResult.data.resolution?.status, "unsupported");
+});
+
+test("main dispatches describe_capabilities through the CLI", async () => {
+  const output = await runCli([
+    "--describe-capabilities",
+    "--platform", "ios",
+    "--runner-profile", "phase1",
+  ]) as {
+    describeCapabilitiesResult: {
+      status: string;
+      reasonCode: string;
+      data: { capabilities: { platform: string; toolCapabilities: Array<{ toolName: string; supportLevel: string }> } };
+    };
+  };
+
+  assert.equal(output.describeCapabilitiesResult.status, "success");
+  assert.equal(output.describeCapabilitiesResult.reasonCode, "OK");
+  assert.equal(output.describeCapabilitiesResult.data.capabilities.platform, "ios");
+  assert.equal(output.describeCapabilitiesResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "partial");
+});
+
+test("main dispatches collect_debug_evidence Android dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--collect-debug-evidence",
+    "--platform", "android",
+    "--text", "error",
+    "--lines", "40",
+    "--dry-run",
+  ]) as {
+    collectDebugEvidenceResult: {
+      status: string;
+      reasonCode: string;
+      data: { supportLevel: string; logSummary?: { query?: string } };
+    };
+  };
+
+  assert.equal(output.collectDebugEvidenceResult.status, "success");
+  assert.equal(output.collectDebugEvidenceResult.reasonCode, "OK");
+  assert.equal(output.collectDebugEvidenceResult.data.supportLevel, "full");
+  assert.equal(output.collectDebugEvidenceResult.data.logSummary?.query, "error");
 });

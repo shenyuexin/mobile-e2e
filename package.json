@@ -12,7 +12,7 @@
     "lint": "pnpm -r --if-present lint",
     "test:unit": "pnpm --filter @mobile-e2e-mcp/adapter-maestro test && pnpm --filter @mobile-e2e-mcp/mcp-server test",
     "test": "pnpm test:unit && pnpm run validate:dry-run",
-    "validate:dry-run": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --platform android --dry-run --run-count 1",
+    "validate:dry-run": "pnpm build && tsx scripts/validate-dry-run.ts",
     "mcp:dev": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server dev",
     "mcp:stdio": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server stdio"
   },

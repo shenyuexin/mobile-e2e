@@ -19,7 +19,7 @@ import {
   resolveFirstTapTarget,
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
-import { resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, tapElementWithMaestro, typeIntoElementWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildLogSummary, describeCapabilitiesWithMaestro, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, tapElementWithMaestro, typeIntoElementWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -263,6 +263,23 @@ test("waitForUiWithMaestro keeps Android dry-run as preview-only partial result"
   assert.equal(result.data.result.totalMatches, 0);
 });
 
+test("buildLogSummary extracts top debug signals and honors query filtering", () => {
+  const content = [
+    "03-09 10:00:00.000 E AndroidRuntime: FATAL EXCEPTION: main",
+    "03-09 10:00:00.100 E AndroidRuntime: java.lang.IllegalStateException: boom",
+    "03-09 10:00:01.000 W ActivityTaskManager: timeout waiting for activity",
+    "03-09 10:00:02.000 I ExampleTag: normal info",
+  ].join("\n");
+
+  const summary = buildLogSummary(content, "androidruntime");
+
+  assert.equal(summary.totalLines, 4);
+  assert.equal(summary.matchedLines, 2);
+  assert.equal(summary.query, "androidruntime");
+  assert.equal(summary.topSignals[0]?.category, "crash");
+  assert.equal(summary.sampleLines.length, 2);
+});
+
 test("tapElementWithMaestro reports configuration errors without a selector", async () => {
   const result = await tapElementWithMaestro({
     sessionId: "test-tap-config",
@@ -393,4 +410,26 @@ test("scrollAndResolveUiTargetWithMaestro keeps Android dry-run as not_executed 
   assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
   assert.equal(result.data.supportLevel, "full");
   assert.equal(result.data.resolution.status, "not_executed");
+});
+
+test("buildCapabilityProfile stays honest across Android and iOS UI action support", () => {
+  const androidProfile = buildCapabilityProfile("android", "phase1");
+  const iosProfile = buildCapabilityProfile("ios", "phase1");
+
+  assert.equal(androidProfile.toolCapabilities.find((tool) => tool.toolName === "tap_element")?.supportLevel, "full");
+  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "tap_element")?.supportLevel, "partial");
+  assert.equal(iosProfile.groups.find((group) => group.groupName === "ui_actions")?.supportLevel, "partial");
+});
+
+test("describeCapabilitiesWithMaestro returns a capability profile", async () => {
+  const result = await describeCapabilitiesWithMaestro({
+    sessionId: "capabilities-test",
+    platform: "ios",
+    runnerProfile: "phase1",
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.capabilities.platform, "ios");
+  assert.equal(result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "inspect_ui")?.supportLevel, "partial");
 });
