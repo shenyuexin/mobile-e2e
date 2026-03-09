@@ -133,6 +133,7 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --collect-debug
 - `packages/mcp-server` 的 smoke tests 现已覆盖 `createServer` / `handleRequest` / `parseCliArgs` / `main()` 的关键无设备路径，包括 stdio `initialize` / `tools/list` / `tools/call` 和 dev CLI 的 query / wait dry-run dispatch
 - 根级 `pnpm run validate:dry-run` 现已改为执行 `scripts/validate-dry-run.ts`：它会真实拉起 dev CLI dry-run 命令，并断言返回 JSON 的 `status` / `reasonCode` / `supportLevel` / 关键数据字段，而不只是依赖命令退出码
 - 新增 `describe_capabilities` 能力发现层：`start_session` 现会把 capability profile 附带到 session，`list_devices` 也会把平台能力摘要附带到每个 device，方便上层 agent 在动作前先做能力分流
+- 在 execution evidence 层，`inspect_ui` / `query_ui` / `take_screenshot` / `get_logs` / `get_crash_signals` / `collect_diagnostics` / `collect_debug_evidence` 的 data payload 现在开始附带统一的 `evidence[]` 结构化条目；旧的顶层 `artifacts[]` 仍保留，方便兼容现有调用方
 - `doctor` 现已额外检查 `idb` CLI、`idb_companion` 与 iOS target visibility
 
 ## 已知限制

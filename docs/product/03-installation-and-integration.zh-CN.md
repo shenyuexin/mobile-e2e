@@ -376,3 +376,5 @@ pnpm mcp:stdio
 当前还新增了一个 capability discovery 入口：`describe_capabilities`。它会返回当前 `platform` / `runnerProfile` 下的 tool capability matrix；同时 `start_session` 和 `list_devices` 的返回结果也会附带 capability profile，方便调用方在动作前先判断 Android full support 与 iOS partial/unsupported 的边界。
 
 在编排层方面，当前还新增了一个最小组合动作：`scroll_and_tap_element`。它会先复用现有的 `scroll_and_resolve_ui_target` 做滚动查找，再在目标明确后执行点击，避免调用方自己手动分两次请求完成同一个“滚动后点击”的意图。
+
+在证据模型方面，artifact-heavy 工具现在开始输出统一的 `evidence[]` 条目。每条 evidence 会标出 `kind`、`path`、`supportLevel`、`description`，用于把 UI dump、screenshot、logs、crash signals、diagnostics bundle 与 debug summary 放进一个更稳定的消费模型里；同时原有的 `artifacts[]` 路径数组仍然保留，用于兼容旧调用方。

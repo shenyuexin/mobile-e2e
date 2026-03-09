@@ -29,3 +29,8 @@ Current orchestration-layer coverage also includes:
 
 - adapter/server/stdio/dev-cli smoke coverage for `scroll_and_tap_element`
 - root dry-run validation for the new scroll-then-tap composed action
+
+Current evidence-model coverage includes:
+
+- adapter-level dry-run evidence emission checks for screenshot, UI dump, logs, crash signals, diagnostics, and aggregated debug evidence
+- compatibility guarantee that structured `evidence[]` is additive and does not replace the legacy top-level `artifacts[]`
