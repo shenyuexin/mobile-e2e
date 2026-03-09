@@ -1,4 +1,11 @@
 import {
+  type CollectDebugEvidenceData,
+  type CollectDebugEvidenceInput,
+  type DescribeCapabilitiesData,
+  type DescribeCapabilitiesInput,
+  type CollectDiagnosticsData,
+  type CollectDiagnosticsInput,
+  type DebugSignalSummary,
   type GetCrashSignalsData,
   type GetCrashSignalsInput,
   type GetLogsData,
@@ -14,6 +21,7 @@ import {
   type InstallAppInput,
   type LaunchAppInput,
   type ListDevicesInput,
+  type LogSummary,
   type Platform,
   type QueryUiData,
   type QueryUiInput,
@@ -46,6 +54,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { buildCapabilityProfile } from "./capability-model.js";
 import {
   buildNonExecutedUiTargetResolution,
   buildScrollSwipeCoordinates,
@@ -61,6 +70,8 @@ import {
   reasonCodeForResolutionStatus,
   shouldAbortWaitForUiAfterReadFailure,
 } from "./ui-model.js";
+
+export { buildCapabilityProfile } from "./capability-model.js";
 
 interface ArtifactDirectory {
   absolutePath: string;
@@ -112,6 +123,14 @@ interface GetCrashSignalsCapture {
   commands: string[][];
   supportLevel: "full" | "partial";
   linesRequested: number;
+}
+
+interface CollectDiagnosticsCapture {
+  relativeOutputPath: string;
+  absoluteOutputPath: string;
+  commandOutputPath?: string;
+  commands: string[][];
+  supportLevel: "full" | "partial";
 }
 const DEFAULT_WAIT_TIMEOUT_MS = 5000;
 const DEFAULT_WAIT_INTERVAL_MS = 500;
@@ -412,12 +431,117 @@ function normalizePositiveInteger(value: number | undefined, fallback: number): 
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
+function shellEscape(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
 function countNonEmptyLines(content: string): number {
   return content
     .replaceAll(String.fromCharCode(13), "")
     .split(String.fromCharCode(10))
     .filter((line) => line.length > 0)
     .length;
+}
+
+function classifyDebugSignal(line: string): DebugSignalSummary["category"] {
+  const normalized = line.toLowerCase();
+  if (normalized.includes("anr")) return "anr";
+  if (normalized.includes("fatal") || normalized.includes("crash") || normalized.includes("androidruntime")) return "crash";
+  if (normalized.includes("exception") || normalized.includes("traceback")) return "exception";
+  if (normalized.includes("timeout")) return "timeout";
+  if (normalized.includes("warn") || normalized.includes("warning")) return "warning";
+  if (normalized.includes("error") || normalized.includes("err ")) return "error";
+  return "other";
+}
+
+function isInterestingDebugLine(line: string): boolean {
+  const normalized = line.toLowerCase();
+  return normalized.includes("fatal")
+    || normalized.includes("exception")
+    || normalized.includes("error")
+    || normalized.includes("crash")
+    || normalized.includes("anr")
+    || normalized.includes("timeout")
+    || normalized.includes("failed")
+    || normalized.includes("unable to");
+}
+
+export function buildLogSummary(content: string, query?: string): LogSummary {
+  const lines = content.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10)).map((line) => line.trim()).filter(Boolean);
+  const queryText = query?.trim();
+  const queryLower = queryText?.toLowerCase();
+  const matchedLines = queryLower ? lines.filter((line) => line.toLowerCase().includes(queryLower)) : lines;
+  const interestingLines = matchedLines.filter(isInterestingDebugLine);
+  const bucket = new Map<string, DebugSignalSummary>();
+
+  for (const line of interestingLines) {
+    const category = classifyDebugSignal(line);
+    const key = `${category}:${line}`;
+    const current = bucket.get(key);
+    if (current) {
+      current.count += 1;
+    } else {
+      bucket.set(key, { category, count: 1, sample: line });
+    }
+  }
+
+  const topSignals = [...bucket.values()]
+    .sort((left, right) => right.count - left.count || left.category.localeCompare(right.category))
+    .slice(0, 8);
+  const sampleLines = interestingLines.slice(0, 8);
+
+  return {
+    totalLines: lines.length,
+    matchedLines: matchedLines.length,
+    query: queryText,
+    topSignals,
+    sampleLines,
+  };
+}
+
+function mergeSignalSummaries(...summaries: Array<LogSummary | undefined>): DebugSignalSummary[] {
+  const merged = new Map<string, DebugSignalSummary>();
+
+  for (const summary of summaries) {
+    if (!summary) continue;
+    for (const signal of summary.topSignals) {
+      const key = `${signal.category}:${signal.sample}`;
+      const current = merged.get(key);
+      if (current) {
+        current.count += signal.count;
+      } else {
+        merged.set(key, { ...signal });
+      }
+    }
+  }
+
+  return [...merged.values()].sort((left, right) => right.count - left.count).slice(0, 10);
+}
+
+function buildDebugNarrative(params: {
+  logSummary?: LogSummary;
+  crashSummary?: LogSummary;
+  includeDiagnostics: boolean;
+  diagnosticsArtifacts: number;
+}): string[] {
+  const narrative: string[] = [];
+
+  if (params.crashSummary && params.crashSummary.topSignals.length > 0) {
+    const topCrash = params.crashSummary.topSignals[0];
+    narrative.push(`Crash evidence is present: ${topCrash.category} appears ${String(topCrash.count)} time(s).`);
+  } else {
+    narrative.push("No high-confidence crash signals were detected in the captured crash evidence.");
+  }
+
+  if (params.logSummary) {
+    narrative.push(`Log capture scanned ${String(params.logSummary.totalLines)} lines and flagged ${String(params.logSummary.sampleLines.length)} interesting lines for AI review.`);
+  }
+
+  if (params.includeDiagnostics) {
+    narrative.push(`Diagnostics bundle capture is included with ${String(params.diagnosticsArtifacts)} artifact path(s). Use it only if logs and crash summaries are insufficient.`);
+  }
+
+  return narrative;
 }
 
 function buildGetLogsCapture(
@@ -483,6 +607,35 @@ function buildGetCrashSignalsCapture(
     commands: [["xcrun", "simctl", "getenv", deviceId, "HOME"]],
     supportLevel: "full",
     linesRequested,
+  };
+}
+
+function buildCollectDiagnosticsCapture(
+  repoRoot: string,
+  input: CollectDiagnosticsInput,
+  runnerProfile: RunnerProfile,
+  deviceId: string,
+): CollectDiagnosticsCapture {
+  if (input.platform === "android") {
+    const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "diagnostics", input.sessionId, `${input.platform}-${runnerProfile}.zip`);
+    const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
+    const commandOutputPath = absoluteOutputPath.endsWith(".zip") ? absoluteOutputPath.slice(0, -4) : absoluteOutputPath;
+    return {
+      relativeOutputPath,
+      absoluteOutputPath,
+      commandOutputPath,
+      commands: [["adb", "-s", deviceId, "bugreport", commandOutputPath]],
+      supportLevel: "full",
+    };
+  }
+
+  const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "diagnostics", input.sessionId, `${input.platform}-${runnerProfile}`);
+  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
+  return {
+    relativeOutputPath,
+    absoluteOutputPath,
+    commands: [["sh", "-lc", `printf '\n' | xcrun simctl diagnose -b --no-archive --output=${shellEscape(absoluteOutputPath)} --udid=${shellEscape(deviceId)}`]],
+    supportLevel: "full",
   };
 }
 
@@ -697,6 +850,30 @@ export async function resolveSessionDefaults(input: {
     appId: selection.appId,
     sampleName: selection.sampleName,
     artifactsRoot: artifactsDir.relativePath,
+  };
+}
+
+export async function describeCapabilitiesWithMaestro(
+  input: DescribeCapabilitiesInput,
+): Promise<ToolResult<DescribeCapabilitiesData>> {
+  const startTime = Date.now();
+  const sessionId = input.sessionId ?? `capabilities-${Date.now()}`;
+  const runnerProfile = input.runnerProfile ?? null;
+  const capabilities = buildCapabilityProfile(input.platform, runnerProfile);
+
+  return {
+    status: "success",
+    reasonCode: REASON_CODES.ok,
+    sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      platform: input.platform,
+      runnerProfile,
+      capabilities,
+    },
+    nextSuggestions: ["Use the returned capability profile to pick tools before invoking platform-specific UI actions."],
   };
 }
 
@@ -1034,7 +1211,7 @@ export async function listAvailableDevices(
 
   try {
     const adbResult = await executeRunner(["adb", "devices"], repoRoot, process.env);
-    androidDevices = adbResult.exitCode === 0 ? parseAdbDevices(adbResult.stdout, includeUnavailable) : [];
+    androidDevices = adbResult.exitCode === 0 ? parseAdbDevices(adbResult.stdout, includeUnavailable).map((device) => ({ ...device, capabilities: buildCapabilityProfile("android", null) })) : [];
     if (adbResult.exitCode !== 0) {
       status = "partial";
       reasonCode = REASON_CODES.deviceUnavailable;
@@ -1048,7 +1225,7 @@ export async function listAvailableDevices(
 
   try {
     const iosResult = await executeRunner(["xcrun", "simctl", "list", "devices", "available", "--json"], repoRoot, process.env);
-    iosDevices = iosResult.exitCode === 0 ? parseIosDevices(iosResult.stdout, includeUnavailable) : [];
+    iosDevices = iosResult.exitCode === 0 ? parseIosDevices(iosResult.stdout, includeUnavailable).map((device) => ({ ...device, capabilities: buildCapabilityProfile("ios", null) })) : [];
     if (iosResult.exitCode !== 0) {
       status = status === "success" ? "partial" : status;
       reasonCode = reasonCode === REASON_CODES.ok ? REASON_CODES.deviceUnavailable : reasonCode;
@@ -2975,6 +3152,8 @@ export async function getLogsWithMaestro(input: GetLogsInput): Promise<ToolResul
         lineCount: 0,
         linesRequested: capture.linesRequested,
         sinceSeconds: capture.sinceSeconds,
+        query: input.query,
+        summary: buildLogSummary("", input.query),
       },
       nextSuggestions: ["Run get_logs without dryRun to capture live device or simulator logs."],
     };
@@ -3002,7 +3181,9 @@ export async function getLogsWithMaestro(input: GetLogsInput): Promise<ToolResul
       lineCount: execution.exitCode === 0 ? countNonEmptyLines(execution.stdout) : 0,
       linesRequested: capture.linesRequested,
       sinceSeconds: capture.sinceSeconds,
+      query: input.query,
       content: execution.exitCode === 0 ? execution.stdout : undefined,
+      summary: execution.exitCode === 0 ? buildLogSummary(execution.stdout, input.query) : undefined,
     },
     nextSuggestions: execution.exitCode === 0
       ? []
@@ -3040,6 +3221,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
         signalCount: 0,
         linesRequested: capture.linesRequested,
         entries: [],
+        summary: buildLogSummary(""),
       },
       nextSuggestions: ["Run get_crash_signals without dryRun to capture live crash and ANR evidence."],
     };
@@ -3084,6 +3266,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
         linesRequested: capture.linesRequested,
         entries,
         content: exitCode === 0 ? content : undefined,
+        summary: exitCode === 0 ? buildLogSummary(content) : undefined,
       },
       nextSuggestions: exitCode === 0 ? [] : ["Check adb connectivity and the selected Android device before retrying get_crash_signals."],
     };
@@ -3108,6 +3291,7 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
         signalCount: 0,
         linesRequested: capture.linesRequested,
         entries: [],
+        summary: buildLogSummary(""),
       },
       nextSuggestions: ["Check simulator boot state before retrying get_crash_signals."],
     };
@@ -3143,8 +3327,212 @@ export async function getCrashSignalsWithMaestro(input: GetCrashSignalsInput): P
       linesRequested: capture.linesRequested,
       entries,
       content,
+      summary: buildLogSummary(content),
     },
     nextSuggestions: entries.length === 0 ? ["No simulator crash reporter files were found. Re-run after reproducing a crash or ANR-like issue."] : [],
+  };
+}
+
+export async function collectDiagnosticsWithMaestro(input: CollectDiagnosticsInput): Promise<ToolResult<CollectDiagnosticsData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? (input.platform === "android" ? "emulator-5554" : "ADA078B9-3C6B-4875-8B85-A7789F368816");
+  const capture = buildCollectDiagnosticsCapture(repoRoot, input, runnerProfile, deviceId);
+
+  await mkdir(path.dirname(capture.absoluteOutputPath), { recursive: true });
+  if (input.platform === "ios") {
+    await mkdir(capture.absoluteOutputPath, { recursive: true });
+  }
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        runnerProfile,
+        outputPath: capture.relativeOutputPath,
+        commands: capture.commands,
+        exitCode: 0,
+        supportLevel: capture.supportLevel,
+        artifactCount: 0,
+        artifacts: [],
+      },
+      nextSuggestions: ["Run collect_diagnostics without dryRun to capture a real Android bugreport or iOS simulator diagnostics bundle."],
+    };
+  }
+
+  const execution = await executeRunner(capture.commands[0], repoRoot, process.env);
+  if (execution.exitCode !== 0) {
+    return {
+      status: "failed",
+      reasonCode: buildFailureReason(execution.stderr, execution.exitCode),
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile,
+        outputPath: capture.relativeOutputPath,
+        commands: capture.commands,
+        exitCode: execution.exitCode,
+        supportLevel: capture.supportLevel,
+        artifactCount: 0,
+        artifacts: [],
+      },
+      nextSuggestions: [input.platform === "android"
+        ? "Check adb connectivity and available device storage before retrying collect_diagnostics."
+        : "Check simulator boot state before retrying collect_diagnostics."],
+    };
+  }
+
+  const collectedArtifacts = input.platform === "android"
+    ? [toRelativePath(repoRoot, capture.absoluteOutputPath)]
+    : await listArtifacts(capture.absoluteOutputPath, repoRoot);
+  const artifacts = [capture.relativeOutputPath];
+
+  return {
+    status: "success",
+    reasonCode: REASON_CODES.ok,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts,
+    data: {
+      dryRun: false,
+      runnerProfile,
+      outputPath: capture.relativeOutputPath,
+      commands: capture.commands,
+      exitCode: execution.exitCode,
+      supportLevel: capture.supportLevel,
+      artifactCount: collectedArtifacts.length,
+      artifacts,
+    },
+    nextSuggestions: [],
+  };
+}
+
+export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenceInput): Promise<ToolResult<CollectDebugEvidenceData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.md`);
+  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
+  const logOutputPath = path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.logs.txt`);
+  const crashOutputPath = path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.crash.txt`);
+  const diagnosticsOutputPath = input.platform === "android"
+    ? path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics.zip`)
+    : path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics`);
+
+  const logsResult = await getLogsWithMaestro({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    outputPath: logOutputPath,
+    lines: input.logLines,
+    sinceSeconds: input.sinceSeconds,
+    query: input.query,
+    dryRun: input.dryRun,
+  });
+  const crashResult = await getCrashSignalsWithMaestro({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    outputPath: crashOutputPath,
+    lines: input.logLines,
+    dryRun: input.dryRun,
+  });
+  const diagnosticsResult = input.includeDiagnostics
+    ? await collectDiagnosticsWithMaestro({
+      sessionId: input.sessionId,
+      platform: input.platform,
+      runnerProfile,
+      harnessConfigPath: input.harnessConfigPath,
+      deviceId: input.deviceId,
+      outputPath: diagnosticsOutputPath,
+      dryRun: input.dryRun,
+    })
+    : undefined;
+
+  const evidencePaths = [
+    ...logsResult.artifacts,
+    ...crashResult.artifacts,
+    ...(diagnosticsResult?.artifacts ?? []),
+  ];
+  const interestingSignals = mergeSignalSummaries(logsResult.data.summary, crashResult.data.summary);
+  const narrative = buildDebugNarrative({
+    logSummary: logsResult.data.summary,
+    crashSummary: crashResult.data.summary,
+    includeDiagnostics: Boolean(input.includeDiagnostics),
+    diagnosticsArtifacts: diagnosticsResult?.data.artifactCount ?? 0,
+  });
+
+  await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
+
+  if (!input.dryRun) {
+    const report = [
+      "# Debug Evidence Summary",
+      `- Platform: ${input.platform}`,
+      `- Runner profile: ${runnerProfile}`,
+      `- Query: ${input.query ?? "<none>"}`,
+      "",
+      "## Narrative",
+      ...narrative.map((line) => `- ${line}`),
+      "",
+      "## Top Signals",
+      ...(interestingSignals.length > 0 ? interestingSignals.map((signal) => `- [${signal.category}] x${String(signal.count)} ${signal.sample}`) : ["- <no interesting signals detected>"]),
+      "",
+      "## Evidence Paths",
+      ...(evidencePaths.length > 0 ? evidencePaths.map((item) => `- ${item}`) : ["- <no evidence paths recorded>"]),
+    ].join(String.fromCharCode(10)) + String.fromCharCode(10);
+    await writeFile(absoluteOutputPath, report, "utf8");
+  }
+
+  const allSucceeded = logsResult.status === "success" && crashResult.status === "success" && (!diagnosticsResult || diagnosticsResult.status === "success");
+  const anySucceeded = logsResult.status === "success" || crashResult.status === "success" || diagnosticsResult?.status === "success";
+  const status = allSucceeded ? "success" : anySucceeded ? "partial" : "failed";
+  const reasonCode = allSucceeded
+    ? REASON_CODES.ok
+    : logsResult.reasonCode !== REASON_CODES.ok
+      ? logsResult.reasonCode
+      : crashResult.reasonCode !== REASON_CODES.ok
+        ? crashResult.reasonCode
+        : diagnosticsResult?.reasonCode ?? REASON_CODES.adapterError;
+  const summaryArtifactPath = input.dryRun ? [] : [relativeOutputPath];
+
+  return {
+    status,
+    reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [...summaryArtifactPath, ...evidencePaths],
+    data: {
+      dryRun: Boolean(input.dryRun),
+      runnerProfile,
+      outputPath: relativeOutputPath,
+      supportLevel: "full",
+      logSummary: logsResult.data.summary,
+      crashSummary: crashResult.data.summary,
+      interestingSignals,
+      evidencePaths: [...summaryArtifactPath, ...evidencePaths],
+      evidenceCount: summaryArtifactPath.length + evidencePaths.length,
+      narrative,
+    },
+    nextSuggestions: status === "success"
+      ? []
+      : ["Use the debug evidence summary first; escalate to collect_diagnostics only when the summarized log and crash signals are still inconclusive."],
   };
 }
 
