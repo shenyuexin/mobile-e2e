@@ -53,6 +53,8 @@ export function buildToolList() {
     { name: "list_js_debug_targets", description: "Discover React Native or Expo JS debug targets from the Metro inspector endpoint." },
     { name: "launch_app", description: "Launch the selected app or Expo URL on a target device/simulator." },
     { name: "list_devices", description: "List Android devices and iOS simulators." },
+    { name: "measure_android_performance", description: "Capture an Android Perfetto time window and return a lightweight AI-friendly performance summary." },
+    { name: "measure_ios_performance", description: "Capture an iOS xctrace time window and return a lightweight AI-friendly performance summary." },
     { name: "take_screenshot", description: "Capture a screenshot from a target device or simulator." },
     { name: "tap", description: "Perform a coordinate tap on Android or on iOS simulators through idb." },
     { name: "tap_element", description: "Resolve a UI selector to a single Android or iOS target and tap only when the match is unambiguous." },

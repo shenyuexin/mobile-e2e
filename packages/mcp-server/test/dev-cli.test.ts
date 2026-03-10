@@ -85,6 +85,20 @@ test("parseCliArgs captures collect_debug_evidence flags", () => {
   assert.equal(options.dryRun, true);
 });
 
+test("parseCliArgs captures performance flags", () => {
+  const options = parseCliArgs([
+    "--measure-android-performance",
+    "--duration-ms", "5000",
+    "--preset", "interaction",
+    "--dry-run",
+  ]);
+
+  assert.equal(options.measureAndroidPerformance, true);
+  assert.equal(options.durationMs, 5000);
+  assert.equal(options.performancePreset, "interaction");
+  assert.equal(options.dryRun, true);
+});
+
 test("parseCliArgs captures capture_js_console_logs flags", () => {
   const options = parseCliArgs([
     "--capture-js-console-logs",
@@ -539,6 +553,52 @@ test("main dispatches collect_debug_evidence Android dry-run through the CLI", a
   assert.equal(output.collectDebugEvidenceResult.data.jsNetworkSummary?.failedRequestCount, 0);
   assert.equal(output.collectDebugEvidenceResult.data.evidence?.some((item) => item.kind === "log"), true);
   assert.equal(output.collectDebugEvidenceResult.data.evidence?.some((item) => item.kind === "crash_signal"), true);
+});
+
+test("main dispatches measure_android_performance dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--measure-android-performance",
+    "--platform", "android",
+    "--runner-profile", "phase1",
+    "--duration-ms", "4000",
+    "--preset", "interaction",
+    "--dry-run",
+  ]) as {
+    measureAndroidPerformanceResult: {
+      status: string;
+      reasonCode: string;
+      data: { supportLevel: string; captureMode: string; preset: string };
+    };
+  };
+
+  assert.equal(output.measureAndroidPerformanceResult.status, "success");
+  assert.equal(output.measureAndroidPerformanceResult.reasonCode, "OK");
+  assert.equal(output.measureAndroidPerformanceResult.data.supportLevel, "full");
+  assert.equal(output.measureAndroidPerformanceResult.data.captureMode, "time_window");
+  assert.equal(output.measureAndroidPerformanceResult.data.preset, "interaction");
+});
+
+test("main dispatches measure_ios_performance dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--measure-ios-performance",
+    "--platform", "ios",
+    "--runner-profile", "phase1",
+    "--duration-ms", "4000",
+    "--template", "time-profiler",
+    "--dry-run",
+  ]) as {
+    measureIosPerformanceResult: {
+      status: string;
+      reasonCode: string;
+      data: { supportLevel: string; captureMode: string; template: string };
+    };
+  };
+
+  assert.equal(output.measureIosPerformanceResult.status, "success");
+  assert.equal(output.measureIosPerformanceResult.reasonCode, "OK");
+  assert.equal(output.measureIosPerformanceResult.data.supportLevel, "partial");
+  assert.equal(output.measureIosPerformanceResult.data.captureMode, "time_window");
+  assert.equal(output.measureIosPerformanceResult.data.template, "time-profiler");
 });
 
 test("main dispatches list_js_debug_targets dry-run through the CLI", async () => {

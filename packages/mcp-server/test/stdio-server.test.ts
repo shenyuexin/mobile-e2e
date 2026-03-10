@@ -22,6 +22,8 @@ test("buildToolList includes the new UI tools", () => {
   assert.ok(toolNames.includes("collect_debug_evidence"));
   assert.ok(toolNames.includes("list_js_debug_targets"));
   assert.ok(toolNames.includes("describe_capabilities"));
+  assert.ok(toolNames.includes("measure_android_performance"));
+  assert.ok(toolNames.includes("measure_ios_performance"));
   assert.ok(toolNames.includes("resolve_ui_target"));
   assert.ok(toolNames.includes("wait_for_ui"));
   assert.ok(toolNames.includes("scroll_and_resolve_ui_target"));
@@ -48,6 +50,8 @@ test("handleRequest returns stdio initialize payload", async () => {
   assert.ok(typedResult.tools.some((tool) => tool.name === "list_js_debug_targets"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "get_crash_signals"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "describe_capabilities"));
+  assert.ok(typedResult.tools.some((tool) => tool.name === "measure_android_performance"));
+  assert.ok(typedResult.tools.some((tool) => tool.name === "measure_ios_performance"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "wait_for_ui"));
 });
 
@@ -152,6 +156,54 @@ test("handleRequest supports tools/call alias for run_flow dry-run", async () =>
   assert.equal(typedResult.reasonCode, "OK");
   assert.equal(typedResult.data.dryRun, true);
   assert.equal(typedResult.data.runnerProfile, "phase1");
+});
+
+test("handleRequest supports tools/call alias for measure_android_performance dry-run", async () => {
+  const result = await handleRequest({
+    id: 20,
+    method: "tools/call",
+    params: {
+      name: "measure_android_performance",
+      arguments: {
+        sessionId: "stdio-android-performance-dry-run",
+        runnerProfile: "phase1",
+        durationMs: 4000,
+        preset: "interaction",
+        dryRun: true,
+      },
+    },
+  });
+  const typedResult = result as { status: string; reasonCode: string; data: { supportLevel: string; captureMode: string; preset: string } };
+
+  assert.equal(typedResult.status, "success");
+  assert.equal(typedResult.reasonCode, "OK");
+  assert.equal(typedResult.data.supportLevel, "full");
+  assert.equal(typedResult.data.captureMode, "time_window");
+  assert.equal(typedResult.data.preset, "interaction");
+});
+
+test("handleRequest supports tools/call alias for measure_ios_performance dry-run", async () => {
+  const result = await handleRequest({
+    id: 21,
+    method: "tools/call",
+    params: {
+      name: "measure_ios_performance",
+      arguments: {
+        sessionId: "stdio-ios-performance-dry-run",
+        runnerProfile: "phase1",
+        durationMs: 4000,
+        template: "time-profiler",
+        dryRun: true,
+      },
+    },
+  });
+  const typedResult = result as { status: string; reasonCode: string; data: { supportLevel: string; captureMode: string; template: string } };
+
+  assert.equal(typedResult.status, "success");
+  assert.equal(typedResult.reasonCode, "OK");
+  assert.equal(typedResult.data.supportLevel, "partial");
+  assert.equal(typedResult.data.captureMode, "time_window");
+  assert.equal(typedResult.data.template, "time-profiler");
 });
 
 test("handleRequest supports tools/call alias for install_app dry-run", async () => {
@@ -430,6 +482,8 @@ test("handleRequest supports tools/list alias", async () => {
   assert.ok(typedResult.some((tool) => tool.name === "capture_js_network_events"));
   assert.ok(typedResult.some((tool) => tool.name === "collect_debug_evidence"));
   assert.ok(typedResult.some((tool) => tool.name === "list_js_debug_targets"));
+  assert.ok(typedResult.some((tool) => tool.name === "measure_android_performance"));
+  assert.ok(typedResult.some((tool) => tool.name === "measure_ios_performance"));
   assert.ok(typedResult.some((tool) => tool.name === "wait_for_ui"));
 });
 

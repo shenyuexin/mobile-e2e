@@ -1,4 +1,4 @@
-import type { CaptureJsConsoleLogsInput, CaptureJsNetworkEventsInput, CollectDebugEvidenceInput, CollectDiagnosticsInput, DescribeCapabilitiesInput, DoctorInput, GetCrashSignalsInput, GetLogsInput, InspectUiInput, InstallAppInput, LaunchAppInput, ListDevicesInput, ListJsDebugTargetsInput, Platform, QueryUiInput, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, ScrollAndTapElementInput, StartSessionInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
+import type { AndroidPerformancePreset, CaptureJsConsoleLogsInput, CaptureJsNetworkEventsInput, CollectDebugEvidenceInput, CollectDiagnosticsInput, DescribeCapabilitiesInput, DoctorInput, GetCrashSignalsInput, GetLogsInput, InspectUiInput, InstallAppInput, IosPerformanceTemplate, LaunchAppInput, ListDevicesInput, ListJsDebugTargetsInput, MeasureAndroidPerformanceInput, MeasureIosPerformanceInput, Platform, QueryUiInput, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, ScrollAndTapElementInput, StartSessionInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { createServer } from "./index.js";
@@ -20,6 +20,8 @@ interface CliOptions {
   listJsDebugTargets: boolean;
   launchApp: boolean;
   listDevices: boolean;
+  measureAndroidPerformance: boolean;
+  measureIosPerformance: boolean;
   queryUi: boolean;
   resolveUiTarget: boolean;
   scrollAndResolveUiTarget: boolean;
@@ -28,6 +30,9 @@ interface CliOptions {
   tap: boolean;
   tapElement: boolean;
   terminateApp: boolean;
+  durationMs?: number;
+  performancePreset?: AndroidPerformancePreset;
+  performanceTemplate?: IosPerformanceTemplate;
   typeText: boolean;
   typeIntoElement: boolean;
   waitForUi: boolean;
@@ -99,6 +104,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let listJsDebugTargets = false;
   let launchApp = false;
   let listDevices = false;
+  let measureAndroidPerformance = false;
+  let measureIosPerformance = false;
   let queryUi = false;
   let resolveUiTarget = false;
   let scrollAndResolveUiTarget = false;
@@ -107,6 +114,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let tap = false;
   let tapElement = false;
   let terminateApp = false;
+  let durationMs: number | undefined;
+  let performancePreset: AndroidPerformancePreset | undefined;
+  let performanceTemplate: IosPerformanceTemplate | undefined;
   let typeText = false;
   let typeIntoElement = false;
   let waitForUi = false;
@@ -167,6 +177,11 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--list-js-debug-targets") { listJsDebugTargets = true; }
     else if (arg === "--launch-app") { launchApp = true; }
     else if (arg === "--list-devices") { listDevices = true; }
+    else if (arg === "--measure-android-performance") { measureAndroidPerformance = true; }
+    else if (arg === "--measure-ios-performance") { measureIosPerformance = true; }
+    else if (arg === "--duration-ms" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) durationMs = Math.floor(parsed); index += 1; }
+    else if (arg === "--preset" && nextValue && ["general", "startup", "interaction", "scroll"].includes(nextValue)) { performancePreset = nextValue as AndroidPerformancePreset; index += 1; }
+    else if (arg === "--template" && nextValue && ["time-profiler", "animation-hitches", "memory"].includes(nextValue)) { performanceTemplate = nextValue as IosPerformanceTemplate; index += 1; }
     else if (arg === "--query-ui") { queryUi = true; }
     else if (arg === "--resolve-ui-target") { resolveUiTarget = true; }
     else if (arg === "--scroll-and-resolve-ui-target") { scrollAndResolveUiTarget = true; }
@@ -234,6 +249,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
     listJsDebugTargets,
     launchApp,
     listDevices,
+    measureAndroidPerformance,
+    measureIosPerformance,
     queryUi,
     resolveUiTarget,
     scrollAndResolveUiTarget,
@@ -242,6 +259,9 @@ export function parseCliArgs(argv: string[]): CliOptions {
     tap,
     tapElement,
     terminateApp,
+    durationMs,
+    performancePreset,
+    performanceTemplate,
     typeText,
     typeIntoElement,
     waitForUi,
@@ -392,6 +412,40 @@ export async function main(): Promise<void> {
     };
     const result = await server.invoke("list_js_debug_targets", listJsDebugTargetsInput);
     console.log(JSON.stringify({ tools: server.listTools(), listJsDebugTargetsResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.measureAndroidPerformance) {
+    const measureAndroidPerformanceInput: MeasureAndroidPerformanceInput = {
+      sessionId: cliOptions.sessionId ?? `android-performance-${Date.now()}`,
+      runnerProfile: cliOptions.runnerProfile,
+      harnessConfigPath: cliOptions.harnessConfigPath,
+      deviceId: cliOptions.deviceId,
+      appId: cliOptions.appId,
+      durationMs: cliOptions.durationMs,
+      preset: cliOptions.performancePreset,
+      outputPath: cliOptions.outputPath,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("measure_android_performance", measureAndroidPerformanceInput);
+    console.log(JSON.stringify({ tools: server.listTools(), measureAndroidPerformanceResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.measureIosPerformance) {
+    const measureIosPerformanceInput: MeasureIosPerformanceInput = {
+      sessionId: cliOptions.sessionId ?? `ios-performance-${Date.now()}`,
+      runnerProfile: cliOptions.runnerProfile,
+      harnessConfigPath: cliOptions.harnessConfigPath,
+      deviceId: cliOptions.deviceId,
+      appId: cliOptions.appId,
+      durationMs: cliOptions.durationMs,
+      template: cliOptions.performanceTemplate,
+      outputPath: cliOptions.outputPath,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("measure_ios_performance", measureIosPerformanceInput);
+    console.log(JSON.stringify({ tools: server.listTools(), measureIosPerformanceResult: result }, null, 2));
     if (result.status === "failed") process.exitCode = 1;
     return;
   }
