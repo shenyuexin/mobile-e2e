@@ -1,4 +1,5 @@
 import {
+  type AndroidPerformancePreset,
   type CollectDebugEvidenceData,
   type CollectDebugEvidenceInput,
   type CaptureJsConsoleLogsData,
@@ -37,6 +38,10 @@ import {
   type JsStackFrame,
   type ListDevicesInput,
   type LogSummary,
+  type MeasureAndroidPerformanceData,
+  type MeasureAndroidPerformanceInput,
+  type MeasureIosPerformanceData,
+  type MeasureIosPerformanceInput,
   type Platform,
   type QueryUiData,
   type QueryUiInput,
@@ -49,6 +54,7 @@ import {
   type ScrollAndTapElementInput,
   type ScrollAndResolveUiTargetData,
   type ScrollAndResolveUiTargetInput,
+  type IosPerformanceTemplate,
   type TapElementData,
   type TapElementInput,
   type TapInput,
@@ -155,6 +161,24 @@ import {
   selectPreferredJsDebugTarget,
   selectPreferredJsDebugTargetWithReason,
 } from "./js-debug.js";
+import {
+  buildAndroidPerformanceData,
+  buildIosPerformanceData,
+  buildPerformanceMarkdownReport,
+  buildPerformanceNextSuggestions,
+  parseTraceProcessorTsv,
+  summarizeAndroidPerformance,
+  summarizeIosPerformance,
+} from "./performance-model.js";
+import {
+  DEFAULT_PERFORMANCE_DURATION_MS,
+  buildAndroidPerformancePlan,
+  buildIosPerformancePlan,
+  buildTraceProcessorScript,
+  buildTraceProcessorShellCommand,
+  resolveAndroidPerformancePlanStrategy,
+  resolveTraceProcessorPath,
+} from "./performance-runtime.js";
 import {
   buildExecutionEvidence,
   buildFailureReason,
@@ -943,6 +967,46 @@ async function collectRuntimeStateChecks(repoRoot: string): Promise<DoctorCheck[
   } catch {
     checks.push(summarizeInfoCheck("ios target boot status", "warn", "Selected iOS simulator is not booted."));
   }
+
+  return checks;
+}
+
+async function collectPerformanceEnvironmentChecks(repoRoot: string, androidDevices: DeviceInfo[]): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+
+  try {
+    const resolvedTraceProcessorPath = resolveTraceProcessorPath();
+    if (!resolvedTraceProcessorPath) {
+      checks.push(summarizeInfoCheck("trace_processor path", "fail", "trace_processor was not found on PATH and no known fallback location was detected."));
+    } else {
+      checks.push(summarizeInfoCheck("trace_processor path", "pass", `Using trace_processor at ${resolvedTraceProcessorPath}.`));
+    }
+  } catch (error) {
+    checks.push(summarizeInfoCheck("trace_processor path", "fail", error instanceof Error ? error.message : String(error)));
+  }
+
+  const selectedAndroidDeviceId = process.env.DEVICE_ID ?? androidDevices.find((device) => device.available)?.id;
+  if (!selectedAndroidDeviceId) {
+    checks.push(summarizeInfoCheck("android perfetto", "warn", "No available Android device is selected, so Perfetto device checks were skipped."));
+    return checks;
+  }
+
+  const perfettoAvailability = await runCommandSafely(["adb", "-s", selectedAndroidDeviceId, "shell", "sh", "-lc", "command -v perfetto || which perfetto || echo missing"], repoRoot);
+  const perfettoPath = perfettoAvailability.stdout.trim();
+  checks.push(summarizeInfoCheck(
+    "android perfetto",
+    isPerfettoShellProbeAvailable(perfettoAvailability) ? "pass" : "warn",
+    isPerfettoShellProbeAvailable(perfettoAvailability)
+      ? `Android device ${selectedAndroidDeviceId} exposes perfetto at ${perfettoPath}.`
+      : `Android device ${selectedAndroidDeviceId} did not expose perfetto via shell probing.`,
+  ));
+
+  const sdkLevel = await resolveAndroidSdkLevel(repoRoot, selectedAndroidDeviceId);
+  const strategy = resolveAndroidPerformancePlanStrategy(sdkLevel);
+  const strategyDetail = sdkLevel === undefined
+    ? `Android SDK level could not be detected; defaulting performance capture strategy to config via ${strategy.configTransport} and trace pull via ${strategy.tracePullMode}.`
+    : `Android SDK ${String(sdkLevel)} uses config via ${strategy.configTransport} and trace pull via ${strategy.tracePullMode}.`;
+  checks.push(summarizeInfoCheck("android perfetto strategy", sdkLevel === undefined ? "warn" : "pass", strategyDetail));
 
   return checks;
 }
@@ -3542,6 +3606,683 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
   };
 }
 
+function buildPerformanceEvidence(artifactPaths: string[], supportLevel: "full" | "partial", planned = false): ExecutionEvidence[] {
+  return artifactPaths.map((artifactPath) => {
+    const lower = artifactPath.toLowerCase();
+    if (lower.endsWith(".trace") || lower.endsWith(".perfetto-trace")) {
+      return buildExecutionEvidence("performance_trace", artifactPath, supportLevel, planned ? "Planned performance trace artifact path." : "Captured performance trace artifact.");
+    }
+    if (lower.endsWith(".xml") || lower.endsWith(".txt") || lower.endsWith(".pbtx")) {
+      return buildExecutionEvidence("performance_export", artifactPath, supportLevel, planned ? "Planned performance export or raw analysis artifact path." : "Captured performance export or raw analysis artifact.");
+    }
+    return buildExecutionEvidence("performance_summary", artifactPath, supportLevel, planned ? "Planned performance summary artifact path." : "Generated performance summary artifact.");
+  });
+}
+
+async function runTraceProcessorScript(params: {
+  repoRoot: string;
+  traceProcessorPath: string;
+  tracePath: string;
+  sqlPath: string;
+  statements: string[];
+  timeoutMs?: number;
+}): Promise<CommandExecution> {
+  await writeFile(params.sqlPath, buildTraceProcessorScript(params.statements), "utf8");
+  return runCommandSafely(
+    buildTraceProcessorShellCommand(params.traceProcessorPath, params.tracePath, params.sqlPath),
+    params.repoRoot,
+    params.timeoutMs,
+  );
+}
+
+async function runCommandSafely(command: string[], repoRoot: string, timeoutMs = DEFAULT_DEVICE_COMMAND_TIMEOUT_MS): Promise<CommandExecution> {
+  try {
+    return await executeRunner(command, repoRoot, process.env, { timeoutMs });
+  } catch (error) {
+    return {
+      exitCode: null,
+      stdout: "",
+      stderr: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function checkCommandAvailable(repoRoot: string, command: string[], timeoutMs = DEFAULT_DEVICE_COMMAND_TIMEOUT_MS): Promise<CommandExecution> {
+  return runCommandSafely(command, repoRoot, timeoutMs);
+}
+
+async function resolveAndroidSdkLevel(repoRoot: string, deviceId: string): Promise<number | undefined> {
+  const execution = await runCommandSafely(["adb", "-s", deviceId, "shell", "getprop", "ro.build.version.sdk"], repoRoot, DEFAULT_DEVICE_COMMAND_TIMEOUT_MS);
+  if (execution.exitCode !== 0) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(execution.stdout.trim(), 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function isPerfettoShellProbeAvailable(execution: CommandExecution): boolean {
+  const output = execution.stdout.trim();
+  return execution.exitCode === 0 && output.length > 0 && output !== "missing";
+}
+
+export function isDoctorCriticalFailure(check: DoctorCheck): boolean {
+  return [
+    "node",
+    "pnpm",
+    "python3",
+    "adb",
+    "xcrun simctl",
+    "maestro",
+    "sample harness config",
+  ].includes(check.name);
+}
+
+export function classifyDoctorOutcome(checks: DoctorCheck[]): { status: ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>['status']; reasonCode: ReasonCode } {
+  if (checks.some((check) => check.status === "fail" && isDoctorCriticalFailure(check))) {
+    return { status: "failed", reasonCode: REASON_CODES.configurationError };
+  }
+  if (checks.some((check) => check.status !== "pass")) {
+    return { status: "partial", reasonCode: REASON_CODES.deviceUnavailable };
+  }
+  return { status: "success", reasonCode: REASON_CODES.ok };
+}
+
+function buildAndroidPerformancePresetSuggestion(preset: AndroidPerformancePreset): string {
+  if (preset === "startup") {
+    return "Inspect startup slices and launch-related frame work in the trace next.";
+  }
+  if (preset === "scroll") {
+    return "Inspect frame timeline and UI thread slices around the scroll window next.";
+  }
+  if (preset === "interaction") {
+    return "Inspect the heaviest UI and RenderThread slices in the sampled interaction next.";
+  }
+  return "Inspect the summary and raw trace together to narrow CPU vs jank vs memory next.";
+}
+
+export async function measureAndroidPerformanceWithMaestro(input: MeasureAndroidPerformanceInput): Promise<ToolResult<MeasureAndroidPerformanceData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const selection = await loadHarnessSelection(repoRoot, "android", runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? "emulator-5554";
+  const appId = input.appId ?? selection.appId;
+  const androidSdkLevel = input.dryRun ? undefined : await resolveAndroidSdkLevel(repoRoot, deviceId);
+  const plan = buildAndroidPerformancePlan({ ...input, appId }, runnerProfile, deviceId, androidSdkLevel);
+  const supportLevel: "full" = "full";
+
+  await mkdir(path.resolve(repoRoot, plan.outputPath), { recursive: true });
+  if (plan.artifacts.configPath) {
+    await writeFile(path.resolve(repoRoot, plan.artifacts.configPath), plan.configContent, "utf8");
+  }
+
+  const plannedArtifactPaths = [
+    plan.artifacts.configPath,
+    plan.artifacts.tracePath,
+    plan.artifacts.rawAnalysisPath,
+    plan.artifacts.summaryPath,
+    plan.artifacts.reportPath,
+  ].filter((value): value is string => Boolean(value));
+  const plannedEvidence = buildPerformanceEvidence(plannedArtifactPaths, supportLevel, true);
+
+  if (input.dryRun) {
+    const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames: [] });
+    const data = buildAndroidPerformanceData({
+      dryRun: true,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      preset: plan.preset,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: 0,
+      supportLevel,
+      artifactPaths: plannedArtifactPaths,
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: plannedEvidence,
+    });
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data,
+      nextSuggestions: [
+        "Run measure_android_performance without dryRun to capture a live Perfetto trace.",
+        "Install trace_processor on the host before running the Android performance MVP analysis path.",
+        `Android SDK strategy preview: ${plan.androidSdkLevel === undefined ? "undetected" : `SDK ${String(plan.androidSdkLevel)}`}, config via ${plan.configTransport}, trace pull via ${plan.tracePullMode}.`,
+      ],
+    };
+  }
+
+  let traceProcessorPath: string | undefined;
+  try {
+    traceProcessorPath = resolveTraceProcessorPath();
+  } catch (error) {
+    traceProcessorPath = undefined;
+    const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames: [] });
+    const data = buildAndroidPerformanceData({
+      dryRun: false,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      preset: plan.preset,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: null,
+      supportLevel,
+      artifactPaths: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: plan.artifacts.configPath ? buildPerformanceEvidence([plan.artifacts.configPath], supportLevel) : undefined,
+    });
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      data,
+      nextSuggestions: [error instanceof Error ? error.message : String(error)],
+    };
+  }
+  if (!traceProcessorPath) {
+    const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames: [] });
+    const data = buildAndroidPerformanceData({
+      dryRun: false,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      preset: plan.preset,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: null,
+      supportLevel,
+      artifactPaths: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: plan.artifacts.configPath ? buildPerformanceEvidence([plan.artifacts.configPath], supportLevel) : undefined,
+    });
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      data,
+      nextSuggestions: [
+        "Install trace_processor on the host or set TRACE_PROCESSOR_PATH before retrying measure_android_performance.",
+      ],
+    };
+  }
+  const traceProcessorProbe = await checkCommandAvailable(repoRoot, [traceProcessorPath, "--help"]);
+  if (traceProcessorProbe.exitCode !== 0) {
+    const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames: [] });
+    const data = buildAndroidPerformanceData({
+      dryRun: false,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      preset: plan.preset,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: traceProcessorProbe.exitCode,
+      supportLevel,
+      artifactPaths: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: plan.artifacts.configPath ? buildPerformanceEvidence([plan.artifacts.configPath], supportLevel) : undefined,
+    });
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      data,
+      nextSuggestions: [
+        "Install trace_processor on the host and ensure it is on PATH before retrying measure_android_performance.",
+      ],
+    };
+  }
+
+  const perfettoProbe = await checkCommandAvailable(repoRoot, plan.steps[0].command);
+  if (!isPerfettoShellProbeAvailable(perfettoProbe)) {
+    const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames: [] });
+    const data = buildAndroidPerformanceData({
+      dryRun: false,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      preset: plan.preset,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: perfettoProbe.exitCode,
+      supportLevel,
+      artifactPaths: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: plan.artifacts.configPath ? buildPerformanceEvidence([plan.artifacts.configPath], supportLevel) : undefined,
+    });
+    return {
+      status: "failed",
+      reasonCode: buildFailureReason(`${perfettoProbe.stderr}\n${perfettoProbe.stdout}`, perfettoProbe.exitCode),
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      data,
+      nextSuggestions: [
+        "Ensure the Android device is connected and that the device-side perfetto binary is available before retrying.",
+      ],
+    };
+  }
+
+  const pushExecution = plan.configTransport === "remote_file"
+    ? await runCommandSafely(plan.steps[1].command, repoRoot, DEFAULT_DEVICE_COMMAND_TIMEOUT_MS)
+    : { exitCode: 0, stdout: "Config will be streamed over stdin.", stderr: "" };
+  if (pushExecution.exitCode !== 0) {
+    const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames: [] });
+    const data = buildAndroidPerformanceData({
+      dryRun: false,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      preset: plan.preset,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: pushExecution.exitCode,
+      supportLevel,
+      artifactPaths: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: plan.artifacts.configPath ? buildPerformanceEvidence([plan.artifacts.configPath], supportLevel) : undefined,
+    });
+    return {
+      status: "failed",
+      reasonCode: buildFailureReason(pushExecution.stderr, pushExecution.exitCode),
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      data,
+      nextSuggestions: ["Failed to push the Perfetto config to the device. Check adb connectivity and retry."],
+    };
+  }
+
+  const recordExecution = await runCommandSafely(plan.steps[2].command, repoRoot, plan.durationMs + 15000);
+  if (recordExecution.exitCode !== 0) {
+    const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames: [] });
+    const data = buildAndroidPerformanceData({
+      dryRun: false,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      preset: plan.preset,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: recordExecution.exitCode,
+      supportLevel,
+      artifactPaths: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: plan.artifacts.configPath ? buildPerformanceEvidence([plan.artifacts.configPath], supportLevel) : undefined,
+    });
+    return {
+      status: recordExecution.exitCode === null ? "failed" : "failed",
+      reasonCode: recordExecution.exitCode === null ? REASON_CODES.timeout : buildFailureReason(recordExecution.stderr, recordExecution.exitCode),
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: plan.artifacts.configPath ? [plan.artifacts.configPath] : [],
+      data,
+      nextSuggestions: ["Perfetto trace capture did not complete cleanly. Check device health and retry the sampled window."],
+    };
+  }
+
+  const pullExecution = await runCommandSafely(plan.steps[3].command, repoRoot, DEFAULT_DEVICE_COMMAND_TIMEOUT_MS);
+  const traceArtifacts = [plan.artifacts.configPath, plan.artifacts.tracePath].filter((value): value is string => Boolean(value));
+  if (pullExecution.exitCode !== 0 || !plan.artifacts.tracePath) {
+    const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames: [] });
+    const data = buildAndroidPerformanceData({
+      dryRun: false,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      preset: plan.preset,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: pullExecution.exitCode,
+      supportLevel,
+      artifactPaths: traceArtifacts,
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: buildPerformanceEvidence(traceArtifacts, supportLevel),
+    });
+    return {
+      status: "partial",
+      reasonCode: buildFailureReason(pullExecution.stderr, pullExecution.exitCode),
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: traceArtifacts,
+      data,
+      nextSuggestions: ["Trace capture may have succeeded on-device, but the trace could not be pulled locally. Inspect adb pull permissions and retry."],
+    };
+  }
+
+  const analysisCommandLabels = [...plan.steps.map((step) => step.label)];
+  const analysisCommands = [...plan.steps.map((step) => step.command)];
+  const tablesOutputPath = plan.traceProcessorScripts.tables;
+  const tablesExecution = await runTraceProcessorScript({
+    repoRoot,
+    traceProcessorPath,
+    tracePath: path.resolve(repoRoot, plan.artifacts.tracePath),
+    sqlPath: path.resolve(repoRoot, tablesOutputPath),
+    statements: ["SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;"],
+    timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS,
+  });
+  analysisCommandLabels.push("trace_processor_tables");
+  analysisCommands.push(buildTraceProcessorShellCommand(traceProcessorPath, path.resolve(repoRoot, plan.artifacts.tracePath), path.resolve(repoRoot, tablesOutputPath)));
+  const artifactPaths = [...traceArtifacts];
+  let status: ToolResult<MeasureAndroidPerformanceData>["status"] = "success";
+  let reasonCode: ReasonCode = REASON_CODES.ok;
+  let tableNames: string[] = [];
+  let cpuRows: string[][] | undefined;
+  let hotspotRows: string[][] | undefined;
+  let frameRows: string[][] | undefined;
+  let memoryRows: string[][] | undefined;
+  const analysisSections: string[] = [];
+  if (tablesExecution.exitCode === 0) {
+    tableNames = parseTraceProcessorTsv(tablesExecution.stdout).map((row) => row[0] ?? "").filter(Boolean);
+    analysisSections.push("# tables", tablesExecution.stdout.trim(), "");
+    const queryRuns: Array<{ key: "cpu" | "hotspots" | "frame" | "memory"; statements: string[]; enabled: boolean }> = [
+      {
+        key: "cpu",
+        enabled: tableNames.includes("sched") && tableNames.includes("thread"),
+        statements: [
+          `SELECT COALESCE(process.name, '<unknown>'), ROUND(SUM(CAST(sched.dur AS FLOAT)) / 1000000.0, 2) FROM sched JOIN thread USING (utid) LEFT JOIN process USING (upid) WHERE sched.dur > 0 GROUP BY COALESCE(process.name, '<unknown>') ORDER BY SUM(sched.dur) DESC LIMIT 5;`,
+        ],
+      },
+      {
+        key: "hotspots",
+        enabled: tableNames.includes("slice"),
+        statements: [
+          "SELECT name, ROUND(SUM(CAST(dur AS FLOAT)) / 1000000.0, 2), COUNT(*) FROM slice WHERE dur > 0 AND name IS NOT NULL GROUP BY name ORDER BY SUM(dur) DESC LIMIT 5;",
+        ],
+      },
+      {
+        key: "frame",
+        enabled: tableNames.includes("actual_frame_timeline_slice"),
+        statements: [
+          "SELECT SUM(CASE WHEN dur > 16666666 THEN 1 ELSE 0 END), SUM(CASE WHEN dur > 700000000 THEN 1 ELSE 0 END), ROUND(AVG(CAST(dur AS FLOAT)) / 1000000.0, 2), ROUND(MAX(CAST(dur AS FLOAT)) / 1000000.0, 2) FROM actual_frame_timeline_slice;",
+        ],
+      },
+      {
+        key: "memory",
+        enabled: tableNames.includes("counter") && tableNames.includes("process_counter_track"),
+        statements: [
+          `SELECT ROUND(MIN(CAST(counter.value AS FLOAT)), 2), ROUND(MAX(CAST(counter.value AS FLOAT)), 2), ROUND(MAX(CAST(counter.value AS FLOAT)) - MIN(CAST(counter.value AS FLOAT)), 2) FROM counter JOIN process_counter_track ON counter.track_id = process_counter_track.id LEFT JOIN process ON process_counter_track.upid = process.upid WHERE lower(process_counter_track.name) LIKE '%rss%'${appId ? ` AND process.name = ${JSON.stringify(appId)}` : ""};`,
+        ],
+      },
+    ];
+    for (const queryRun of queryRuns) {
+      if (!queryRun.enabled) {
+        continue;
+      }
+      const sqlPath = path.resolve(repoRoot, plan.traceProcessorScripts[queryRun.key]);
+      const execution = await runTraceProcessorScript({
+        repoRoot,
+        traceProcessorPath,
+        tracePath: path.resolve(repoRoot, plan.artifacts.tracePath),
+        sqlPath,
+        statements: queryRun.statements,
+        timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS,
+      });
+      analysisCommandLabels.push(`trace_processor_${queryRun.key}`);
+      analysisCommands.push(buildTraceProcessorShellCommand(traceProcessorPath, path.resolve(repoRoot, plan.artifacts.tracePath), sqlPath));
+      if (execution.exitCode !== 0) {
+        status = "partial";
+        reasonCode = REASON_CODES.adapterError;
+        analysisSections.push(`# ${queryRun.key}`, execution.stderr.trim(), "");
+        continue;
+      }
+      const parsed = parseTraceProcessorTsv(execution.stdout);
+      analysisSections.push(`# ${queryRun.key}`, execution.stdout.trim(), "");
+      if (queryRun.key === "cpu") cpuRows = parsed;
+      if (queryRun.key === "hotspots") hotspotRows = parsed;
+      if (queryRun.key === "frame") frameRows = parsed;
+      if (queryRun.key === "memory") memoryRows = parsed;
+    }
+  } else {
+    status = "partial";
+    reasonCode = REASON_CODES.adapterError;
+    analysisSections.push("# tables", tablesExecution.stderr.trim(), "");
+  }
+
+  if (plan.artifacts.rawAnalysisPath) {
+    await writeFile(path.resolve(repoRoot, plan.artifacts.rawAnalysisPath), analysisSections.join(String.fromCharCode(10)), "utf8");
+    artifactPaths.push(plan.artifacts.rawAnalysisPath);
+  }
+  const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames, cpuRows, hotspotRows, frameRows, memoryRows });
+  const data = buildAndroidPerformanceData({
+    dryRun: false,
+    runnerProfile,
+    outputPath: plan.outputPath,
+    durationMs: plan.durationMs,
+    captureMode: "time_window",
+    preset: plan.preset,
+    appId,
+    commandLabels: analysisCommandLabels,
+    commands: analysisCommands,
+    exitCode: status === "success" ? 0 : 1,
+    supportLevel,
+    artifactPaths: [...artifactPaths, plan.artifacts.summaryPath, plan.artifacts.reportPath],
+    artifactsByKind: plan.artifacts,
+    summary,
+    evidence: buildPerformanceEvidence([...artifactPaths, plan.artifacts.summaryPath, plan.artifacts.reportPath], supportLevel),
+  });
+  await writeFile(path.resolve(repoRoot, plan.artifacts.summaryPath), JSON.stringify(data.summary, null, 2) + String.fromCharCode(10), "utf8");
+  await writeFile(path.resolve(repoRoot, plan.artifacts.reportPath), buildPerformanceMarkdownReport({
+    title: `Android Performance Summary (${runnerProfile})`,
+    supportLevel,
+    summary: data.summary,
+    suspectAreas: data.suspectAreas,
+    diagnosisBriefing: data.diagnosisBriefing,
+    artifactPaths: data.artifactPaths,
+  }), "utf8");
+  return {
+    status,
+    reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: data.artifactPaths,
+    data,
+    nextSuggestions: [...buildPerformanceNextSuggestions(data.summary, plan.artifacts), buildAndroidPerformancePresetSuggestion(plan.preset)],
+  };
+}
+
+function buildIosTemplateSuggestion(template: IosPerformanceTemplate): string {
+  if (template === "animation-hitches") {
+    return "Inspect the exported hitch-related tables next; this template is best for animation stalls.";
+  }
+  if (template === "memory") {
+    return "Inspect the exported allocation tables next; this template is best for memory growth signals.";
+  }
+  return "Inspect the exported Time Profiler tables next; this template is best for CPU-heavy windows.";
+}
+
+function buildIosAppScopeNote(appId?: string): string {
+  return appId
+    ? `iOS MVP note: appId '${appId}' is currently used for labeling only; xctrace capture still records all processes in the selected time window.`
+    : "iOS MVP note: xctrace capture records all processes in the selected time window unless a narrower launch/attach flow is added later.";
+}
+
+export async function measureIosPerformanceWithMaestro(input: MeasureIosPerformanceInput): Promise<ToolResult<MeasureIosPerformanceData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const selection = await loadHarnessSelection(repoRoot, "ios", runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? "ADA078B9-3C6B-4875-8B85-A7789F368816";
+  const appId = input.appId ?? selection.appId;
+  const plan = buildIosPerformancePlan({ ...input, appId }, runnerProfile, deviceId);
+  const supportLevel: "partial" = "partial";
+
+  await mkdir(path.resolve(repoRoot, plan.outputPath), { recursive: true });
+  const plannedArtifactPaths = [plan.artifacts.traceBundlePath, plan.artifacts.tocPath, plan.artifacts.exportPath, plan.artifacts.summaryPath, plan.artifacts.reportPath].filter((value): value is string => Boolean(value));
+
+  if (input.dryRun) {
+    const summary = summarizeIosPerformance({ durationMs: plan.durationMs, template: plan.template });
+    const data = buildIosPerformanceData({
+      dryRun: true,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      template: plan.template,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: 0,
+      supportLevel,
+      artifactPaths: plannedArtifactPaths,
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: buildPerformanceEvidence(plannedArtifactPaths, supportLevel),
+    });
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data,
+      nextSuggestions: [
+        "Run measure_ios_performance without dryRun to capture an xctrace bundle.",
+        buildIosAppScopeNote(appId),
+        buildIosTemplateSuggestion(plan.template),
+      ],
+    };
+  }
+
+  const recordExecution = await runCommandSafely(plan.steps[0].command, repoRoot, plan.durationMs + 30000);
+  if (recordExecution.exitCode !== 0) {
+    const summary = summarizeIosPerformance({ durationMs: plan.durationMs, template: plan.template });
+    const data = buildIosPerformanceData({
+      dryRun: false,
+      runnerProfile,
+      outputPath: plan.outputPath,
+      durationMs: plan.durationMs,
+      captureMode: "time_window",
+      template: plan.template,
+      appId,
+      commandLabels: plan.steps.map((step) => step.label),
+      commands: plan.steps.map((step) => step.command),
+      exitCode: recordExecution.exitCode,
+      supportLevel,
+      artifactPaths: [],
+      artifactsByKind: plan.artifacts,
+      summary,
+      evidence: undefined,
+    });
+    return {
+      status: recordExecution.exitCode === null ? "failed" : "failed",
+      reasonCode: recordExecution.exitCode === null ? REASON_CODES.timeout : buildFailureReason(recordExecution.stderr, recordExecution.exitCode),
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data,
+      nextSuggestions: ["xctrace recording failed. Ensure the simulator/device is available and retry the sampled window.", buildIosAppScopeNote(appId)],
+    };
+  }
+
+  let status: ToolResult<MeasureIosPerformanceData>["status"] = "success";
+  let reasonCode: ReasonCode = REASON_CODES.ok;
+  const artifactPaths = [plan.artifacts.traceBundlePath].filter((value): value is string => Boolean(value));
+  const tocExecution = await runCommandSafely(plan.steps[1].command, repoRoot, DEFAULT_DEVICE_COMMAND_TIMEOUT_MS + plan.durationMs);
+  let tocXml = "";
+  if (tocExecution.exitCode === 0 && plan.artifacts.tocPath) {
+    tocXml = await readFile(path.resolve(repoRoot, plan.artifacts.tocPath), "utf8").catch(() => "");
+    artifactPaths.push(plan.artifacts.tocPath);
+  } else {
+    status = "partial";
+    reasonCode = tocExecution.exitCode === null ? REASON_CODES.timeout : buildFailureReason(tocExecution.stderr, tocExecution.exitCode);
+  }
+
+  const exportExecution = await runCommandSafely(plan.steps[2].command, repoRoot, DEFAULT_DEVICE_COMMAND_TIMEOUT_MS + plan.durationMs);
+  let exportXml = "";
+  if (exportExecution.exitCode === 0 && plan.artifacts.exportPath) {
+    exportXml = await readFile(path.resolve(repoRoot, plan.artifacts.exportPath), "utf8").catch(() => "");
+    artifactPaths.push(plan.artifacts.exportPath);
+  } else {
+    status = "partial";
+    reasonCode = exportExecution.exitCode === null ? REASON_CODES.timeout : buildFailureReason(exportExecution.stderr, exportExecution.exitCode);
+  }
+
+  const summary = summarizeIosPerformance({ durationMs: plan.durationMs, template: plan.template, tocXml, exportXml });
+  const data = buildIosPerformanceData({
+    dryRun: false,
+    runnerProfile,
+    outputPath: plan.outputPath,
+    durationMs: plan.durationMs,
+    captureMode: "time_window",
+    template: plan.template,
+    appId,
+    commandLabels: plan.steps.map((step) => step.label),
+    commands: plan.steps.map((step) => step.command),
+    exitCode: status === "success" ? 0 : 1,
+    supportLevel,
+    artifactPaths: [...artifactPaths, plan.artifacts.summaryPath, plan.artifacts.reportPath],
+    artifactsByKind: plan.artifacts,
+    summary,
+    evidence: buildPerformanceEvidence([...artifactPaths, plan.artifacts.summaryPath, plan.artifacts.reportPath], supportLevel),
+  });
+  await writeFile(path.resolve(repoRoot, plan.artifacts.summaryPath), JSON.stringify(data.summary, null, 2) + String.fromCharCode(10), "utf8");
+  await writeFile(path.resolve(repoRoot, plan.artifacts.reportPath), buildPerformanceMarkdownReport({
+    title: `iOS Performance Summary (${runnerProfile})`,
+    supportLevel,
+    summary: data.summary,
+    suspectAreas: data.suspectAreas,
+    diagnosisBriefing: data.diagnosisBriefing,
+    artifactPaths: data.artifactPaths,
+  }), "utf8");
+  return {
+    status,
+    reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: data.artifactPaths,
+    data,
+    nextSuggestions: [...buildPerformanceNextSuggestions(data.summary, plan.artifacts), buildIosAppScopeNote(appId), buildIosTemplateSuggestion(plan.template)],
+  };
+}
+
 export async function launchAppWithMaestro(input: LaunchAppInput): Promise<ToolResult<LaunchAppData>> {
   const startTime = Date.now();
   const repoRoot = resolveRepoPath();
@@ -3711,7 +4452,16 @@ export async function runDoctor(
   checks.push(await checkCommandVersion(repoRoot, "python3", ["--version"], "python3"));
   checks.push(await checkCommandVersion(repoRoot, "adb", ["version"], "adb"));
   checks.push(await checkCommandVersion(repoRoot, "xcrun", ["simctl", "help"], "xcrun simctl"));
+  checks.push(await checkCommandVersion(repoRoot, "xcrun", ["xctrace", "version"], "xcrun xctrace"));
   checks.push(await checkCommandVersion(repoRoot, "maestro", ["--version"], "maestro"));
+  try {
+    const resolvedTraceProcessorPath = resolveTraceProcessorPath();
+    checks.push(resolvedTraceProcessorPath
+      ? await checkCommandVersion(repoRoot, resolvedTraceProcessorPath, ["--help"], "trace_processor")
+      : summarizeInfoCheck("trace_processor", "fail", "trace_processor was not found on PATH and no known fallback location was detected."));
+  } catch (error) {
+    checks.push(summarizeInfoCheck("trace_processor", "fail", error instanceof Error ? error.message : String(error)));
+  }
   let idbCliPath: string | undefined;
   let idbCompanionPath: string | undefined;
   try {
@@ -3746,16 +4496,9 @@ export async function runDoctor(
   const deviceResult = await listAvailableDevices({ includeUnavailable: input.includeUnavailable });
   checks.push(summarizeDeviceCheck("android devices", deviceResult.data.android.filter((device) => device.available).length));
   checks.push(summarizeDeviceCheck("ios simulators", deviceResult.data.ios.filter((device) => device.available).length));
+  checks.push(...(await collectPerformanceEnvironmentChecks(repoRoot, deviceResult.data.android)));
 
-  let status: ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>["status"] = "success";
-  let reasonCode: ReasonCode = REASON_CODES.ok;
-  if (checks.some((check) => check.status === "fail")) {
-    status = "failed";
-    reasonCode = REASON_CODES.configurationError;
-  } else if (checks.some((check) => check.status === "warn")) {
-    status = "partial";
-    reasonCode = REASON_CODES.deviceUnavailable;
-  }
+  const { status, reasonCode } = classifyDoctorOutcome(checks);
 
   const nextSuggestions = checks
     .filter((check) => check.status !== "pass")
