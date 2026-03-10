@@ -19,7 +19,7 @@ import {
   resolveFirstTapTarget,
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
-import { buildCapabilityProfile, buildInspectorExceptionLogEntry, buildJsConsoleLogSummary, buildJsNetworkFailureSummary, buildLogSummary, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, describeCapabilitiesWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, inspectUiWithMaestro, rankJsDebugTarget, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, selectPreferredJsDebugTarget, selectPreferredJsDebugTargetWithReason, takeScreenshotWithMaestro, tapElementWithMaestro, typeIntoElementWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildInspectorExceptionLogEntry, buildJsConsoleLogSummary, buildJsNetworkFailureSummary, buildJsNetworkSuspectSentences, buildLogSummary, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, describeCapabilitiesWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, inspectUiWithMaestro, rankJsDebugTarget, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, selectPreferredJsDebugTarget, selectPreferredJsDebugTargetWithReason, takeScreenshotWithMaestro, tapElementWithMaestro, typeIntoElementWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -352,6 +352,18 @@ test("buildJsNetworkFailureSummary groups failures by status error and host", ()
   assert.equal(summary.errorGroups[0]?.key, "Server down");
   assert.equal(summary.hostGroups[0]?.key, "api.example.com");
   assert.equal(summary.hostGroups[0]?.count, 3);
+});
+
+test("buildJsNetworkSuspectSentences prioritizes host status and transport clues", () => {
+  const suspects = buildJsNetworkSuspectSentences(buildJsNetworkFailureSummary([
+    { requestId: "1", url: "https://api.example.com/users", status: 500, errorText: "Server down" },
+    { requestId: "2", url: "https://api.example.com/orders", status: 500 },
+    { requestId: "3", url: "https://cdn.example.com/app.js", errorText: "Timed out" },
+  ]));
+
+  assert.match(suspects[0] ?? "", /api\.example\.com/);
+  assert.match(suspects[0] ?? "", /500/);
+  assert.match(suspects[1] ?? "", /Server down|Timed out/);
 });
 
 test("selectPreferredJsDebugTarget prefers targets with a debugger websocket", () => {

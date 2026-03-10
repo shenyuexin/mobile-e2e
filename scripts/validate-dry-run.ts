@@ -86,7 +86,7 @@ const validationCases: ValidationCase[] = [
         collectDebugEvidenceResult: {
           status: string;
           reasonCode: string;
-          data: { supportLevel: string; jsDebugMetroBaseUrl?: string; jsDebugTargetEndpoint?: string };
+          data: { supportLevel: string; jsDebugMetroBaseUrl?: string; jsDebugTargetEndpoint?: string; jsDebugTargetCandidateCount?: number; jsDebugTargetSelectionReason?: string };
         };
       };
       assert.equal(typed.collectDebugEvidenceResult.status, "success");
@@ -94,6 +94,8 @@ const validationCases: ValidationCase[] = [
       assert.equal(typed.collectDebugEvidenceResult.data.supportLevel, "full");
       assert.equal(typed.collectDebugEvidenceResult.data.jsDebugMetroBaseUrl, "http://127.0.0.1:9090");
       assert.equal(typed.collectDebugEvidenceResult.data.jsDebugTargetEndpoint, "http://127.0.0.1:9090/json/list");
+      assert.equal(typed.collectDebugEvidenceResult.data.jsDebugTargetCandidateCount, 0);
+      assert.equal(typed.collectDebugEvidenceResult.data.jsDebugTargetSelectionReason, undefined);
     },
   },
   {
