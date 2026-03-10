@@ -86,7 +86,7 @@ const validationCases: ValidationCase[] = [
         collectDebugEvidenceResult: {
           status: string;
           reasonCode: string;
-          data: { supportLevel: string; jsDebugMetroBaseUrl?: string; jsDebugTargetEndpoint?: string; jsDebugTargetCandidateCount?: number; jsDebugTargetSelectionReason?: string };
+          data: { supportLevel: string; jsDebugMetroBaseUrl?: string; jsDebugTargetEndpoint?: string; jsDebugTargetCandidateCount?: number; jsDebugTargetSelectionReason?: string; jsConsoleSummary?: { totalLogs: number; exceptionCount: number }; jsNetworkSummary?: { totalTrackedRequests: number; failedRequestCount: number } };
         };
       };
       assert.equal(typed.collectDebugEvidenceResult.status, "success");
@@ -96,6 +96,10 @@ const validationCases: ValidationCase[] = [
       assert.equal(typed.collectDebugEvidenceResult.data.jsDebugTargetEndpoint, "http://127.0.0.1:9090/json/list");
       assert.equal(typed.collectDebugEvidenceResult.data.jsDebugTargetCandidateCount, 0);
       assert.equal(typed.collectDebugEvidenceResult.data.jsDebugTargetSelectionReason, undefined);
+      assert.equal(typed.collectDebugEvidenceResult.data.jsConsoleSummary?.totalLogs, 0);
+      assert.equal(typed.collectDebugEvidenceResult.data.jsConsoleSummary?.exceptionCount, 0);
+      assert.equal(typed.collectDebugEvidenceResult.data.jsNetworkSummary?.totalTrackedRequests, 0);
+      assert.equal(typed.collectDebugEvidenceResult.data.jsNetworkSummary?.failedRequestCount, 0);
     },
   },
   {

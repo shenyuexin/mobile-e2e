@@ -336,7 +336,7 @@ test("main dispatches collect_debug_evidence Android dry-run through the CLI", a
     collectDebugEvidenceResult: {
       status: string;
       reasonCode: string;
-      data: { supportLevel: string; jsDebugMetroBaseUrl?: string; jsDebugTargetEndpoint?: string; jsDebugTargetCandidateCount?: number; jsDebugTargetSelectionReason?: string; logSummary?: { query?: string }; suspectAreas: string[]; jsDebugTargetId?: string; jsConsoleLogCount?: number; jsNetworkEventCount?: number; evidence?: Array<{ kind: string }> };
+      data: { supportLevel: string; jsDebugMetroBaseUrl?: string; jsDebugTargetEndpoint?: string; jsDebugTargetCandidateCount?: number; jsDebugTargetSelectionReason?: string; logSummary?: { query?: string }; suspectAreas: string[]; jsDebugTargetId?: string; jsConsoleLogCount?: number; jsNetworkEventCount?: number; jsConsoleSummary?: { totalLogs: number; exceptionCount: number }; jsNetworkSummary?: { totalTrackedRequests: number; failedRequestCount: number }; evidence?: Array<{ kind: string }> };
     };
   };
 
@@ -352,6 +352,10 @@ test("main dispatches collect_debug_evidence Android dry-run through the CLI", a
   assert.equal(output.collectDebugEvidenceResult.data.jsDebugTargetId, undefined);
   assert.equal(output.collectDebugEvidenceResult.data.jsConsoleLogCount, 0);
   assert.equal(output.collectDebugEvidenceResult.data.jsNetworkEventCount, 0);
+  assert.equal(output.collectDebugEvidenceResult.data.jsConsoleSummary?.totalLogs, 0);
+  assert.equal(output.collectDebugEvidenceResult.data.jsConsoleSummary?.exceptionCount, 0);
+  assert.equal(output.collectDebugEvidenceResult.data.jsNetworkSummary?.totalTrackedRequests, 0);
+  assert.equal(output.collectDebugEvidenceResult.data.jsNetworkSummary?.failedRequestCount, 0);
   assert.equal(output.collectDebugEvidenceResult.data.evidence?.some((item) => item.kind === "log"), true);
   assert.equal(output.collectDebugEvidenceResult.data.evidence?.some((item) => item.kind === "crash_signal"), true);
 });

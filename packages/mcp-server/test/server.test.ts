@@ -197,6 +197,10 @@ test("server invoke supports collect_debug_evidence Android dry-run", async () =
   assert.equal(result.data.jsDebugTargetId, undefined);
   assert.equal(result.data.jsConsoleLogCount, 0);
   assert.equal(result.data.jsNetworkEventCount, 0);
+  assert.equal(result.data.jsConsoleSummary?.totalLogs, 0);
+  assert.equal(result.data.jsConsoleSummary?.exceptionCount, 0);
+  assert.equal(result.data.jsNetworkSummary?.totalTrackedRequests, 0);
+  assert.equal(result.data.jsNetworkSummary?.failedRequestCount, 0);
   assert.equal(result.data.evidence?.some((item) => item.kind === "log"), true);
   assert.equal(result.data.evidence?.some((item) => item.kind === "crash_signal"), true);
 });

@@ -639,6 +639,10 @@ test("collectDebugEvidenceWithMaestro aggregates structured evidence in dry-run 
   });
 
   assert.equal(result.status, "success");
+  assert.equal(result.data.jsConsoleSummary?.totalLogs, 0);
+  assert.equal(result.data.jsConsoleSummary?.exceptionCount, 0);
+  assert.equal(result.data.jsNetworkSummary?.totalTrackedRequests, 0);
+  assert.equal(result.data.jsNetworkSummary?.failedRequestCount, 0);
   assert.equal(result.data.evidence?.some((item) => item.kind === "log"), true);
   assert.equal(result.data.evidence?.some((item) => item.kind === "crash_signal"), true);
   assert.equal(result.data.evidence?.some((item) => item.kind === "diagnostics_bundle"), true);
@@ -657,4 +661,8 @@ test("collectDebugEvidenceWithMaestro carries custom metro base url into auto di
   assert.equal(result.data.jsDebugTargetEndpoint, "http://127.0.0.1:9090/json/list");
   assert.equal(result.data.jsDebugTargetCandidateCount, 0);
   assert.equal(result.data.jsDebugTargetSelectionReason, undefined);
+  assert.equal(result.data.jsConsoleSummary?.totalLogs, 0);
+  assert.equal(result.data.jsConsoleSummary?.exceptionCount, 0);
+  assert.equal(result.data.jsNetworkSummary?.totalTrackedRequests, 0);
+  assert.equal(result.data.jsNetworkSummary?.failedRequestCount, 0);
 });
