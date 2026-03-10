@@ -1,5 +1,7 @@
 # Android Adapter Design
 
+For current implementation-oriented file placement inside `packages/adapter-maestro`, see [`docs/architecture/adapter-code-placement.md`](./adapter-code-placement.md).
+
 ## 1. Backend Options
 
 - **ADB**: device/app lifecycle, shell actions, logs, screenshots.

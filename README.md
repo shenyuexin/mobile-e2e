@@ -28,8 +28,15 @@ This repository contains a comprehensive technical blueprint for building a larg
 - `docs/architecture/overview.md` — goals, scope, and principles
 - `docs/architecture/capability-map.md` — complete capability taxonomy and maturity model
 - `docs/architecture/architecture.md` — reference architecture (control plane + execution plane)
+- `docs/architecture/diagrams/mobile-e2e-overall-architecture.md` — Excalidraw overall architecture link
+  - Source: `docs/architecture/diagrams/mobile-e2e-overall-architecture.excalidraw`  
+  - SVG: `docs/architecture/diagrams/mobile-e2e-overall-architecture.svg`  
+  - PNG preview: `docs/architecture/diagrams/mobile-e2e-overall-architecture.png`
+
+[![Mobile E2E MCP Overall Architecture](docs/architecture/diagrams/mobile-e2e-overall-architecture.png)](docs/architecture/diagrams/mobile-e2e-overall-architecture.excalidraw)
 - `docs/architecture/adapters-android.md` — Android adapter design (ADB/UIAutomator/Espresso/Appium/Maestro)
 - `docs/architecture/adapters-ios.md` — iOS adapter design (simctl/XCUITest/WDA/idb)
+- [`docs/architecture/adapter-code-placement.md`](docs/architecture/adapter-code-placement.md) — where new adapter code should live as the repo grows
 - `docs/architecture/framework-coverage.md` — Native/RN/Flutter capability fit and strategy
 - `docs/delivery/roadmap.md` — phased implementation plan (MVP → enterprise)
 - `docs/architecture/governance-security.md` — security, observability, and governance model

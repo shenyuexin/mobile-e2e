@@ -1,5 +1,7 @@
 # iOS Adapter Design
 
+For current implementation-oriented file placement inside `packages/adapter-maestro`, see [`docs/architecture/adapter-code-placement.md`](./adapter-code-placement.md).
+
 ## 1. Backend Roles
 
 - **simctl**: simulator lifecycle, install/uninstall, screenshots, media, deep links.
@@ -46,10 +48,10 @@ From WDA model:
 
 Important note for the current repository state:
 
-- `inspect_ui` is the only iOS UI-surface tool with a validated success path today, and it depends on `idb ui describe-all --json --nested`.
-- `query_ui` on iOS is intentionally partial: hierarchy capture may succeed, but structured matching parity with Android is not claimed.
-- `tap`, `type_text`, and `tap_element` are not yet wired to a live iOS execution backend in this repo, even though `idb` and WDA theoretically expose related primitives.
-- Documentation must distinguish backend capability in principle from what this repo has actually integrated.
+- `inspect_ui`, `query_ui`, `resolve_ui_target`, `wait_for_ui`, and `scroll_and_resolve_ui_target` now use `idb ui describe-all --json --nested` as the current iOS hierarchy surface in this repo.
+- direct iOS `tap` and `type_text` are wired through `idb ui tap` and `idb ui text`.
+- selector-driven `tap_element`, `type_into_element`, and `scroll_and_tap_element` are implemented through hierarchy resolution plus the idb-backed action path.
+- this is still an idb-backed bounded implementation, not full WDA/XCUITest parity; documentation should continue to distinguish current repo integration from broader backend potential.
 
 ## Phase 1
 
@@ -57,7 +59,7 @@ Important note for the current repository state:
 - ios.bootSimulator
 - ios.launchApp / ios.terminateApp
 - ios.getTree
-- ios.tap / ios.type / ios.swipe (backend design target, not yet fully wired in this repo)
+- ios.tap / ios.type / ios.swipe (idb-backed in the current repo, with deeper WDA parity still future work)
 - ios.takeScreenshot
 - ios.getLogs
 

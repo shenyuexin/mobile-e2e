@@ -97,6 +97,8 @@ Canonical fields for adapter conformance:
 
 ## 5. Adapter Router
 
+For code ownership inside the current TypeScript adapter implementation, see [`docs/architecture/adapter-code-placement.md`](./adapter-code-placement.md).
+
 Routing policy should evaluate:
 
 1. Platform (Android/iOS)
