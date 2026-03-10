@@ -240,6 +240,8 @@ export interface CollectDebugEvidenceData {
   crashSummary?: LogSummary;
   jsConsoleLogCount?: number;
   jsNetworkEventCount?: number;
+  jsConsoleSummary?: JsConsoleLogSummary;
+  jsNetworkSummary?: JsNetworkFailureSummary;
   suspectAreas: string[];
   interestingSignals: DebugSignalSummary[];
   evidencePaths: string[];

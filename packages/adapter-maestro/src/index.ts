@@ -4112,6 +4112,8 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       crashSummary: crashResult.data.summary,
       jsConsoleLogCount: jsConsoleResult?.data.collectedCount,
       jsNetworkEventCount: jsNetworkResult?.data.collectedCount,
+      jsConsoleSummary: jsConsoleResult?.data.summary,
+      jsNetworkSummary: jsNetworkResult?.data.summary,
       suspectAreas,
       interestingSignals,
       evidencePaths: [...summaryArtifactPath, ...evidencePaths],
