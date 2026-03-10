@@ -232,8 +232,10 @@ export interface CollectDebugEvidenceData {
   appId?: string;
   jsDebugMetroBaseUrl?: string;
   jsDebugTargetEndpoint?: string;
+  jsDebugTargetCandidateCount?: number;
   jsDebugTargetId?: string;
   jsDebugTargetTitle?: string;
+  jsDebugTargetSelectionReason?: string;
   logSummary?: LogSummary;
   crashSummary?: LogSummary;
   jsConsoleLogCount?: number;

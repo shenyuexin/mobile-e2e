@@ -583,6 +583,7 @@ function buildSuspectAreas(params: {
   logSummary?: LogSummary;
   jsConsoleSummary?: JsConsoleLogSummary;
   jsNetworkSummary?: JsNetworkFailureSummary;
+  jsConsoleLogs?: JsConsoleLogEntry[];
 }): string[] {
   const suspects: string[] = [];
 
@@ -597,7 +598,10 @@ function buildSuspectAreas(params: {
   }
 
   if ((params.jsConsoleSummary?.exceptionCount ?? 0) > 0) {
-    suspects.push(`JS exception suspect: ${String(params.jsConsoleSummary?.exceptionCount ?? 0)} inspector exception event(s) captured.`);
+    const firstException = params.jsConsoleLogs?.find((entry) => entry.level === "exception");
+    suspects.push(firstException
+      ? `JS exception suspect: ${firstException.exceptionType ?? "Exception"} at ${firstException.sourceUrl ?? "<unknown>"}:${String(firstException.lineNumber ?? 0)}:${String(firstException.columnNumber ?? 0)}.`
+      : `JS exception suspect: ${String(params.jsConsoleSummary?.exceptionCount ?? 0)} inspector exception event(s) captured.`);
   }
 
   const topNetworkStatus = params.jsNetworkSummary?.statusGroups[0];
@@ -611,6 +615,14 @@ function buildSuspectAreas(params: {
   }
 
   return suspects.slice(0, 5);
+}
+
+function formatJsConsoleEntry(entry: JsConsoleLogEntry): string {
+  const location = entry.sourceUrl ? ` @ ${entry.sourceUrl}${typeof entry.lineNumber === "number" ? `:${String(entry.lineNumber)}` : ""}${typeof entry.columnNumber === "number" ? `:${String(entry.columnNumber)}` : ""}` : "";
+  const stackLead = entry.stackFrames?.[0]
+    ? ` | top frame: ${entry.stackFrames[0].functionName ?? "<anonymous>"}${entry.stackFrames[0].url ? ` @ ${entry.stackFrames[0].url}` : ""}`
+    : "";
+  return `- [${entry.level}] ${entry.text}${location}${stackLead}`;
 }
 
 function buildIosLogPredicateForApp(appId: string): string {
@@ -642,32 +654,50 @@ function normalizeJsDebugTarget(raw: unknown): JsDebugTarget | undefined {
   };
 }
 
-export function selectPreferredJsDebugTarget(targets: JsDebugTarget[]): JsDebugTarget | undefined {
-  const scoreTarget = (target: JsDebugTarget): number => {
-    let score = 0;
-    if (target.webSocketDebuggerUrl) {
-      score += 100;
-    }
+export function rankJsDebugTarget(target: JsDebugTarget): { score: number; reason: string } {
+  let score = 0;
+  const reasons: string[] = [];
 
-    const searchable = [target.title, target.description, target.deviceName].filter(Boolean).join(" ").toLowerCase();
-    if (searchable.includes("react native") || searchable.includes("react-native")) {
-      score += 40;
-    }
-    if (searchable.includes("expo")) {
-      score += 25;
-    }
-    if (searchable.includes("hermes")) {
-      score += 10;
-    }
-    if (searchable.includes("chrome")) {
-      score -= 5;
-    }
-    return score;
+  if (target.webSocketDebuggerUrl) {
+    score += 100;
+    reasons.push("has websocket debugger URL");
+  }
+
+  const searchable = [target.title, target.description, target.deviceName].filter(Boolean).join(" ").toLowerCase();
+  if (searchable.includes("react native") || searchable.includes("react-native")) {
+    score += 40;
+    reasons.push("mentions React Native");
+  }
+  if (searchable.includes("expo")) {
+    score += 25;
+    reasons.push("mentions Expo");
+  }
+  if (searchable.includes("hermes")) {
+    score += 10;
+    reasons.push("mentions Hermes");
+  }
+  if (searchable.includes("chrome")) {
+    score -= 5;
+    reasons.push("looks like Chrome debugger");
+  }
+
+  return {
+    score,
+    reason: reasons.length > 0 ? reasons.join(", ") : "fallback to original target order",
   };
+}
 
-  return [...targets]
-    .map((target, index) => ({ target, index, score: scoreTarget(target) }))
-    .sort((left, right) => right.score - left.score || left.index - right.index)[0]?.target;
+export function selectPreferredJsDebugTargetWithReason(targets: JsDebugTarget[]): { target?: JsDebugTarget; reason?: string } {
+  const ranked = [...targets]
+    .map((target, index) => ({ target, index, ...rankJsDebugTarget(target) }))
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+
+  const winner = ranked[0];
+  return winner ? { target: winner.target, reason: winner.reason } : {};
+}
+
+export function selectPreferredJsDebugTarget(targets: JsDebugTarget[]): JsDebugTarget | undefined {
+  return selectPreferredJsDebugTargetWithReason(targets).target;
 }
 
 function buildInspectorWebSocketUrl(metroBaseUrl: string, targetId: string): string {
@@ -3884,9 +3914,10 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
   const discoveredTargetsResult = includeJsInspector && !input.targetId && !input.webSocketDebuggerUrl
     ? await listJsDebugTargetsWithMaestro({ sessionId: input.sessionId, metroBaseUrl: input.metroBaseUrl, dryRun: input.dryRun })
     : undefined;
-  const discoveredTarget = discoveredTargetsResult?.status === "success"
-    ? selectPreferredJsDebugTarget(discoveredTargetsResult.data.targets)
+  const discoveredSelection = discoveredTargetsResult?.status === "success"
+    ? selectPreferredJsDebugTargetWithReason(discoveredTargetsResult.data.targets)
     : undefined;
+  const discoveredTarget = discoveredSelection?.target;
   const effectiveTargetId = input.targetId ?? discoveredTarget?.id;
   const effectiveWebSocketDebuggerUrl = input.webSocketDebuggerUrl ?? discoveredTarget?.webSocketDebuggerUrl;
 
@@ -3960,6 +3991,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     logSummary: logsResult.data.summary,
     jsConsoleSummary: jsConsoleResult?.data.summary,
     jsNetworkSummary: jsNetworkResult?.data.summary,
+    jsConsoleLogs: jsConsoleResult?.data.logs,
   });
   const narrative = buildDebugNarrative({
     appId: effectiveAppId,
@@ -4001,7 +4033,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       ...narrative.map((line) => `- ${line}`),
       "",
       "## JS Console Events",
-      ...(jsConsoleResult?.data.logs?.length ? jsConsoleResult.data.logs.map((entry) => `- [${entry.level}] ${entry.text}`) : ["- <no JS console events captured>"]),
+      ...(jsConsoleResult?.data.logs?.length ? jsConsoleResult.data.logs.map(formatJsConsoleEntry) : ["- <no JS console events captured>"]),
       "",
       "## JS Network Events",
       ...(jsNetworkResult?.data.events?.length ? jsNetworkResult.data.events.map((entry) => `- [${entry.status ?? "pending"}] ${entry.method ?? "GET"} ${entry.url ?? "<unknown>"}${entry.errorText ? ` :: ${entry.errorText}` : ""}`) : ["- <no JS network events captured>"]),
@@ -4047,8 +4079,10 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       appId: effectiveAppId,
       jsDebugMetroBaseUrl: includeJsInspector ? effectiveMetroBaseUrl : undefined,
       jsDebugTargetEndpoint: discoveredTargetsResult?.data.endpoint,
+      jsDebugTargetCandidateCount: discoveredTargetsResult?.data.targetCount,
       jsDebugTargetId: effectiveTargetId,
       jsDebugTargetTitle: discoveredTarget?.title,
+      jsDebugTargetSelectionReason: discoveredSelection?.reason,
       logSummary: logsResult.data.summary,
       crashSummary: crashResult.data.summary,
       jsConsoleLogCount: jsConsoleResult?.data.collectedCount,
