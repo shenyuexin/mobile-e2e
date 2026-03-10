@@ -1,4 +1,5 @@
-import { buildCapabilityProfile, resolveSessionDefaults } from "@mobile-e2e-mcp/adapter-maestro";
+import { buildCapabilityProfile, resolveRepoPath, resolveSessionDefaults } from "@mobile-e2e-mcp/adapter-maestro";
+import { persistStartedSession } from "@mobile-e2e-mcp/core";
 import { REASON_CODES, type Session, type StartSessionInput, type ToolResult } from "@mobile-e2e-mcp/contracts";
 
 function buildDefaultDeviceId(platform: StartSessionInput["platform"]): string {
@@ -10,6 +11,7 @@ function buildDefaultAppId(platform: StartSessionInput["platform"]): string {
 }
 
 export async function startSession(input: StartSessionInput): Promise<ToolResult<Session>> {
+  const repoRoot = resolveRepoPath();
   const sessionId = input.sessionId ?? `session-${Date.now()}`;
   const profile = input.profile ?? null;
   const sessionDefaults = await resolveSessionDefaults({
@@ -40,6 +42,7 @@ export async function startSession(input: StartSessionInput): Promise<ToolResult
       },
     ],
   };
+  const sessionArtifactPath = await persistStartedSession(repoRoot, session);
 
   return {
     status: "success",
@@ -47,8 +50,8 @@ export async function startSession(input: StartSessionInput): Promise<ToolResult
     sessionId,
     durationMs: 0,
     attempts: 1,
-    artifacts: [],
+    artifacts: [sessionArtifactPath],
     data: session,
-    nextSuggestions: ["Invoke run_flow with the returned sessionId to execute the sample harness."],
+    nextSuggestions: ["Invoke run_flow with the returned sessionId to execute the sample harness.", "Use the persisted session artifact to restore context across agent/tool restarts."],
   };
 }

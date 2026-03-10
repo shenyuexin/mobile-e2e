@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@mobile-e2e-mcp/adapter-maestro": "workspace:*",
+    "@mobile-e2e-mcp/core": "workspace:*",
     "@mobile-e2e-mcp/contracts": "workspace:*"
   },
   "scripts": {

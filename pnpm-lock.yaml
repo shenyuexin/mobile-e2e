@@ -53,6 +53,12 @@ importers:
 
   packages/contracts: {}
 
+  packages/core:
+    dependencies:
+      '@mobile-e2e-mcp/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/mcp-server:
     dependencies:
       '@mobile-e2e-mcp/adapter-maestro':
@@ -61,6 +67,9 @@ importers:
       '@mobile-e2e-mcp/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@mobile-e2e-mcp/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 
