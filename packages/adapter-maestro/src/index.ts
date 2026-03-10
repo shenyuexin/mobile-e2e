@@ -86,6 +86,21 @@ import {
   resolveSessionDefaults,
 } from "./harness-config.js";
 import {
+  type CollectDiagnosticsCapture,
+  type GetCrashSignalsCapture,
+  type GetLogsCapture,
+  buildCollectDiagnosticsCapture,
+  buildGetCrashSignalsCapture,
+  buildGetLogsCapture,
+  buildIosLogPredicateForApp,
+  collectHarnessChecks,
+  getInstallArtifactSpec,
+  listAvailableDevices as listAvailableDevicesRuntime,
+  resolveAndroidAppPid,
+  resolveInstallArtifactPath,
+  summarizeInfoCheck,
+} from "./device-runtime.js";
+import {
   buildNonExecutedUiTargetResolution,
   buildScrollSwipeCoordinates,
   buildUiTargetResolution,
@@ -102,6 +117,29 @@ import {
   shouldAbortWaitForUiAfterReadFailure,
 } from "./ui-model.js";
 import {
+  type AndroidUiSnapshot,
+  type AndroidUiSnapshotFailure,
+  type IosUiSnapshot,
+  type IosUiSnapshotFailure,
+  buildAndroidUiDumpCommands,
+  buildIdbCommand,
+  buildIosSwipeCommand,
+  buildIosUiDescribeCommand,
+  captureAndroidUiSnapshot,
+  captureIosUiSnapshot,
+  isAndroidUiSnapshotFailure,
+  isIosUiSnapshotFailure,
+  probeIdbAvailability,
+  resolveIdbCliPath,
+  resolveIdbCompanionPath,
+} from "./ui-runtime.js";
+import {
+  buildResolutionNextSuggestions,
+  normalizeScrollDirection,
+  normalizeWaitForUiMode,
+  reasonCodeForWaitTimeout,
+} from "./ui-tools.js";
+import {
   buildInspectorExceptionLogEntry,
   buildJsConsoleLogSummary,
   buildJsDebugTargetSelectionNarrativeLine,
@@ -117,6 +155,17 @@ import {
   selectPreferredJsDebugTarget,
   selectPreferredJsDebugTargetWithReason,
 } from "./js-debug.js";
+import {
+  buildExecutionEvidence,
+  buildFailureReason,
+  countNonEmptyLines,
+  executeRunner,
+  normalizePositiveInteger,
+  shellEscape,
+  toRelativePath,
+  type CommandExecution,
+  unrefTimer,
+} from "./runtime-shared.js";
 
 export { buildCapabilityProfile } from "./capability-model.js";
 export { buildArtifactsDir, resolveRepoPath, resolveSessionDefaults } from "./harness-config.js";
@@ -135,96 +184,15 @@ export {
   selectPreferredJsDebugTargetWithReason,
 };
 
-interface CommandExecution {
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-}
-
-interface CommandExecutionOptions {
-  timeoutMs?: number;
-}
-
-interface GetLogsCapture {
-  relativeOutputPath: string;
-  absoluteOutputPath: string;
-  command: string[];
-  supportLevel: "full" | "partial";
-  linesRequested?: number;
-  sinceSeconds: number;
-  appId?: string;
-  appFilterApplied: boolean;
-}
-
-interface GetCrashSignalsCapture {
-  relativeOutputPath: string;
-  absoluteOutputPath: string;
-  commands: string[][];
-  supportLevel: "full" | "partial";
-  linesRequested: number;
-}
-
-interface CollectDiagnosticsCapture {
-  relativeOutputPath: string;
-  absoluteOutputPath: string;
-  commandOutputPath?: string;
-  commands: string[][];
-  supportLevel: "full" | "partial";
-}
 const DEFAULT_WAIT_TIMEOUT_MS = 5000;
 const DEFAULT_WAIT_INTERVAL_MS = 500;
 const DEFAULT_GET_LOGS_LINES = 200;
-const DEFAULT_GET_LOGS_SINCE_SECONDS = 60;
 const DEFAULT_GET_CRASH_LINES = 120;
 const DEFAULT_DEBUG_PACKET_JS_TIMEOUT_MS = 1000;
 const DEFAULT_DEVICE_COMMAND_TIMEOUT_MS = 5000;
 const DEFAULT_SCROLL_MAX_SWIPES = 3;
-
-function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
-  if (typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function") {
-    timer.unref();
-  }
-}
 const DEFAULT_SCROLL_DURATION_MS = 250;
-const DEFAULT_WAIT_UNTIL: WaitForUiMode = "visible";
-const DEFAULT_SCROLL_DIRECTION: UiScrollDirection = "up";
 const DEFAULT_WAIT_MAX_CONSECUTIVE_CAPTURE_FAILURES = 2;
-
-interface AndroidUiSnapshot {
-  command: string[];
-  readCommand: string[];
-  relativeOutputPath: string;
-  absoluteOutputPath: string;
-  readExecution: CommandExecution;
-  nodes: InspectUiNode[];
-  summary?: InspectUiSummary;
-  queryResult: { totalMatches: number; matches: QueryUiMatch[] };
-}
-interface AndroidUiSnapshotFailure {
-  reasonCode: ReasonCode;
-  exitCode: number | null;
-  outputPath: string;
-  command: string[];
-  message: string;
-}
-
-interface IosUiSnapshot {
-  command: string[];
-  relativeOutputPath: string;
-  absoluteOutputPath: string;
-  execution: CommandExecution;
-  nodes: InspectUiNode[];
-  summary?: InspectUiSummary;
-  queryResult: { totalMatches: number; matches: QueryUiMatch[] };
-}
-
-interface IosUiSnapshotFailure {
-  reasonCode: ReasonCode;
-  exitCode: number | null;
-  outputPath: string;
-  command: string[];
-  message: string;
-}
 
 interface TypeTextData {
   dryRun: boolean;
@@ -258,12 +226,6 @@ interface TerminateAppData {
   appId: string;
   command: string[];
   exitCode: number | null;
-}
-
-interface InstallArtifactSpec {
-  kind: "file" | "directory";
-  envVar: string;
-  relativePath: string;
 }
 
 interface LaunchAppData {
@@ -300,269 +262,6 @@ interface BasicRunData {
   summaryLine?: string;
 }
 
-function getInstallArtifactSpec(runnerProfile: RunnerProfile): InstallArtifactSpec | undefined {
-  if (runnerProfile === "native_android") {
-    return {
-      kind: "file",
-      envVar: "NATIVE_ANDROID_APK_PATH",
-      relativePath: "examples/demo-android-app/app/build/outputs/apk/debug/app-debug.apk",
-    };
-  }
-  if (runnerProfile === "native_ios") {
-    return {
-      kind: "directory",
-      envVar: "NATIVE_IOS_APP_PATH",
-      relativePath: "examples/demo-ios-app/build/Build/Products/Debug-iphonesimulator/MobiTruKotlin.app",
-    };
-  }
-  if (runnerProfile === "flutter_android") {
-    return {
-      kind: "file",
-      envVar: "FLUTTER_APK_PATH",
-      relativePath: "examples/demo-flutter-app/build/app/outputs/flutter-apk/app-debug.apk",
-    };
-  }
-  return undefined;
-}
-
-function resolveInstallArtifactPath(repoRoot: string, runnerProfile: RunnerProfile, explicitArtifactPath?: string): string | undefined {
-  if (explicitArtifactPath) {
-    return path.isAbsolute(explicitArtifactPath) ? explicitArtifactPath : path.resolve(repoRoot, explicitArtifactPath);
-  }
-  const spec = getInstallArtifactSpec(runnerProfile);
-  if (!spec) {
-    return undefined;
-  }
-  const fromEnv = process.env[spec.envVar];
-  return fromEnv ? fromEnv : path.resolve(repoRoot, spec.relativePath);
-}
-
-function resolveExecutableFromPath(executableName: string): string | undefined {
-  const pathValue = process.env.PATH;
-  if (!pathValue) {
-    return undefined;
-  }
-
-  for (const entry of pathValue.split(path.delimiter)) {
-    if (!entry) {
-      continue;
-    }
-    const candidate = path.join(entry, executableName);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return undefined;
-}
-
-function resolveConfiguredExecutable(configuredValue: string | undefined, fallbackExecutableName: string): string | undefined {
-  if (configuredValue) {
-    if (configuredValue.includes(path.sep)) {
-      if (!existsSync(configuredValue)) {
-        throw new Error(`Configured executable path does not exist: ${configuredValue}`);
-      }
-      return configuredValue;
-    }
-    const resolvedConfiguredValue = resolveExecutableFromPath(configuredValue);
-    if (!resolvedConfiguredValue) {
-      throw new Error(`Configured executable was not found on PATH: ${configuredValue}`);
-    }
-    return resolvedConfiguredValue;
-  }
-
-  return resolveExecutableFromPath(fallbackExecutableName);
-}
-
-function resolveIdbCliPath(): string | undefined {
-  return resolveConfiguredExecutable(process.env.IDB_CLI_PATH, "idb");
-}
-
-function resolveIdbCompanionPath(): string | undefined {
-  return resolveConfiguredExecutable(process.env.IDB_COMPANION_PATH, "idb_companion");
-}
-
-function buildIdbCommand(baseArgs: string[]): string[] {
-  const idbCliPath = resolveIdbCliPath() ?? "idb";
-  const companionPath = resolveIdbCompanionPath();
-  return companionPath ? [idbCliPath, "--companion-path", companionPath, ...baseArgs] : [idbCliPath, ...baseArgs];
-}
-
-async function probeIdbAvailability(repoRoot: string): Promise<CommandExecution | undefined> {
-  return executeRunner(buildIdbCommand(["--help"]), repoRoot, process.env).catch(() => undefined);
-}
-
-function buildExecutionEvidence(kind: ExecutionEvidence["kind"], pathValue: string, supportLevel: "full" | "partial", description: string): ExecutionEvidence {
-  return { kind, path: pathValue, supportLevel, description };
-}
-
-function buildAndroidUiDumpCommands(deviceId: string): { dumpCommand: string[]; readCommand: string[] } {
-  return {
-    dumpCommand: ["adb", "-s", deviceId, "shell", "uiautomator", "dump", "/sdcard/view.xml"],
-    readCommand: ["adb", "-s", deviceId, "shell", "cat", "/sdcard/view.xml"],
-  };
-}
-
-function isAndroidUiSnapshotFailure(value: AndroidUiSnapshot | AndroidUiSnapshotFailure): value is AndroidUiSnapshotFailure {
-  return "message" in value;
-}
-
-function isIosUiSnapshotFailure(value: IosUiSnapshot | IosUiSnapshotFailure): value is IosUiSnapshotFailure {
-  return "message" in value;
-}
-
-function buildResolutionNextSuggestions(status: "resolved" | "no_match" | "ambiguous" | "missing_bounds" | "unsupported" | "not_executed", toolName: string): string[] {
-  if (status === "resolved") {
-    return [];
-  }
-  if (status === "no_match") {
-    return [`No UI nodes matched the provided selector for ${toolName}. Broaden the selector or inspect nearby nodes.`];
-  }
-  if (status === "ambiguous") {
-    return [`Multiple UI nodes matched the selector for ${toolName}. Narrow the selector before performing an element action.`];
-  }
-  if (status === "missing_bounds") {
-    return [`A matching UI node was found for ${toolName}, but its bounds were not parseable.`];
-  }
-  if (status === "not_executed") {
-    return [`${toolName} did not execute live UI resolution in this run. Re-run without dryRun or fix the upstream capture failure.`];
-  }
-  return [`${toolName} is not fully supported for this platform in the current repository state.`];
-}
-
-function normalizeWaitForUiMode(value: WaitForUiMode | undefined): WaitForUiMode {
-  return value ?? DEFAULT_WAIT_UNTIL;
-}
-
-function normalizeScrollDirection(value: UiScrollDirection | undefined): UiScrollDirection {
-  return value ?? DEFAULT_SCROLL_DIRECTION;
-}
-
-function reasonCodeForWaitTimeout(_waitUntil: WaitForUiMode): ReasonCode {
-  return REASON_CODES.timeout;
-}
-
-async function captureAndroidUiSnapshot(
-  repoRoot: string,
-  deviceId: string,
-  sessionId: string,
-  runnerProfile: RunnerProfile,
-  outputPath: string | undefined,
-  query: QueryUiInput,
-): Promise<AndroidUiSnapshot | AndroidUiSnapshotFailure> {
-  const relativeOutputPath = outputPath ?? path.posix.join("artifacts", "ui-dumps", sessionId, `android-${runnerProfile}.xml`);
-  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
-  const { dumpCommand, readCommand } = buildAndroidUiDumpCommands(deviceId);
-  const command = [...dumpCommand, ...readCommand];
-
-  await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
-  const dumpExecution = await executeRunner(dumpCommand, repoRoot, process.env);
-  if (dumpExecution.exitCode !== 0) {
-    return {
-      reasonCode: buildFailureReason(dumpExecution.stderr, dumpExecution.exitCode),
-      exitCode: dumpExecution.exitCode,
-      outputPath: relativeOutputPath,
-      command,
-      message: "Check Android device state and ensure uiautomator dump is permitted before retrying UI resolution.",
-    };
-  }
-
-  const readExecution = await executeRunner(readCommand, repoRoot, process.env);
-  if (readExecution.exitCode === 0) {
-    await writeFile(absoluteOutputPath, readExecution.stdout, "utf8");
-  }
-  const nodes = readExecution.exitCode === 0 ? parseAndroidUiHierarchyNodes(readExecution.stdout) : [];
-  const summary = readExecution.exitCode === 0 ? buildInspectUiSummary(nodes) : undefined;
-  const queryResult = readExecution.exitCode === 0 ? queryUiNodes(nodes, query) : { totalMatches: 0, matches: [] as QueryUiMatch[] };
-
-  return {
-    command,
-    readCommand,
-    relativeOutputPath,
-    absoluteOutputPath,
-    readExecution,
-    nodes,
-    summary,
-    queryResult,
-  };
-}
-
-function buildIosUiDescribeCommand(deviceId: string): string[] {
-  return buildIdbCommand(["ui", "describe-all", "--udid", deviceId, "--json", "--nested"]);
-}
-
-function buildIosSwipeCommand(deviceId: string, swipe: { start: { x: number; y: number }; end: { x: number; y: number }; durationMs: number }): string[] {
-  return buildIdbCommand([
-    "ui",
-    "swipe",
-    String(swipe.start.x),
-    String(swipe.start.y),
-    String(swipe.end.x),
-    String(swipe.end.y),
-    "--duration",
-    String(swipe.durationMs / 1000),
-    "--udid",
-    deviceId,
-  ]);
-}
-
-async function captureIosUiSnapshot(
-  repoRoot: string,
-  deviceId: string,
-  sessionId: string,
-  runnerProfile: RunnerProfile,
-  outputPath: string | undefined,
-  query: QueryUiInput,
-): Promise<IosUiSnapshot | IosUiSnapshotFailure> {
-  const relativeOutputPath = outputPath ?? path.posix.join("artifacts", "ui-dumps", sessionId, `ios-${runnerProfile}.json`);
-  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
-  const command = buildIosUiDescribeCommand(deviceId);
-  const idbProbe = await probeIdbAvailability(repoRoot);
-  if (!idbProbe || idbProbe.exitCode !== 0) {
-    return {
-      reasonCode: REASON_CODES.configurationError,
-      exitCode: idbProbe?.exitCode ?? null,
-      outputPath: relativeOutputPath,
-      command,
-      message: "iOS hierarchy capture requires idb. Install fb-idb and idb_companion, or fix IDB_CLI_PATH/IDB_COMPANION_PATH before retrying.",
-    };
-  }
-
-  await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
-  const execution = await executeRunner(command, repoRoot, process.env);
-  if (execution.exitCode === 0) {
-    await writeFile(absoluteOutputPath, execution.stdout, "utf8");
-  }
-  const nodes = execution.exitCode === 0 ? parseIosInspectNodes(execution.stdout) : [];
-  const summary = execution.exitCode === 0 ? buildInspectUiSummary(nodes) : undefined;
-  const queryResult = execution.exitCode === 0 ? queryUiNodes(nodes, query) : { totalMatches: 0, matches: [] as QueryUiMatch[] };
-
-  return {
-    command,
-    relativeOutputPath,
-    absoluteOutputPath,
-    execution,
-    nodes,
-    summary,
-    queryResult,
-  };
-}
-
-function normalizePositiveInteger(value: number | undefined, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
-}
-
-function shellEscape(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-function countNonEmptyLines(content: string): number {
-  return content
-    .replaceAll(String.fromCharCode(13), "")
-    .split(String.fromCharCode(10))
-    .filter((line) => line.length > 0)
-    .length;
-}
 
 function isInterestingDebugLine(line: string): boolean {
   const normalized = line.toLowerCase();
@@ -783,121 +482,6 @@ function buildDebugNextSuggestions(params: {
   return [...new Set(suggestions)].slice(0, 5);
 }
 
-function buildIosLogPredicateForApp(appId: string): string {
-  const escaped = appId.replaceAll("'", "\\'");
-  return `eventMessage CONTAINS[c] '${escaped}' OR processImagePath CONTAINS[c] '${escaped}' OR senderImagePath CONTAINS[c] '${escaped}'`;
-}
-
-async function resolveAndroidAppPid(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
-  const execution = await executeRunner(["adb", "-s", deviceId, "shell", "pidof", appId], repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS });
-  if (execution.exitCode !== 0) {
-    return undefined;
-  }
-
-  const candidate = execution.stdout.trim().split(/\s+/)[0];
-  return candidate && /^\d+$/.test(candidate) ? candidate : undefined;
-}
-
-function buildGetLogsCapture(
-  repoRoot: string,
-  input: GetLogsInput,
-  runnerProfile: RunnerProfile,
-  deviceId: string,
-  appId?: string,
-  appFilterApplied = false,
-): GetLogsCapture {
-  const sinceSeconds = normalizePositiveInteger(input.sinceSeconds, DEFAULT_GET_LOGS_SINCE_SECONDS);
-  const linesRequested = input.platform === "android" ? normalizePositiveInteger(input.lines, DEFAULT_GET_LOGS_LINES) : undefined;
-  const extension = input.platform === "android" ? "logcat.txt" : "simulator.log";
-  const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "logs", input.sessionId, `${input.platform}-${runnerProfile}.${extension}`);
-  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
-
-  if (input.platform === "android") {
-    return {
-      relativeOutputPath,
-      absoluteOutputPath,
-      command: ["adb", "-s", deviceId, "logcat", "-d", "-t", String(linesRequested ?? DEFAULT_GET_LOGS_LINES)],
-      supportLevel: "full",
-      linesRequested,
-      sinceSeconds,
-      appId,
-      appFilterApplied,
-    };
-  }
-
-  return {
-    relativeOutputPath,
-    absoluteOutputPath,
-    command: ["xcrun", "simctl", "spawn", deviceId, "log", "show", "--style", "compact", "--last", `${String(sinceSeconds)}s`],
-    supportLevel: "full",
-    linesRequested,
-    sinceSeconds,
-    appId,
-    appFilterApplied,
-  };
-}
-
-function buildGetCrashSignalsCapture(
-  repoRoot: string,
-  input: GetCrashSignalsInput,
-  runnerProfile: RunnerProfile,
-  deviceId: string,
-): GetCrashSignalsCapture {
-  const linesRequested = normalizePositiveInteger(input.lines, DEFAULT_GET_CRASH_LINES);
-  const extension = input.platform === "android" ? "crash.txt" : "crash-manifest.txt";
-  const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "crash-signals", input.sessionId, `${input.platform}-${runnerProfile}.${extension}`);
-  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
-
-  if (input.platform === "android") {
-    return {
-      relativeOutputPath,
-      absoluteOutputPath,
-      commands: [
-        ["adb", "-s", deviceId, "logcat", "-d", "-b", "crash", "-t", String(linesRequested)],
-        ["adb", "-s", deviceId, "shell", "ls", "-1", "/data/anr"],
-      ],
-      supportLevel: "full",
-      linesRequested,
-    };
-  }
-
-  return {
-    relativeOutputPath,
-    absoluteOutputPath,
-    commands: [["xcrun", "simctl", "getenv", deviceId, "HOME"]],
-    supportLevel: "full",
-    linesRequested,
-  };
-}
-
-function buildCollectDiagnosticsCapture(
-  repoRoot: string,
-  input: CollectDiagnosticsInput,
-  runnerProfile: RunnerProfile,
-  deviceId: string,
-): CollectDiagnosticsCapture {
-  if (input.platform === "android") {
-    const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "diagnostics", input.sessionId, `${input.platform}-${runnerProfile}.zip`);
-    const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
-    const commandOutputPath = absoluteOutputPath.endsWith(".zip") ? absoluteOutputPath.slice(0, -4) : absoluteOutputPath;
-    return {
-      relativeOutputPath,
-      absoluteOutputPath,
-      commandOutputPath,
-      commands: [["adb", "-s", deviceId, "bugreport", commandOutputPath]],
-      supportLevel: "full",
-    };
-  }
-
-  const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "diagnostics", input.sessionId, `${input.platform}-${runnerProfile}`);
-  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
-  return {
-    relativeOutputPath,
-    absoluteOutputPath,
-    commands: [["sh", "-lc", `printf '\n' | xcrun simctl diagnose -b --no-archive --output=${shellEscape(absoluteOutputPath)} --udid=${shellEscape(deviceId)}`]],
-    supportLevel: "full",
-  };
-}
 
 async function listRelativeFiles(rootPath: string): Promise<string[]> {
   try {
@@ -950,10 +534,6 @@ async function listRelativeFileEntries(rootPath: string, prefix = ""): Promise<R
   }
 }
 
-function toRelativePath(repoRoot: string, targetPath: string): string {
-  return path.relative(repoRoot, targetPath).split(path.sep).join("/");
-}
-
 async function listArtifacts(rootPath: string, repoRoot: string): Promise<string[]> {
   try {
     const entries = await readdir(rootPath, { withFileTypes: true });
@@ -998,23 +578,6 @@ export async function describeCapabilitiesWithMaestro(
   };
 }
 
-function buildFailureReason(stderr: string, exitCode: number | null): ReasonCode {
-  const combined = stderr.toLowerCase();
-  if (combined.includes("install_failed_version_downgrade") || combined.includes("failed to install")) {
-    return REASON_CODES.configurationError;
-  }
-  if (combined.includes("maestro") && combined.includes("not found")) {
-    return REASON_CODES.adapterError;
-  }
-  if (combined.includes("adb") || combined.includes("simctl") || combined.includes("device")) {
-    return REASON_CODES.deviceUnavailable;
-  }
-  if (exitCode === 0) {
-    return REASON_CODES.flowFailed;
-  }
-  return REASON_CODES.adapterError;
-}
-
 function readSummaryLine(stdout?: string): string | undefined {
   if (!stdout) {
     return undefined;
@@ -1025,66 +588,6 @@ function readSummaryLine(stdout?: string): string | undefined {
   const normalized = stdout.replaceAll(carriageReturn, "");
   const lines = normalized.split(lineFeed).filter(Boolean);
   return lines.at(-1);
-}
-
-async function executeRunner(command: string[], repoRoot: string, env: NodeJS.ProcessEnv, options: CommandExecutionOptions = {}): Promise<CommandExecution> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command[0], command.slice(1), {
-      cwd: repoRoot,
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const timeoutMs = options.timeoutMs;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-
-    const cleanup = () => {
-      child.stdout?.removeAllListeners();
-      child.stderr?.removeAllListeners();
-      child.removeAllListeners();
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-      child.disconnect?.();
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-
-    const finish = (callback: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanup();
-      callback();
-    };
-
-    child.stdout.on("data", (chunk: Buffer | string) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on("data", (chunk: Buffer | string) => {
-      stderr += chunk.toString();
-    });
-
-    if (typeof timeoutMs === "number") {
-      timeout = setTimeout(() => {
-        stderr += `${stderr.endsWith("\n") || stderr.length === 0 ? "" : "\n"}Command timed out after ${String(timeoutMs)}ms`;
-        try {
-          child.kill("SIGKILL");
-        } catch {
-        }
-        finish(() => resolve({ exitCode: null, stdout, stderr }));
-      }, timeoutMs);
-      unrefTimer(timeout);
-    }
-
-    child.on("error", (error) => finish(() => reject(error)));
-    child.on("close", (exitCode) => finish(() => resolve({ exitCode, stdout, stderr })));
-  });
 }
 
 async function readRunCounts(artifactsDir: string): Promise<{ totalRuns: number; passedRuns: number; failedRuns: number }> {
@@ -1284,134 +787,26 @@ export async function runFlowWithMaestro(input: RunFlowInput): Promise<ToolResul
   });
 }
 
-function parseAdbDevices(stdout: string, includeUnavailable: boolean): DeviceInfo[] {
-  return stdout
-    .replaceAll(String.fromCharCode(13), "")
-    .split(String.fromCharCode(10))
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith("List of devices attached"))
-    .map((line) => {
-      const [id, state = "unknown"] = line.split(/\s+/);
-      return {
-        id,
-        platform: "android" as const,
-        state,
-        available: state === "device",
-      };
-    })
-    .filter((device) => includeUnavailable || device.available);
-}
-
-function parseIosDevices(stdout: string, includeUnavailable: boolean): DeviceInfo[] {
-  const parsed: unknown = JSON.parse(stdout);
-  if (!isRecord(parsed)) {
-    return [];
-  }
-
-  const devicesSection = parsed.devices;
-  if (!isRecord(devicesSection)) {
-    return [];
-  }
-
-  const devicesByName = new Map<string, DeviceInfo>();
-  for (const runtimeDevices of Object.values(devicesSection)) {
-    if (!Array.isArray(runtimeDevices)) {
-      continue;
-    }
-
-    for (const device of runtimeDevices) {
-      if (!isRecord(device)) {
-        continue;
-      }
-
-      const id = readNonEmptyString(device, "udid");
-      const name = readNonEmptyString(device, "name");
-      const state = readNonEmptyString(device, "state") ?? "unknown";
-      const isAvailable = device.isAvailable === true;
-      if (!id || !name) {
-        continue;
-      }
-
-      const normalizedDevice: DeviceInfo = {
-        id,
-        name,
-        platform: "ios",
-        state,
-        available: isAvailable && state.toLowerCase() !== "unavailable",
-      };
-
-      const existing = devicesByName.get(name);
-      const existingScore = existing ? Number(existing.available) * 10 + Number(existing.state === "Booted") : -1;
-      const nextScore = Number(normalizedDevice.available) * 10 + Number(normalizedDevice.state === "Booted");
-      if (!existing || nextScore > existingScore) {
-        devicesByName.set(name, normalizedDevice);
-      }
-    }
-  }
-
-  return Array.from(devicesByName.values()).filter((device) => includeUnavailable || device.available);
-}
-
 export async function listAvailableDevices(
   input: ListDevicesInput = {},
 ): Promise<ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>> {
-  const repoRoot = resolveRepoPath();
   const startTime = Date.now();
-  const includeUnavailable = input.includeUnavailable ?? false;
   const sessionId = `device-scan-${Date.now()}`;
-  const nextSuggestions: string[] = [];
-
-  let androidDevices: DeviceInfo[] = [];
-  let iosDevices: DeviceInfo[] = [];
-  let status: ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>["status"] = "success";
-  let reasonCode: ReasonCode = REASON_CODES.ok;
-
-  try {
-    const adbResult = await executeRunner(["adb", "devices"], repoRoot, process.env);
-    androidDevices = adbResult.exitCode === 0 ? parseAdbDevices(adbResult.stdout, includeUnavailable).map((device) => ({ ...device, capabilities: buildCapabilityProfile("android", null) })) : [];
-    if (adbResult.exitCode !== 0) {
-      status = "partial";
-      reasonCode = REASON_CODES.deviceUnavailable;
-      nextSuggestions.push("adb is unavailable or returned an error while listing Android devices.");
-    }
-  } catch {
-    status = "partial";
-    reasonCode = REASON_CODES.deviceUnavailable;
-    nextSuggestions.push("adb is unavailable in the current environment.");
-  }
-
-  try {
-    const iosResult = await executeRunner(["xcrun", "simctl", "list", "devices", "available", "--json"], repoRoot, process.env);
-    iosDevices = iosResult.exitCode === 0 ? parseIosDevices(iosResult.stdout, includeUnavailable).map((device) => ({ ...device, capabilities: buildCapabilityProfile("ios", null) })) : [];
-    if (iosResult.exitCode !== 0) {
-      status = status === "success" ? "partial" : status;
-      reasonCode = reasonCode === REASON_CODES.ok ? REASON_CODES.deviceUnavailable : reasonCode;
-      nextSuggestions.push("xcrun simctl returned an error while listing iOS simulators.");
-    }
-  } catch {
-    status = status === "success" ? "partial" : status;
-    reasonCode = reasonCode === REASON_CODES.ok ? REASON_CODES.deviceUnavailable : reasonCode;
-    nextSuggestions.push("xcrun simctl is unavailable in the current environment.");
-  }
-
-  if (androidDevices.length === 0 && iosDevices.length === 0 && status === "success") {
-    status = "partial";
-    reasonCode = REASON_CODES.deviceUnavailable;
-    nextSuggestions.push("No available Android devices or iOS simulators were detected.");
-  }
+  const repoRoot = resolveRepoPath();
+  const result = await listAvailableDevicesRuntime(repoRoot, input.includeUnavailable ?? false);
 
   return {
-    status,
-    reasonCode,
+    status: result.status,
+    reasonCode: result.reasonCode,
     sessionId,
     durationMs: Date.now() - startTime,
     attempts: 1,
     artifacts: [],
     data: {
-      android: androidDevices,
-      ios: iosDevices,
+      android: result.android,
+      ios: result.ios,
     },
-    nextSuggestions,
+    nextSuggestions: result.nextSuggestions,
   };
 }
 
@@ -1429,10 +824,6 @@ function summarizeDeviceCheck(name: string, count: number): DoctorCheck {
     status: "warn",
     detail: "No available devices detected.",
   };
-}
-
-function summarizeInfoCheck(name: string, status: DoctorCheck["status"], detail: string): DoctorCheck {
-  return { name, status, detail };
 }
 
 async function checkCommandVersion(repoRoot: string, command: string, args: string[], label: string): Promise<DoctorCheck> {
@@ -1499,77 +890,6 @@ function summarizeFileCheck(name: string, filePath: string): DoctorCheck {
     status: exists ? "pass" : "fail",
     detail: exists ? `${filePath} exists.` : `${filePath} is missing.`,
   };
-}
-
-async function collectHarnessChecks(repoRoot: string): Promise<DoctorCheck[]> {
-  const harnessConfigPath = path.resolve(repoRoot, DEFAULT_HARNESS_CONFIG_PATH);
-  const checks: DoctorCheck[] = [summarizeFileCheck("sample harness config", harnessConfigPath)];
-  if (!existsSync(harnessConfigPath)) {
-    return checks;
-  }
-
-  const parsedConfig = await parseHarnessConfig(repoRoot, DEFAULT_HARNESS_CONFIG_PATH);
-  const sample = parsedConfig.sample;
-  if (isRecord(sample)) {
-    const goldenFlow = readNonEmptyString(sample, "golden_flow");
-    if (goldenFlow) {
-      checks.push(summarizeInfoCheck("sample golden flow", "pass", `Configured golden flow: ${goldenFlow}`));
-    }
-  }
-
-  const platforms = parsedConfig.platforms;
-  if (isRecord(platforms)) {
-    for (const [platform, config] of Object.entries(platforms)) {
-      if (!isRecord(config)) {
-        continue;
-      }
-      const runnerScript = readNonEmptyString(config, "runner_script");
-      const interruptionPolicy = readNonEmptyString(config, "interruption_policy");
-      const launchUrl = readNonEmptyString(config, "launch_url");
-      const deviceId = readNonEmptyString(config, "device_udid") ?? (platform === "android" ? "emulator-5554" : "ADA078B9-3C6B-4875-8B85-A7789F368816");
-      const adbReverseMappings = readStringArray(config, "adb_reverse");
-      if (runnerScript) {
-        checks.push(summarizeFileCheck(`${platform} phase1 runner`, path.resolve(repoRoot, runnerScript)));
-      }
-      if (interruptionPolicy) {
-        checks.push(summarizeFileCheck(`${platform} interruption policy`, path.resolve(repoRoot, interruptionPolicy)));
-      }
-      const phase1Flow = path.resolve(repoRoot, DEFAULT_FLOWS[platform as Platform]);
-      checks.push(summarizeFileCheck(`${platform} phase1 flow`, phase1Flow));
-      if (launchUrl) {
-        try {
-          const url = new URL(launchUrl);
-          if (url.hostname && url.port) {
-            checks.push(await checkTcpReachability(`${platform} launch URL`, url.hostname, Number(url.port)));
-          }
-        } catch {
-          checks.push(summarizeInfoCheck(`${platform} launch URL`, "warn", `${launchUrl} could not be parsed for reachability checks.`));
-        }
-      }
-      if (platform === "android") {
-        checks.push(await checkAdbReverseMappings("android adb reverse", deviceId, adbReverseMappings, repoRoot));
-      }
-    }
-  }
-
-  const phase3Validations = parsedConfig.phase3_validations;
-  if (isRecord(phase3Validations)) {
-    for (const [profile, config] of Object.entries(phase3Validations)) {
-      if (!isRecord(config)) {
-        continue;
-      }
-      const runnerScript = readNonEmptyString(config, "runner_script");
-      const flows = readStringArray(config, "flows");
-      if (runnerScript) {
-        checks.push(summarizeFileCheck(`${profile} runner`, path.resolve(repoRoot, runnerScript)));
-      }
-      for (const flow of flows) {
-        checks.push(summarizeFileCheck(`${profile} flow`, path.resolve(repoRoot, flow)));
-      }
-    }
-  }
-
-  return checks;
 }
 
 function summarizeOptionalArtifactCheck(name: string, artifactPath: string, kind: "file" | "directory"): DoctorCheck {
