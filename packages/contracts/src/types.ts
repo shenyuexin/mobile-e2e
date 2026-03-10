@@ -219,6 +219,7 @@ export interface CollectDebugEvidenceInput {
   targetId?: string;
   webSocketDebuggerUrl?: string;
   includeJsInspector?: boolean;
+  jsInspectorTimeoutMs?: number;
   sinceSeconds?: number;
   query?: string;
   includeDiagnostics?: boolean;

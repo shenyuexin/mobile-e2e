@@ -36,6 +36,7 @@ interface CliOptions {
   outputPath?: string;
   lines?: number;
   sinceSeconds?: number;
+  jsInspectorTimeoutMs?: number;
   includeDiagnostics?: boolean;
   x?: number;
   y?: number;
@@ -113,6 +114,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let outputPath: string | undefined;
   let lines: number | undefined;
   let sinceSeconds: number | undefined;
+  let jsInspectorTimeoutMs: number | undefined;
   let includeDiagnostics: boolean | undefined;
   let x: number | undefined;
   let y: number | undefined;
@@ -179,6 +181,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--output-path" && nextValue) { outputPath = nextValue; index += 1; }
     else if (arg === "--lines" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) lines = Math.floor(parsed); index += 1; }
     else if (arg === "--since-seconds" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) sinceSeconds = Math.floor(parsed); index += 1; }
+    else if (arg === "--js-inspector-timeout-ms" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) jsInspectorTimeoutMs = Math.floor(parsed); index += 1; }
     else if (arg === "--include-diagnostics" && nextValue) { includeDiagnostics = parseBooleanArg(nextValue); index += 1; }
     else if (arg === "--x" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed)) x = parsed; index += 1; }
     else if (arg === "--y" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed)) y = parsed; index += 1; }
@@ -244,6 +247,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     outputPath,
     lines,
     sinceSeconds,
+    jsInspectorTimeoutMs,
     includeDiagnostics,
     x,
     y,
@@ -326,6 +330,7 @@ export async function main(): Promise<void> {
       targetId: cliOptions.targetId,
       webSocketDebuggerUrl: cliOptions.webSocketDebuggerUrl,
       includeJsInspector: true,
+      jsInspectorTimeoutMs: cliOptions.jsInspectorTimeoutMs,
       sinceSeconds: cliOptions.sinceSeconds,
       query: cliOptions.queryText ?? cliOptions.text,
       includeDiagnostics: cliOptions.includeDiagnostics,

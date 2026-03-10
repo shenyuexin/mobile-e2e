@@ -83,6 +83,7 @@ import {
   normalizeQueryUiSelector,
   parseAndroidUiHierarchyNodes,
   parseInspectUiSummary,
+  parseIosInspectNodes,
   parseIosInspectSummary,
   queryUiNodes,
   reasonCodeForResolutionStatus,
@@ -149,7 +150,14 @@ const DEFAULT_METRO_BASE_URL = "http://127.0.0.1:8081";
 const DEFAULT_METRO_TIMEOUT_MS = 3000;
 const DEFAULT_JS_LOG_MAX_LOGS = 50;
 const DEFAULT_JS_NETWORK_MAX_EVENTS = 30;
+const DEFAULT_DEBUG_PACKET_JS_TIMEOUT_MS = 1000;
 const DEFAULT_SCROLL_MAX_SWIPES = 3;
+
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  if (typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function") {
+    timer.unref();
+  }
+}
 const DEFAULT_SCROLL_DURATION_MS = 250;
 const DEFAULT_WAIT_UNTIL: WaitForUiMode = "visible";
 const DEFAULT_SCROLL_DIRECTION: UiScrollDirection = "up";
@@ -166,6 +174,24 @@ interface AndroidUiSnapshot {
   queryResult: { totalMatches: number; matches: QueryUiMatch[] };
 }
 interface AndroidUiSnapshotFailure {
+  reasonCode: ReasonCode;
+  exitCode: number | null;
+  outputPath: string;
+  command: string[];
+  message: string;
+}
+
+interface IosUiSnapshot {
+  command: string[];
+  relativeOutputPath: string;
+  absoluteOutputPath: string;
+  execution: CommandExecution;
+  nodes: InspectUiNode[];
+  summary?: InspectUiSummary;
+  queryResult: { totalMatches: number; matches: QueryUiMatch[] };
+}
+
+interface IosUiSnapshotFailure {
   reasonCode: ReasonCode;
   exitCode: number | null;
   outputPath: string;
@@ -391,6 +417,10 @@ function isAndroidUiSnapshotFailure(value: AndroidUiSnapshot | AndroidUiSnapshot
   return "message" in value;
 }
 
+function isIosUiSnapshotFailure(value: IosUiSnapshot | IosUiSnapshotFailure): value is IosUiSnapshotFailure {
+  return "message" in value;
+}
+
 function buildResolutionNextSuggestions(status: "resolved" | "no_match" | "ambiguous" | "missing_bounds" | "unsupported" | "not_executed", toolName: string): string[] {
   if (status === "resolved") {
     return [];
@@ -420,10 +450,6 @@ function normalizeScrollDirection(value: UiScrollDirection | undefined): UiScrol
 
 function reasonCodeForWaitTimeout(_waitUntil: WaitForUiMode): ReasonCode {
   return REASON_CODES.timeout;
-}
-
-function escapeAndroidInputText(text: string): string {
-  return text.replaceAll(" ", "%s");
 }
 
 async function captureAndroidUiSnapshot(
@@ -473,6 +499,48 @@ async function captureAndroidUiSnapshot(
 
 function buildIosUiDescribeCommand(deviceId: string): string[] {
   return buildIdbCommand(["ui", "describe-all", "--udid", deviceId, "--json", "--nested"]);
+}
+
+async function captureIosUiSnapshot(
+  repoRoot: string,
+  deviceId: string,
+  sessionId: string,
+  runnerProfile: RunnerProfile,
+  outputPath: string | undefined,
+  query: QueryUiInput,
+): Promise<IosUiSnapshot | IosUiSnapshotFailure> {
+  const relativeOutputPath = outputPath ?? path.posix.join("artifacts", "ui-dumps", sessionId, `ios-${runnerProfile}.json`);
+  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
+  const command = buildIosUiDescribeCommand(deviceId);
+  const idbProbe = await probeIdbAvailability(repoRoot);
+  if (!idbProbe || idbProbe.exitCode !== 0) {
+    return {
+      reasonCode: REASON_CODES.configurationError,
+      exitCode: idbProbe?.exitCode ?? null,
+      outputPath: relativeOutputPath,
+      command,
+      message: "iOS hierarchy capture requires idb. Install fb-idb and idb_companion, or fix IDB_CLI_PATH/IDB_COMPANION_PATH before retrying.",
+    };
+  }
+
+  await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
+  const execution = await executeRunner(command, repoRoot, process.env);
+  if (execution.exitCode === 0) {
+    await writeFile(absoluteOutputPath, execution.stdout, "utf8");
+  }
+  const nodes = execution.exitCode === 0 ? parseIosInspectNodes(execution.stdout) : [];
+  const summary = execution.exitCode === 0 ? buildInspectUiSummary(nodes) : undefined;
+  const queryResult = execution.exitCode === 0 ? queryUiNodes(nodes, query) : { totalMatches: 0, matches: [] as QueryUiMatch[] };
+
+  return {
+    command,
+    relativeOutputPath,
+    absoluteOutputPath,
+    execution,
+    nodes,
+    summary,
+    queryResult,
+  };
 }
 
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {
@@ -2078,26 +2146,80 @@ export async function resolveUiTargetWithMaestro(input: ResolveUiTargetInput): P
   }
 
   if (input.platform === "ios") {
-    const idbCommand = buildIosUiDescribeCommand(input.deviceId ?? "ADA078B9-3C6B-4875-8B85-A7789F368816");
+    const deviceId = input.deviceId ?? "ADA078B9-3C6B-4875-8B85-A7789F368816";
+    const idbCommand = buildIosUiDescribeCommand(deviceId);
+    if (input.dryRun) {
+      return {
+        status: "partial",
+        reasonCode: REASON_CODES.unsupportedOperation,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: true,
+          runnerProfile,
+          outputPath: defaultOutputPath,
+          query,
+          command: idbCommand,
+          exitCode: 0,
+          result: { query, totalMatches: 0, matches: [] },
+          resolution: buildNonExecutedUiTargetResolution(query, "partial"),
+          supportLevel: "partial",
+        },
+        nextSuggestions: ["resolve_ui_target dry-run only previews the iOS hierarchy capture command. Run it without --dry-run to resolve against the current simulator hierarchy."],
+      };
+    }
+
+    const snapshot = await captureIosUiSnapshot(repoRoot, deviceId, input.sessionId, runnerProfile, input.outputPath, { sessionId: input.sessionId, platform: input.platform, runnerProfile, harnessConfigPath: input.harnessConfigPath, deviceId, outputPath: input.outputPath, dryRun: false, ...query });
+    if (isIosUiSnapshotFailure(snapshot)) {
+      return {
+        status: "failed",
+        reasonCode: snapshot.reasonCode,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          outputPath: snapshot.outputPath,
+          query,
+          command: snapshot.command,
+          exitCode: snapshot.exitCode,
+          result: { query, totalMatches: 0, matches: [] },
+          resolution: buildNonExecutedUiTargetResolution(query, "partial"),
+          supportLevel: "partial",
+        },
+        nextSuggestions: [snapshot.message],
+      };
+    }
+
+    const result = { query, ...snapshot.queryResult };
+    const resolution = buildUiTargetResolution(query, result, "full");
     return {
-      status: "partial",
-      reasonCode: REASON_CODES.unsupportedOperation,
+      status: resolution.status === "resolved" ? "success" : "partial",
+      reasonCode: resolution.status === "resolved" ? REASON_CODES.ok : reasonCodeForResolutionStatus(resolution.status),
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
-      artifacts: [],
+      artifacts: snapshot.execution.exitCode === 0 ? [toRelativePath(repoRoot, snapshot.absoluteOutputPath)] : [],
       data: {
-        dryRun: Boolean(input.dryRun),
+        dryRun: false,
         runnerProfile,
-        outputPath: defaultOutputPath,
+        outputPath: snapshot.relativeOutputPath,
         query,
-        command: idbCommand,
-        exitCode: input.dryRun ? 0 : null,
-        result: { query, totalMatches: 0, matches: [] },
-        resolution: buildNonExecutedUiTargetResolution(query, "partial"),
+        command: snapshot.command,
+        exitCode: snapshot.execution.exitCode,
+        result,
+        resolution,
         supportLevel: "partial",
+        content: snapshot.execution.stdout,
+        summary: snapshot.summary,
       },
-      nextSuggestions: ["resolve_ui_target currently provides actionable target resolution for Android only. Use inspect_ui artifacts for iOS manual inspection."],
+      nextSuggestions: resolution.status === "resolved"
+        ? []
+        : buildResolutionNextSuggestions(resolution.status, "resolve_ui_target"),
     };
   }
 
@@ -2206,7 +2328,6 @@ export async function resolveUiTargetWithMaestro(input: ResolveUiTargetInput): P
 
 export async function tapElementWithMaestro(input: TapElementInput): Promise<ToolResult<TapElementData>> {
   const startTime = Date.now();
-  const repoRoot = resolveRepoPath();
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const resolveResult = await resolveUiTargetWithMaestro({
     sessionId: input.sessionId,
@@ -2303,38 +2424,43 @@ export async function tapElementWithMaestro(input: TapElementInput): Promise<Too
     };
   }
 
-  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
-  const deviceId = input.deviceId ?? selection.deviceId ?? "emulator-5554";
-  const tapCommand = ["adb", "-s", deviceId, "shell", "input", "tap", String(resolution.resolvedPoint.x), String(resolution.resolvedPoint.y)];
-  if (input.dryRun) {
-    return {
-      status: "success",
-      reasonCode: REASON_CODES.ok,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: resolveResult.artifacts,
-      data: { dryRun: true, runnerProfile, query, matchCount: resolution.matchCount, resolution, matchedNode: resolution.matchedNode, resolvedBounds: resolution.resolvedBounds, resolvedX: resolution.resolvedPoint.x, resolvedY: resolution.resolvedPoint.y, command: tapCommand, exitCode: 0, supportLevel: "full" },
-      nextSuggestions: ["Run tap_element without dryRun to perform the resolved Android tap."],
-    };
-  }
-
-  const execution = await executeRunner(tapCommand, repoRoot, process.env);
+  const tapResult = await tapWithMaestro({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile: input.runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    x: resolution.resolvedPoint.x,
+    y: resolution.resolvedPoint.y,
+    dryRun: input.dryRun,
+  });
   return {
-    status: execution.exitCode === 0 ? "success" : "failed",
-    reasonCode: execution.exitCode === 0 ? REASON_CODES.ok : REASON_CODES.actionTapFailed,
+    status: tapResult.status,
+    reasonCode: tapResult.reasonCode,
     sessionId: input.sessionId,
     durationMs: Date.now() - startTime,
-    attempts: 1,
+    attempts: resolveResult.attempts + tapResult.attempts,
     artifacts: resolveResult.artifacts,
-    data: { dryRun: false, runnerProfile, query, matchCount: resolution.matchCount, resolution, matchedNode: resolution.matchedNode, resolvedBounds: resolution.resolvedBounds, resolvedX: resolution.resolvedPoint.x, resolvedY: resolution.resolvedPoint.y, command: tapCommand, exitCode: execution.exitCode, supportLevel: "full" },
-    nextSuggestions: execution.exitCode === 0 ? [] : ["Check Android device state before retrying tap_element."],
+    data: {
+      dryRun: Boolean(input.dryRun),
+      runnerProfile,
+      query,
+      matchCount: resolution.matchCount,
+      resolution,
+      matchedNode: resolution.matchedNode,
+      resolvedBounds: resolution.resolvedBounds,
+      resolvedX: resolution.resolvedPoint.x,
+      resolvedY: resolution.resolvedPoint.y,
+      command: tapResult.data.command,
+      exitCode: tapResult.data.exitCode,
+      supportLevel: resolveResult.data.supportLevel,
+    },
+    nextSuggestions: tapResult.nextSuggestions,
   };
 }
 
 export async function typeIntoElementWithMaestro(input: TypeIntoElementInput): Promise<ToolResult<TypeIntoElementData>> {
   const startTime = Date.now();
-  const repoRoot = resolveRepoPath();
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const resolveResult = await resolveUiTargetWithMaestro({
     sessionId: input.sessionId,
@@ -2420,13 +2546,34 @@ export async function typeIntoElementWithMaestro(input: TypeIntoElementInput): P
     };
   }
 
-  if (input.platform === "ios") {
+  const focusResult = await tapWithMaestro({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile: input.runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    x: resolution.resolvedPoint.x,
+    y: resolution.resolvedPoint.y,
+    dryRun: input.dryRun,
+  });
+  const typeResult = await typeTextWithMaestro({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile: input.runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    text: input.value,
+    dryRun: input.dryRun,
+  });
+  const commands = [focusResult.data.command, typeResult.data.command];
+
+  if (focusResult.status === "failed") {
     return {
-      status: "partial",
-      reasonCode: REASON_CODES.unsupportedOperation,
+      status: "failed",
+      reasonCode: REASON_CODES.actionFocusFailed,
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
-      attempts: 1,
+      attempts: resolveResult.attempts + focusResult.attempts,
       artifacts: resolveResult.artifacts,
       data: {
         dryRun: Boolean(input.dryRun),
@@ -2434,84 +2581,32 @@ export async function typeIntoElementWithMaestro(input: TypeIntoElementInput): P
         query,
         value: input.value,
         resolution,
-        commands: [],
-        exitCode: null,
-        supportLevel: "partial",
-      },
-      nextSuggestions: ["type_into_element currently provides actionable element input for Android only. Use inspect_ui artifacts for iOS manual inspection."],
-    };
-  }
-
-  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
-  const deviceId = input.deviceId ?? selection.deviceId ?? "emulator-5554";
-  const focusCommand = ["adb", "-s", deviceId, "shell", "input", "tap", String(resolution.resolvedPoint.x), String(resolution.resolvedPoint.y)];
-  const typeCommand = ["adb", "-s", deviceId, "shell", "input", "text", escapeAndroidInputText(input.value)];
-  const commands = [focusCommand, typeCommand];
-
-  if (input.dryRun) {
-    return {
-      status: "success",
-      reasonCode: REASON_CODES.ok,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: resolveResult.artifacts,
-      data: {
-        dryRun: true,
-        runnerProfile,
-        query,
-        value: input.value,
-        resolution,
         commands,
-        exitCode: 0,
-        supportLevel: "full",
+        exitCode: focusResult.data.exitCode,
+        supportLevel: resolveResult.data.supportLevel,
       },
-      nextSuggestions: ["Run type_into_element without dryRun to focus the resolved Android element and enter text."],
+      nextSuggestions: focusResult.nextSuggestions,
     };
   }
 
-  const focusExecution = await executeRunner(focusCommand, repoRoot, process.env);
-  if (focusExecution.exitCode !== 0) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.actionFocusFailed,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: resolveResult.artifacts,
-      data: {
-        dryRun: false,
-        runnerProfile,
-        query,
-        value: input.value,
-        resolution,
-        commands,
-        exitCode: focusExecution.exitCode,
-        supportLevel: "full",
-      },
-      nextSuggestions: ["Could not focus the resolved Android element before typing. Check device state and retry."],
-    };
-  }
-
-  const typeExecution = await executeRunner(typeCommand, repoRoot, process.env);
   return {
-    status: typeExecution.exitCode === 0 ? "success" : "failed",
-    reasonCode: typeExecution.exitCode === 0 ? REASON_CODES.ok : REASON_CODES.actionTypeFailed,
+    status: typeResult.status,
+    reasonCode: typeResult.status === "success" ? REASON_CODES.ok : REASON_CODES.actionTypeFailed,
     sessionId: input.sessionId,
     durationMs: Date.now() - startTime,
-    attempts: 1,
+    attempts: resolveResult.attempts + focusResult.attempts + typeResult.attempts,
     artifacts: resolveResult.artifacts,
     data: {
-      dryRun: false,
+      dryRun: Boolean(input.dryRun),
       runnerProfile,
       query,
       value: input.value,
       resolution,
       commands,
-      exitCode: typeExecution.exitCode,
-      supportLevel: "full",
+      exitCode: typeResult.data.exitCode,
+      supportLevel: resolveResult.data.supportLevel,
     },
-    nextSuggestions: typeExecution.exitCode === 0 ? [] : ["Check Android focus state before retrying type_into_element."],
+    nextSuggestions: typeResult.nextSuggestions,
   };
 }
 
@@ -2628,29 +2723,124 @@ export async function waitForUiWithMaestro(input: WaitForUiInput): Promise<ToolR
   }
 
   if (input.platform === "ios") {
-    const idbCommand = buildIosUiDescribeCommand(input.deviceId ?? "ADA078B9-3C6B-4875-8B85-A7789F368816");
+    const deviceId = input.deviceId ?? "ADA078B9-3C6B-4875-8B85-A7789F368816";
+    const idbCommand = buildIosUiDescribeCommand(deviceId);
+    if (input.dryRun) {
+      return {
+        status: "partial",
+        reasonCode: REASON_CODES.unsupportedOperation,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: true,
+          runnerProfile,
+          outputPath: defaultOutputPath,
+          query,
+          timeoutMs,
+          intervalMs,
+          waitUntil,
+          polls: 0,
+          command: idbCommand,
+          exitCode: 0,
+          result: { query, totalMatches: 0, matches: [] },
+          supportLevel: "partial",
+        },
+        nextSuggestions: ["wait_for_ui dry-run only previews the iOS hierarchy capture command. Run it without --dry-run to poll the current simulator hierarchy."],
+      };
+    }
+
+    let polls = 0;
+    let lastSnapshot: IosUiSnapshot | IosUiSnapshotFailure | undefined;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+      polls += 1;
+      lastSnapshot = await captureIosUiSnapshot(repoRoot, deviceId, input.sessionId, runnerProfile, input.outputPath, { sessionId: input.sessionId, platform: input.platform, runnerProfile, harnessConfigPath: input.harnessConfigPath, deviceId, outputPath: input.outputPath, dryRun: false, ...query });
+      if (!isIosUiSnapshotFailure(lastSnapshot) && isWaitConditionMet({ query, ...lastSnapshot.queryResult }, waitUntil)) {
+        return {
+          status: "success",
+          reasonCode: REASON_CODES.ok,
+          sessionId: input.sessionId,
+          durationMs: Date.now() - startTime,
+          attempts: polls,
+          artifacts: [toRelativePath(repoRoot, lastSnapshot.absoluteOutputPath)],
+          data: {
+            dryRun: false,
+            runnerProfile,
+            outputPath: lastSnapshot.relativeOutputPath,
+            query,
+            timeoutMs,
+            intervalMs,
+            waitUntil,
+            polls,
+            command: lastSnapshot.command,
+            exitCode: lastSnapshot.execution.exitCode,
+            result: { query, ...lastSnapshot.queryResult },
+            supportLevel: "partial",
+            content: lastSnapshot.execution.stdout,
+            summary: lastSnapshot.summary,
+          },
+          nextSuggestions: [],
+        };
+      }
+      if (Date.now() < deadline) {
+        await delay(intervalMs);
+      }
+    }
+
+    if (lastSnapshot && isIosUiSnapshotFailure(lastSnapshot)) {
+      return {
+        status: "failed",
+        reasonCode: lastSnapshot.reasonCode,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: polls,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          outputPath: lastSnapshot.outputPath,
+          query,
+          timeoutMs,
+          intervalMs,
+          waitUntil,
+          polls,
+          command: lastSnapshot.command,
+          exitCode: lastSnapshot.exitCode,
+          result: { query, totalMatches: 0, matches: [] },
+          supportLevel: "partial",
+        },
+        nextSuggestions: [lastSnapshot.message],
+      };
+    }
+
+    const timeoutSnapshot = lastSnapshot && !isIosUiSnapshotFailure(lastSnapshot) ? lastSnapshot : undefined;
+    const result = timeoutSnapshot ? { query, ...timeoutSnapshot.queryResult } : { query, totalMatches: 0, matches: [] as QueryUiMatch[] };
     return {
       status: "partial",
-      reasonCode: REASON_CODES.unsupportedOperation,
+      reasonCode: reasonCodeForWaitTimeout(waitUntil),
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
+      attempts: polls,
+      artifacts: timeoutSnapshot ? [toRelativePath(repoRoot, timeoutSnapshot.absoluteOutputPath)] : [],
       data: {
-        dryRun: Boolean(input.dryRun),
+        dryRun: false,
         runnerProfile,
-        outputPath: defaultOutputPath,
+        outputPath: timeoutSnapshot?.relativeOutputPath ?? defaultOutputPath,
         query,
         timeoutMs,
         intervalMs,
         waitUntil,
-        polls: 0,
-        command: idbCommand,
-        exitCode: input.dryRun ? 0 : null,
-        result: { query, totalMatches: 0, matches: [] },
+        polls,
+        command: timeoutSnapshot?.command ?? idbCommand,
+        exitCode: timeoutSnapshot?.execution.exitCode ?? null,
+        result,
         supportLevel: "partial",
+        content: timeoutSnapshot?.execution.stdout,
+        summary: timeoutSnapshot?.summary,
       },
-      nextSuggestions: ["wait_for_ui currently performs active polling for Android only. Use inspect_ui artifacts for iOS manual inspection."],
+      nextSuggestions: [`Timed out waiting for iOS UI condition '${waitUntil}'. Broaden the selector, change waitUntil, increase timeoutMs, or inspect the latest hierarchy artifact.`],
     };
   }
 
@@ -3344,7 +3534,6 @@ export async function queryUiWithMaestro(input: QueryUiInput): Promise<ToolResul
 
   if (input.platform === "ios") {
     const iosRelativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "ui-dumps", input.sessionId, `${input.platform}-${runnerProfile}.json`);
-    const iosAbsoluteOutputPath = path.resolve(repoRoot, iosRelativeOutputPath);
     const idbCommand = buildIosUiDescribeCommand(deviceId);
 
     if (input.dryRun) {
@@ -3365,15 +3554,15 @@ export async function queryUiWithMaestro(input: QueryUiInput): Promise<ToolResul
           result: { query, totalMatches: 0, matches: [] },
           supportLevel: "partial",
         },
-        nextSuggestions: ["Run query_ui without dryRun to capture an iOS hierarchy artifact. Structured iOS querying is still partial in this repo."],
+        nextSuggestions: ["Run query_ui without dryRun to capture an iOS hierarchy artifact and evaluate structured selector matches."],
       };
     }
 
-    const idbProbe = await probeIdbAvailability(repoRoot);
-    if (!idbProbe || idbProbe.exitCode !== 0) {
+    const snapshot = await captureIosUiSnapshot(repoRoot, deviceId, input.sessionId, runnerProfile, input.outputPath, { sessionId: input.sessionId, platform: input.platform, runnerProfile, harnessConfigPath: input.harnessConfigPath, deviceId, outputPath: input.outputPath, dryRun: false, ...query });
+    if (isIosUiSnapshotFailure(snapshot)) {
       return {
-        status: "partial",
-        reasonCode: REASON_CODES.configurationError,
+        status: "failed",
+        reasonCode: snapshot.reasonCode,
         sessionId: input.sessionId,
         durationMs: Date.now() - startTime,
         attempts: 1,
@@ -3381,46 +3570,43 @@ export async function queryUiWithMaestro(input: QueryUiInput): Promise<ToolResul
         data: {
           dryRun: false,
           runnerProfile,
-          outputPath: iosRelativeOutputPath,
+          outputPath: snapshot.outputPath,
           query,
-          command: idbCommand,
-          exitCode: idbProbe?.exitCode ?? null,
+          command: snapshot.command,
+          exitCode: snapshot.exitCode,
           result: { query, totalMatches: 0, matches: [] },
           supportLevel: "partial",
         },
-        nextSuggestions: ["iOS query_ui requires idb for hierarchy capture. Install idb-companion and fb-idb, or use inspect_ui as the fallback."],
+        nextSuggestions: [snapshot.message],
       };
     }
 
-    await mkdir(path.dirname(iosAbsoluteOutputPath), { recursive: true });
-    const idbExecution = await executeRunner(idbCommand, repoRoot, process.env);
-    if (idbExecution.exitCode === 0) {
-      await writeFile(iosAbsoluteOutputPath, idbExecution.stdout, "utf8");
-    }
-
+    const result = { query, ...snapshot.queryResult };
     return {
-      status: "partial",
-      reasonCode: idbExecution.exitCode === 0 ? REASON_CODES.unsupportedOperation : REASON_CODES.configurationError,
+      status: "success",
+      reasonCode: REASON_CODES.ok,
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
-      artifacts: idbExecution.exitCode === 0 ? [toRelativePath(repoRoot, iosAbsoluteOutputPath)] : [],
+      artifacts: [toRelativePath(repoRoot, snapshot.absoluteOutputPath)],
       data: {
         dryRun: false,
         runnerProfile,
-        outputPath: iosRelativeOutputPath,
+        outputPath: snapshot.relativeOutputPath,
         query,
-          command: idbCommand,
-          exitCode: idbExecution.exitCode,
-          result: { query, totalMatches: 0, matches: [] },
-          supportLevel: "partial",
-          evidence: idbExecution.exitCode === 0 ? [buildExecutionEvidence("ui_dump", iosRelativeOutputPath, "partial", "Captured iOS hierarchy artifact for partial query support.")] : undefined,
-          content: idbExecution.exitCode === 0 ? idbExecution.stdout : undefined,
-          summary: idbExecution.exitCode === 0 ? parseIosInspectSummary(idbExecution.stdout) : undefined,
+        command: snapshot.command,
+        exitCode: snapshot.execution.exitCode,
+        result,
+        supportLevel: "partial",
+        evidence: [buildExecutionEvidence("ui_dump", snapshot.relativeOutputPath, "partial", "Captured iOS hierarchy artifact for selector matching.")],
+        content: snapshot.execution.stdout,
+        summary: snapshot.summary,
       },
-      nextSuggestions: idbExecution.exitCode === 0
-        ? ["This repo can capture iOS hierarchy output, but query_ui does not yet provide equivalent structured iOS matching. Use inspect_ui content/artifacts for manual inspection."]
-        : ["Ensure idb companion is available for the selected simulator and retry query_ui."],
+      nextSuggestions: result.totalMatches === 0
+        ? ["No iOS nodes matched the provided selectors. Broaden the query or inspect the captured hierarchy artifact."]
+        : query.limit !== undefined && result.totalMatches > result.matches.length
+          ? ["More iOS nodes matched than were returned. Increase query limit or narrow the selector."]
+          : [],
     };
   }
 
@@ -3982,9 +4168,10 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
     : path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics`);
   const effectiveAppId = input.appId ?? selection.appId;
   const includeJsInspector = input.includeJsInspector ?? true;
+  const jsInspectorTimeoutMs = normalizePositiveInteger(input.jsInspectorTimeoutMs, DEFAULT_DEBUG_PACKET_JS_TIMEOUT_MS);
   const effectiveMetroBaseUrl = normalizeMetroBaseUrl(input.metroBaseUrl);
   const discoveredTargetsResult = includeJsInspector && !input.targetId && !input.webSocketDebuggerUrl
-    ? await listJsDebugTargetsWithMaestro({ sessionId: input.sessionId, metroBaseUrl: input.metroBaseUrl, dryRun: input.dryRun })
+    ? await listJsDebugTargetsWithMaestro({ sessionId: input.sessionId, metroBaseUrl: input.metroBaseUrl, timeoutMs: jsInspectorTimeoutMs, dryRun: input.dryRun })
     : undefined;
   const discoveredSelection = discoveredTargetsResult?.status === "success"
     ? selectPreferredJsDebugTargetWithReason(discoveredTargetsResult.data.targets)
@@ -4035,7 +4222,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       targetId: effectiveTargetId,
       webSocketDebuggerUrl: effectiveWebSocketDebuggerUrl,
       maxLogs: input.logLines,
-      timeoutMs: undefined,
+      timeoutMs: jsInspectorTimeoutMs,
       dryRun: input.dryRun,
     })
     : undefined;
@@ -4046,7 +4233,7 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
       targetId: effectiveTargetId,
       webSocketDebuggerUrl: effectiveWebSocketDebuggerUrl,
       maxEvents: input.logLines,
-      timeoutMs: undefined,
+      timeoutMs: jsInspectorTimeoutMs,
       failuresOnly: true,
       dryRun: input.dryRun,
     })
@@ -4208,6 +4395,7 @@ export async function listJsDebugTargetsWithMaestro(input: ListJsDebugTargetsInp
   const controller = new AbortController();
   const timeoutMs = normalizePositiveInteger(input.timeoutMs, DEFAULT_METRO_TIMEOUT_MS);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  unrefTimer(timer);
 
   try {
     const response = await fetch(endpoint, { signal: controller.signal });
@@ -4358,6 +4546,7 @@ export async function captureJsConsoleLogsWithMaestro(input: CaptureJsConsoleLog
         nextSuggestions: logs.length === 0 ? ["No JS console events arrived before timeout. Confirm the target is active and emitting logs."] : [],
       });
     }, timeoutMs);
+    unrefTimer(timer);
 
     ws.addEventListener("open", () => {
       ws.send(JSON.stringify({ id: messageId++, method: "Runtime.enable" }));
@@ -4520,6 +4709,7 @@ export async function captureJsNetworkEventsWithMaestro(input: CaptureJsNetworkE
         nextSuggestions: collected.length === 0 ? ["No matching JS network events arrived before timeout. Confirm the target is active and issuing requests."] : [],
       });
     }, timeoutMs);
+    unrefTimer(timer);
 
     ws.addEventListener("open", () => {
       ws.send(JSON.stringify({ id: messageId++, method: "Network.enable" }));

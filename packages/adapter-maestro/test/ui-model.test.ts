@@ -12,6 +12,7 @@ import {
   isWaitConditionMet,
   normalizeQueryUiSelector,
   parseAndroidUiHierarchyNodes,
+  parseIosInspectNodes,
   parseIosInspectSummary,
   parseUiBounds,
   queryUiNodes,
@@ -96,6 +97,31 @@ test("parseIosInspectSummary produces honest partial-ready summary from fixture"
   assert.equal(summary.nodesWithText, 2);
   assert.equal(summary.nodesWithContentDesc, 5);
   assert.ok(summary.sampleNodes.some((node) => node.resourceId === "signin_button"));
+});
+
+test("parseIosInspectNodes supports structured query and target resolution from fixture", async () => {
+  const json = await readFixture("tests/fixtures/ui/ios-sample.json");
+  const nodes = parseIosInspectNodes(json);
+  const query = normalizeQueryUiSelector({ resourceId: "signin_button" });
+  const result = { query, ...queryUiNodes(nodes, query) };
+  const resolution = buildUiTargetResolution(query, result, "full");
+
+  assert.equal(nodes.length, 5);
+  assert.equal(result.totalMatches, 1);
+  assert.equal(result.matches[0]?.node.resourceId, "signin_button");
+  assert.equal(resolution.status, "resolved");
+  assert.deepEqual(resolution.resolvedPoint, { x: 113, y: 164 });
+});
+
+test("parseIosInspectNodes detects ambiguous iOS selector matches", async () => {
+  const json = await readFixture("tests/fixtures/ui/ios-sample.json");
+  const nodes = parseIosInspectNodes(json);
+  const query = normalizeQueryUiSelector({ clickable: true });
+  const result = { query, ...queryUiNodes(nodes, query) };
+  const resolution = buildUiTargetResolution(query, result, "full");
+
+  assert.equal(result.totalMatches, 2);
+  assert.equal(resolution.status, "ambiguous");
 });
 
 test("parseIosInspectSummary falls back to empty summary for invalid JSON", () => {

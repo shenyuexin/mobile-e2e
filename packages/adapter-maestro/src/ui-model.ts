@@ -168,16 +168,20 @@ function flattenIosInspectNodes(input: unknown, output: InspectUiNode[]): void {
   }
 }
 
-export function parseIosInspectSummary(jsonText: string): InspectUiSummary {
+export function parseIosInspectNodes(jsonText: string): InspectUiNode[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonText);
   } catch {
-    return buildInspectUiSummary([]);
+    return [];
   }
   const nodes: InspectUiNode[] = [];
   flattenIosInspectNodes(parsed, nodes);
-  return buildInspectUiSummary(nodes);
+  return nodes;
+}
+
+export function parseIosInspectSummary(jsonText: string): InspectUiSummary {
+  return buildInspectUiSummary(parseIosInspectNodes(jsonText));
 }
 
 function matchesQueryString(nodeValue: string | undefined, queryValue: string | undefined): boolean {
