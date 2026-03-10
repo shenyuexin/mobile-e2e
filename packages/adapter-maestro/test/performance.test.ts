@@ -15,6 +15,13 @@ test("parseTraceProcessorTsv strips shell headers and separators", () => {
   assert.deepEqual(rows, [["sched"], ["thread"]]);
 });
 
+test("parseTraceProcessorTsv parses fixed-width trace processor output and drops footer lines", () => {
+  const rows = parseTraceProcessorTsv(
+    "name                 value\n-------------------- --------------------\n<unknown>                     4386.020000\nsystem_server                  607.780000\n\nQuery executed in 12.169 ms\n",
+  );
+  assert.deepEqual(rows, [["<unknown>", "4386.020000"], ["system_server", "607.780000"]]);
+});
+
 test("classifyDoctorOutcome keeps optional tooling gaps partial", () => {
   const checks: DoctorCheck[] = [
     { name: "node", status: "pass", detail: "ok" },
@@ -166,4 +173,16 @@ test("summarizeAndroidPerformance labels slice and counter fallbacks as heuristi
 
   assert.match(summary.jank.note, /Heuristic frame-like slices/);
   assert.match(summary.memory.note, /Heuristic memory counters/);
+});
+
+test("summarizeAndroidPerformance keeps hotspot names intact when numeric columns trail the row", () => {
+  const summary = summarizeAndroidPerformance({
+    durationMs: 1000,
+    tableNames: ["slice"],
+    hotspotRows: [["Drawing", "0.00 371.00", "186.84", "57"]],
+  });
+
+  assert.equal(summary.cpu.topHotspots[0]?.name, "Drawing 0.00 371.00");
+  assert.equal(summary.cpu.topHotspots[0]?.totalDurMs, 186.84);
+  assert.equal(summary.cpu.topHotspots[0]?.occurrences, 57);
 });

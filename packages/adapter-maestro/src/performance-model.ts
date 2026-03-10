@@ -40,6 +40,24 @@ function isSeparatorRow(row: string[]): boolean {
   return flattened.length > 0 && flattened.replaceAll("-", "") === "";
 }
 
+function splitTraceProcessorRow(line: string): string[] {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return [];
+  }
+  if (trimmed.includes(String.fromCharCode(9))) {
+    return trimmed.split(String.fromCharCode(9)).map((part) => part.trim()).filter(Boolean);
+  }
+  return trimmed.split(/\s{2,}/).map((part) => part.trim()).filter(Boolean);
+}
+
+function normalizeRightAnchoredRow(row: string[], numericColumnCount: number): string[] {
+  if (row.length <= numericColumnCount + 1) {
+    return row;
+  }
+  return [row.slice(0, row.length - numericColumnCount).join(" "), ...row.slice(row.length - numericColumnCount)];
+}
+
 function parseXmlRows(xml: string): string[] {
   return [...xml.matchAll(/<row>([\s\S]*?)<\/row>/g)].map((match) => match[1] ?? "");
 }
@@ -161,9 +179,11 @@ export function parseTraceProcessorTsv(stdout: string): string[][] {
   const rows = stdout
     .replaceAll(String.fromCharCode(13), "")
     .split(String.fromCharCode(10))
-    .map((line) => line.trim())
+    .map((line) => line.replace(/\s+$/g, ""))
     .filter(Boolean)
-    .map((line) => line.split(String.fromCharCode(9)));
+    .filter((line) => !line.trim().startsWith("Query executed in "))
+    .map((line) => splitTraceProcessorRow(line))
+    .filter((row) => row.length > 0);
   if (rows.length >= 2 && isSeparatorRow(rows[1])) {
     return rows.slice(2);
   }
@@ -183,7 +203,8 @@ export function summarizeAndroidPerformance(params: {
   memorySource?: "process_counter_track" | "counter_track_heuristic";
 }): PerformanceStructuredSummary {
   const summary = buildBasePerformanceSummary(params.durationMs, "full");
-  const topProcesses: PerformanceProcessSignal[] = (params.cpuRows ?? []).map((row) => {
+  const topProcesses: PerformanceProcessSignal[] = (params.cpuRows ?? []).map((rawRow) => {
+    const row = normalizeRightAnchoredRow(rawRow, 1);
     const scheduledMs = toMaybeNumber(row[1]);
     const cpuPercent = scheduledMs !== undefined ? Number(((scheduledMs / params.durationMs) * 100).toFixed(1)) : undefined;
     return {
@@ -192,11 +213,14 @@ export function summarizeAndroidPerformance(params: {
       cpuPercent,
     };
   });
-  const topHotspots: PerformanceHotspot[] = (params.hotspotRows ?? []).map((row) => ({
-    name: row[0] ?? "<unknown>",
-    totalDurMs: toMaybeNumber(row[1]),
-    occurrences: toMaybeNumber(row[2]),
-  }));
+  const topHotspots: PerformanceHotspot[] = (params.hotspotRows ?? []).map((rawRow) => {
+    const row = normalizeRightAnchoredRow(rawRow, 2);
+    return {
+      name: row[0] ?? "<unknown>",
+      totalDurMs: toMaybeNumber(row[1]),
+      occurrences: toMaybeNumber(row[2]),
+    };
+  });
   const topCpu = topProcesses[0];
   const cpuSeverity = clampSeverity(topCpu?.cpuPercent, 35, 70);
   const cpuNote = topCpu?.cpuPercent !== undefined
@@ -215,7 +239,7 @@ export function summarizeAndroidPerformance(params: {
     topHotspots,
   };
 
-  const frameRow = params.frameRows?.[0];
+  const frameRow = params.frameRows?.[0] ? normalizeRightAnchoredRow(params.frameRows[0], 4) : undefined;
   const slowFrameCount = toMaybeNumber(frameRow?.[0]);
   const frozenFrameCount = toMaybeNumber(frameRow?.[1]);
   const avgFrameTimeMs = toMaybeNumber(frameRow?.[2]);
@@ -240,7 +264,7 @@ export function summarizeAndroidPerformance(params: {
     worstFrameTimeMs,
   };
 
-  const memoryRow = params.memoryRows?.[0];
+  const memoryRow = params.memoryRows?.[0] ? normalizeRightAnchoredRow(params.memoryRows[0], 3) : undefined;
   const peakRssKb = toMaybeNumber(memoryRow?.[1]);
   const rssDeltaKb = toMaybeNumber(memoryRow?.[2]);
   const memorySeverity = clampSeverity(rssDeltaKb, 25600, 102400);
