@@ -605,13 +605,8 @@ function buildSuspectAreas(params: {
   }
 
   const topNetworkStatus = params.jsNetworkSummary?.statusGroups[0];
-  if (topNetworkStatus) {
-    suspects.push(`Network suspect: status ${topNetworkStatus.key} seen ${String(topNetworkStatus.count)} time(s)${topNetworkStatus.sampleUrl ? ` (${topNetworkStatus.sampleUrl})` : ""}.`);
-  }
-
-  const topNetworkError = params.jsNetworkSummary?.errorGroups[0];
-  if (topNetworkError) {
-    suspects.push(`Network error suspect: ${topNetworkError.key} seen ${String(topNetworkError.count)} time(s)${topNetworkError.sampleUrl ? ` (${topNetworkError.sampleUrl})` : ""}.`);
+  if (params.jsNetworkSummary && (topNetworkStatus || params.jsNetworkSummary.errorGroups[0])) {
+    suspects.push(...buildJsNetworkSuspectSentences(params.jsNetworkSummary));
   }
 
   return suspects.slice(0, 5);
@@ -829,6 +824,29 @@ export function buildJsNetworkFailureSummary(events: JsNetworkEvent[]): JsNetwor
       }
     })),
   };
+}
+
+export function buildJsNetworkSuspectSentences(summary: JsNetworkFailureSummary): string[] {
+  const suspects: string[] = [];
+  const topHost = summary.hostGroups[0];
+  const topStatus = summary.statusGroups[0];
+  const topError = summary.errorGroups[0];
+
+  if (topHost && topStatus) {
+    suspects.push(`Network suspect: host ${topHost.key} is associated with repeated ${topStatus.key} responses (${String(topStatus.count)} occurrence(s))${topStatus.sampleUrl ? ` via ${topStatus.sampleUrl}` : ""}.`);
+  } else if (topStatus) {
+    suspects.push(`Network suspect: repeated HTTP ${topStatus.key} responses (${String(topStatus.count)} occurrence(s))${topStatus.sampleUrl ? ` via ${topStatus.sampleUrl}` : ""}.`);
+  }
+
+  if (topError) {
+    suspects.push(`Network transport suspect: ${topError.key} (${String(topError.count)} occurrence(s))${topError.sampleUrl ? ` via ${topError.sampleUrl}` : ""}.`);
+  }
+
+  if (summary.failedRequestCount > 0 && suspects.length === 0) {
+    suspects.push(`Network suspect: ${String(summary.failedRequestCount)} failed request(s) were captured.`);
+  }
+
+  return suspects.slice(0, 3);
 }
 
 function shouldKeepNetworkEvent(event: JsNetworkEvent, failuresOnly: boolean): boolean {
