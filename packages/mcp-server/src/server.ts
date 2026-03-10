@@ -23,6 +23,10 @@ import type {
   ListJsDebugTargetsData,
   ListJsDebugTargetsInput,
   ListDevicesInput,
+  MeasureAndroidPerformanceData,
+  MeasureAndroidPerformanceInput,
+  MeasureIosPerformanceData,
+  MeasureIosPerformanceInput,
   QueryUiData,
   QueryUiInput,
   ResolveUiTargetData,
@@ -65,6 +69,8 @@ export interface MobileE2EMcpToolRegistry {
   list_js_debug_targets: (input: ListJsDebugTargetsInput) => Promise<ToolResult<ListJsDebugTargetsData>>;
   launch_app: (input: LaunchAppInput) => Promise<ToolResult>;
   list_devices: (input: ListDevicesInput) => Promise<ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>>;
+  measure_android_performance: (input: MeasureAndroidPerformanceInput) => Promise<ToolResult<MeasureAndroidPerformanceData>>;
+  measure_ios_performance: (input: MeasureIosPerformanceInput) => Promise<ToolResult<MeasureIosPerformanceData>>;
   start_session: (input: StartSessionInput) => Promise<ToolResult<Session>>;
   run_flow: (input: RunFlowInput) => Promise<ToolResult>;
   take_screenshot: (input: ScreenshotInput) => Promise<ToolResult>;
@@ -81,7 +87,7 @@ export class MobileE2EMcpServer {
   constructor(private readonly tools: MobileE2EMcpToolRegistry) {}
 
   listTools(): Array<keyof MobileE2EMcpToolRegistry> {
-    return ["capture_js_console_logs", "capture_js_network_events", "collect_debug_evidence", "collect_diagnostics", "describe_capabilities", "doctor", "get_crash_signals", "get_logs", "inspect_ui", "query_ui", "resolve_ui_target", "scroll_and_resolve_ui_target", "scroll_and_tap_element", "install_app", "list_js_debug_targets", "launch_app", "list_devices", "start_session", "run_flow", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
+    return ["capture_js_console_logs", "capture_js_network_events", "collect_debug_evidence", "collect_diagnostics", "describe_capabilities", "doctor", "get_crash_signals", "get_logs", "inspect_ui", "query_ui", "resolve_ui_target", "scroll_and_resolve_ui_target", "scroll_and_tap_element", "install_app", "list_js_debug_targets", "launch_app", "list_devices", "measure_android_performance", "measure_ios_performance", "start_session", "run_flow", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
   }
 
   async invoke(toolName: "capture_js_console_logs", input: CaptureJsConsoleLogsInput): Promise<ToolResult<CaptureJsConsoleLogsData>>;
@@ -101,6 +107,8 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "list_js_debug_targets", input: ListJsDebugTargetsInput): Promise<ToolResult<ListJsDebugTargetsData>>;
   async invoke(toolName: "launch_app", input: LaunchAppInput): Promise<ToolResult>;
   async invoke(toolName: "list_devices", input: ListDevicesInput): Promise<ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>>;
+  async invoke(toolName: "measure_android_performance", input: MeasureAndroidPerformanceInput): Promise<ToolResult<MeasureAndroidPerformanceData>>;
+  async invoke(toolName: "measure_ios_performance", input: MeasureIosPerformanceInput): Promise<ToolResult<MeasureIosPerformanceData>>;
   async invoke(toolName: "start_session", input: StartSessionInput): Promise<ToolResult<Session>>;
   async invoke(toolName: "run_flow", input: RunFlowInput): Promise<ToolResult>;
   async invoke(toolName: "take_screenshot", input: ScreenshotInput): Promise<ToolResult>;
@@ -113,7 +121,7 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "end_session", input: EndSessionInput): Promise<ToolResult<{ closed: boolean; endedAt: string }>>;
   async invoke(
     toolName: keyof MobileE2EMcpToolRegistry,
-    input: CaptureJsConsoleLogsInput | CaptureJsNetworkEventsInput | CollectDebugEvidenceInput | CollectDiagnosticsInput | DescribeCapabilitiesInput | DoctorInput | GetCrashSignalsInput | GetLogsInput | InspectUiInput | QueryUiInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | ScrollAndTapElementInput | InstallAppInput | ListJsDebugTargetsInput | LaunchAppInput | ListDevicesInput | StartSessionInput | RunFlowInput | ScreenshotInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
+    input: CaptureJsConsoleLogsInput | CaptureJsNetworkEventsInput | CollectDebugEvidenceInput | CollectDiagnosticsInput | DescribeCapabilitiesInput | DoctorInput | GetCrashSignalsInput | GetLogsInput | InspectUiInput | QueryUiInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | ScrollAndTapElementInput | InstallAppInput | ListJsDebugTargetsInput | LaunchAppInput | ListDevicesInput | MeasureAndroidPerformanceInput | MeasureIosPerformanceInput | StartSessionInput | RunFlowInput | ScreenshotInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
   ): Promise<
     | ToolResult<CaptureJsConsoleLogsData>
     | ToolResult<CaptureJsNetworkEventsData>
@@ -125,6 +133,8 @@ export class MobileE2EMcpServer {
     | ToolResult<GetLogsData>
     | ToolResult<ListJsDebugTargetsData>
     | ToolResult<{ android: DeviceInfo[]; ios: DeviceInfo[] }>
+    | ToolResult<MeasureAndroidPerformanceData>
+    | ToolResult<MeasureIosPerformanceData>
     | ToolResult<Session>
     | ToolResult<QueryUiData>
     | ToolResult<ResolveUiTargetData>
@@ -153,6 +163,8 @@ export class MobileE2EMcpServer {
     if (toolName === "list_js_debug_targets") return this.tools.list_js_debug_targets(input as ListJsDebugTargetsInput);
     if (toolName === "launch_app") return this.tools.launch_app(input as LaunchAppInput);
     if (toolName === "list_devices") return this.tools.list_devices(input as ListDevicesInput);
+    if (toolName === "measure_android_performance") return this.tools.measure_android_performance(input as MeasureAndroidPerformanceInput);
+    if (toolName === "measure_ios_performance") return this.tools.measure_ios_performance(input as MeasureIosPerformanceInput);
     if (toolName === "start_session") return this.tools.start_session(input as StartSessionInput);
     if (toolName === "run_flow") return this.tools.run_flow(input as RunFlowInput);
     if (toolName === "take_screenshot") return this.tools.take_screenshot(input as ScreenshotInput);

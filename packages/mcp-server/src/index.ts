@@ -14,6 +14,8 @@ import { installApp } from "./tools/install-app.js";
 import { listJsDebugTargets } from "./tools/list-js-debug-targets.js";
 import { launchApp } from "./tools/launch-app.js";
 import { listDevices } from "./tools/list-devices.js";
+import { measureAndroidPerformance } from "./tools/measure-android-performance.js";
+import { measureIosPerformance } from "./tools/measure-ios-performance.js";
 import { queryUi } from "./tools/query-ui.js";
 import { resolveUiTarget } from "./tools/resolve-ui-target.js";
 import { runFlow } from "./tools/run-flow.js";
@@ -57,6 +59,8 @@ export function createServer(): MobileE2EMcpServer {
     list_js_debug_targets: withPolicy("list_js_debug_targets", listJsDebugTargets),
     launch_app: withPolicy("launch_app", launchApp),
     list_devices: withPolicy("list_devices", listDevices),
+    measure_android_performance: withPolicy("measure_android_performance", measureAndroidPerformance),
+    measure_ios_performance: withPolicy("measure_ios_performance", measureIosPerformance),
     start_session: async (input) => startSession(input),
     run_flow: withPolicy("run_flow", runFlow),
     take_screenshot: withPolicy("take_screenshot", takeScreenshot),
