@@ -4,7 +4,7 @@ export type Platform = "android" | "ios";
 export type ToolStatus = "success" | "failed" | "partial";
 export type RunnerProfile = "phase1" | "native_android" | "native_ios" | "flutter_android";
 export type CapabilitySupportLevel = "full" | "partial" | "unsupported";
-export type ExecutionEvidenceKind = "ui_dump" | "screenshot" | "log" | "crash_signal" | "diagnostics_bundle" | "debug_summary";
+export type ExecutionEvidenceKind = "ui_dump" | "screenshot" | "log" | "crash_signal" | "diagnostics_bundle" | "debug_summary" | "performance_trace" | "performance_summary" | "performance_export";
 
 export interface ExecutionEvidence {
   kind: ExecutionEvidenceKind;
@@ -250,6 +250,123 @@ export interface CollectDebugEvidenceData {
   evidenceCount: number;
   evidence?: ExecutionEvidence[];
   narrative: string[];
+}
+export type PerformanceCaptureMode = "time_window";
+export type PerformanceLikelihood = "yes" | "no" | "unknown";
+export type PerformanceSuspectCategory = "cpu" | "jank" | "memory" | "unknown";
+export type PerformanceSeverity = "none" | "low" | "moderate" | "high" | "unknown";
+export type AndroidPerformancePreset = "general" | "startup" | "interaction" | "scroll";
+export type IosPerformanceTemplate = "time-profiler" | "animation-hitches" | "memory";
+export interface PerformanceArtifactBundle {
+  configPath?: string;
+  tracePath?: string;
+  traceBundlePath?: string;
+  exportPath?: string;
+  tocPath?: string;
+  rawAnalysisPath?: string;
+  summaryPath: string;
+  reportPath: string;
+}
+export interface PerformanceProcessSignal {
+  name: string;
+  cpuPercent?: number;
+  scheduledMs?: number;
+}
+export interface PerformanceHotspot {
+  name: string;
+  totalDurMs?: number;
+  occurrences?: number;
+}
+export interface PerformanceSignalSummary {
+  status: PerformanceSeverity;
+  note: string;
+}
+export interface PerformanceCpuSummary extends PerformanceSignalSummary {
+  topProcess?: string;
+  topProcessCpuPercent?: number;
+  topProcesses: PerformanceProcessSignal[];
+  topHotspots: PerformanceHotspot[];
+}
+export interface PerformanceJankSummary extends PerformanceSignalSummary {
+  slowFrameCount?: number;
+  frozenFrameCount?: number;
+  avgFrameTimeMs?: number;
+  worstFrameTimeMs?: number;
+}
+export interface PerformanceMemorySummary extends PerformanceSignalSummary {
+  rssDeltaKb?: number;
+  peakRssKb?: number;
+}
+export interface PerformanceStructuredSummary {
+  captureMode: PerformanceCaptureMode;
+  durationMs: number;
+  supportLevel: "full" | "partial";
+  performanceProblemLikely: PerformanceLikelihood;
+  likelyCategory: PerformanceSuspectCategory;
+  confidence: "low" | "medium" | "high";
+  cpu: PerformanceCpuSummary;
+  jank: PerformanceJankSummary;
+  memory: PerformanceMemorySummary;
+}
+export interface MeasureAndroidPerformanceInput {
+  sessionId: string;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  appId?: string;
+  durationMs?: number;
+  preset?: AndroidPerformancePreset;
+  outputPath?: string;
+  dryRun?: boolean;
+}
+export interface MeasureAndroidPerformanceData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  durationMs: number;
+  captureMode: PerformanceCaptureMode;
+  preset: AndroidPerformancePreset;
+  appId?: string;
+  commandLabels: string[];
+  commands: string[][];
+  exitCode: number | null;
+  supportLevel: "full" | "partial";
+  artifactPaths: string[];
+  artifactsByKind: PerformanceArtifactBundle;
+  summary: PerformanceStructuredSummary;
+  suspectAreas: string[];
+  diagnosisBriefing: string[];
+  evidence?: ExecutionEvidence[];
+}
+export interface MeasureIosPerformanceInput {
+  sessionId: string;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  appId?: string;
+  durationMs?: number;
+  template?: IosPerformanceTemplate;
+  outputPath?: string;
+  dryRun?: boolean;
+}
+export interface MeasureIosPerformanceData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  durationMs: number;
+  captureMode: PerformanceCaptureMode;
+  template: IosPerformanceTemplate;
+  appId?: string;
+  commandLabels: string[];
+  commands: string[][];
+  exitCode: number | null;
+  supportLevel: "full" | "partial";
+  artifactPaths: string[];
+  artifactsByKind: PerformanceArtifactBundle;
+  summary: PerformanceStructuredSummary;
+  suspectAreas: string[];
+  diagnosisBriefing: string[];
+  evidence?: ExecutionEvidence[];
 }
 export interface JsDebugTarget {
   id: string;
