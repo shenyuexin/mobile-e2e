@@ -1008,6 +1008,52 @@ async function collectPerformanceEnvironmentChecks(repoRoot: string, androidDevi
     : `Android SDK ${String(sdkLevel)} uses config via ${strategy.configTransport} and trace pull via ${strategy.tracePullMode}.`;
   checks.push(summarizeInfoCheck("android perfetto strategy", sdkLevel === undefined ? "warn" : "pass", strategyDetail));
 
+  if (strategy.configTransport === "remote_file") {
+    const configProbe = await runCommandSafely([
+      "adb", "-s", selectedAndroidDeviceId, "shell", "sh", "-lc",
+      `touch ${shellEscape("/data/misc/perfetto-configs/.mcp_perfetto_probe")} && rm ${shellEscape("/data/misc/perfetto-configs/.mcp_perfetto_probe")} && printf ready`,
+    ], repoRoot);
+    checks.push(summarizeInfoCheck(
+      "android perfetto config readiness",
+      configProbe.exitCode === 0 && configProbe.stdout.includes("ready") ? "pass" : "warn",
+      configProbe.exitCode === 0 && configProbe.stdout.includes("ready")
+        ? "Selected Android device can write to the Perfetto config directory."
+        : "Selected Android device could not verify write access to the Perfetto config directory.",
+    ));
+  } else {
+    const stdinProbe = await runCommandSafely(["sh", "-lc", "printf ready"], repoRoot);
+    checks.push(summarizeInfoCheck(
+      "android perfetto config readiness",
+      "warn",
+      stdinProbe.exitCode === 0 && stdinProbe.stdout.includes("ready")
+        ? "Host shell can compose stdin-based Perfetto commands, but adb/device-side stdin acceptance is not pre-validated by doctor."
+        : "Host shell could not verify even the local precondition for stdin-based Perfetto command composition.",
+    ));
+  }
+
+  if (strategy.tracePullMode === "adb_pull") {
+    const traceProbe = await runCommandSafely([
+      "adb", "-s", selectedAndroidDeviceId, "shell", "sh", "-lc",
+      `touch ${shellEscape("/data/misc/perfetto-traces/.mcp_perfetto_probe")} && rm ${shellEscape("/data/misc/perfetto-traces/.mcp_perfetto_probe")} && printf ready`,
+    ], repoRoot);
+    checks.push(summarizeInfoCheck(
+      "android perfetto trace transfer",
+      traceProbe.exitCode === 0 && traceProbe.stdout.includes("ready") ? "pass" : "warn",
+      traceProbe.exitCode === 0 && traceProbe.stdout.includes("ready")
+        ? "Selected Android device can stage trace files in the expected Perfetto trace directory."
+        : "Selected Android device could not verify trace staging in the expected Perfetto trace directory.",
+    ));
+  } else {
+    const execOutProbe = await runCommandSafely(["adb", "-s", selectedAndroidDeviceId, "exec-out", "sh", "-lc", "printf ready"], repoRoot);
+    checks.push(summarizeInfoCheck(
+      "android perfetto trace transfer",
+      execOutProbe.exitCode === 0 && execOutProbe.stdout.includes("ready") ? "pass" : "warn",
+      execOutProbe.exitCode === 0 && execOutProbe.stdout.includes("ready")
+        ? "Selected Android device supports exec-out style trace extraction."
+        : "Selected Android device could not verify exec-out style trace extraction.",
+    ));
+  }
+
   return checks;
 }
 
@@ -4014,67 +4060,83 @@ export async function measureAndroidPerformanceWithMaestro(input: MeasureAndroid
   let hotspotRows: string[][] | undefined;
   let frameRows: string[][] | undefined;
   let memoryRows: string[][] | undefined;
+  let cpuSource: "sched" | "thread_state" | undefined;
+  let frameSource: "actual_frame_timeline_slice" | "slice_name_heuristic" | undefined;
+  let memorySource: "process_counter_track" | "counter_track_heuristic" | undefined;
   const analysisSections: string[] = [];
   if (tablesExecution.exitCode === 0) {
     tableNames = parseTraceProcessorTsv(tablesExecution.stdout).map((row) => row[0] ?? "").filter(Boolean);
     analysisSections.push("# tables", tablesExecution.stdout.trim(), "");
-    const queryRuns: Array<{ key: "cpu" | "hotspots" | "frame" | "memory"; statements: string[]; enabled: boolean }> = [
+    const queryRuns: Array<{ key: "cpu" | "hotspots" | "frame" | "memory"; statements: string[][] }> = [
       {
         key: "cpu",
-        enabled: tableNames.includes("sched") && tableNames.includes("thread"),
         statements: [
-          `SELECT COALESCE(process.name, '<unknown>'), ROUND(SUM(CAST(sched.dur AS FLOAT)) / 1000000.0, 2) FROM sched JOIN thread USING (utid) LEFT JOIN process USING (upid) WHERE sched.dur > 0 GROUP BY COALESCE(process.name, '<unknown>') ORDER BY SUM(sched.dur) DESC LIMIT 5;`,
+          [`SELECT COALESCE(process.name, '<unknown>'), ROUND(SUM(CAST(sched.dur AS FLOAT)) / 1000000.0, 2) FROM sched JOIN thread USING (utid) LEFT JOIN process USING (upid) WHERE sched.dur > 0 GROUP BY COALESCE(process.name, '<unknown>') ORDER BY SUM(sched.dur) DESC LIMIT 5;`],
+          [`SELECT COALESCE(process.name, '<unknown>'), ROUND(SUM(CAST(thread_state.dur AS FLOAT)) / 1000000.0, 2) FROM thread_state JOIN thread USING (utid) LEFT JOIN process USING (upid) WHERE thread_state.dur > 0 AND lower(thread_state.state) = 'running' GROUP BY COALESCE(process.name, '<unknown>') ORDER BY SUM(thread_state.dur) DESC LIMIT 5;`],
         ],
       },
       {
         key: "hotspots",
-        enabled: tableNames.includes("slice"),
         statements: [
-          "SELECT name, ROUND(SUM(CAST(dur AS FLOAT)) / 1000000.0, 2), COUNT(*) FROM slice WHERE dur > 0 AND name IS NOT NULL GROUP BY name ORDER BY SUM(dur) DESC LIMIT 5;",
+          ["SELECT name, ROUND(SUM(CAST(dur AS FLOAT)) / 1000000.0, 2), COUNT(*) FROM slice WHERE dur > 0 AND name IS NOT NULL GROUP BY name ORDER BY SUM(dur) DESC LIMIT 5;"],
         ],
       },
       {
         key: "frame",
-        enabled: tableNames.includes("actual_frame_timeline_slice"),
         statements: [
-          "SELECT SUM(CASE WHEN dur > 16666666 THEN 1 ELSE 0 END), SUM(CASE WHEN dur > 700000000 THEN 1 ELSE 0 END), ROUND(AVG(CAST(dur AS FLOAT)) / 1000000.0, 2), ROUND(MAX(CAST(dur AS FLOAT)) / 1000000.0, 2) FROM actual_frame_timeline_slice;",
+          ["SELECT SUM(CASE WHEN dur > 16666666 THEN 1 ELSE 0 END), SUM(CASE WHEN dur > 700000000 THEN 1 ELSE 0 END), ROUND(AVG(CAST(dur AS FLOAT)) / 1000000.0, 2), ROUND(MAX(CAST(dur AS FLOAT)) / 1000000.0, 2) FROM actual_frame_timeline_slice;"],
+          ["SELECT SUM(CASE WHEN dur > 16666666 THEN 1 ELSE 0 END), SUM(CASE WHEN dur > 700000000 THEN 1 ELSE 0 END), ROUND(AVG(CAST(dur AS FLOAT)) / 1000000.0, 2), ROUND(MAX(CAST(dur AS FLOAT)) / 1000000.0, 2) FROM slice WHERE dur > 0 AND name IS NOT NULL AND (lower(name) LIKE '%frame%' OR lower(name) LIKE '%choreographer%' OR lower(name) LIKE '%vsync%' OR lower(name) LIKE '%drawframe%');"],
         ],
       },
       {
         key: "memory",
-        enabled: tableNames.includes("counter") && tableNames.includes("process_counter_track"),
         statements: [
-          `SELECT ROUND(MIN(CAST(counter.value AS FLOAT)), 2), ROUND(MAX(CAST(counter.value AS FLOAT)), 2), ROUND(MAX(CAST(counter.value AS FLOAT)) - MIN(CAST(counter.value AS FLOAT)), 2) FROM counter JOIN process_counter_track ON counter.track_id = process_counter_track.id LEFT JOIN process ON process_counter_track.upid = process.upid WHERE lower(process_counter_track.name) LIKE '%rss%'${appId ? ` AND process.name = ${JSON.stringify(appId)}` : ""};`,
+          [`SELECT ROUND(MIN(CAST(counter.value AS FLOAT)), 2), ROUND(MAX(CAST(counter.value AS FLOAT)), 2), ROUND(MAX(CAST(counter.value AS FLOAT)) - MIN(CAST(counter.value AS FLOAT)), 2) FROM counter JOIN process_counter_track ON counter.track_id = process_counter_track.id LEFT JOIN process ON process_counter_track.upid = process.upid WHERE lower(process_counter_track.name) LIKE '%rss%'${appId ? ` AND process.name = ${JSON.stringify(appId)}` : ""};`],
+          ["SELECT ROUND(MIN(CAST(counter.value AS FLOAT)), 2), ROUND(MAX(CAST(counter.value AS FLOAT)), 2), ROUND(MAX(CAST(counter.value AS FLOAT)) - MIN(CAST(counter.value AS FLOAT)), 2) FROM counter JOIN counter_track ON counter.track_id = counter_track.id WHERE lower(counter_track.name) LIKE '%rss%' OR lower(counter_track.name) LIKE '%mem%' OR lower(counter_track.name) LIKE '%heap%';"],
         ],
       },
     ];
     for (const queryRun of queryRuns) {
-      if (!queryRun.enabled) {
-        continue;
-      }
       const sqlPath = path.resolve(repoRoot, plan.traceProcessorScripts[queryRun.key]);
-      const execution = await runTraceProcessorScript({
-        repoRoot,
-        traceProcessorPath,
-        tracePath: path.resolve(repoRoot, plan.artifacts.tracePath),
-        sqlPath,
-        statements: queryRun.statements,
-        timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS,
-      });
+      let execution: CommandExecution | undefined;
+      let resolvedStatements: string[] | undefined;
+      for (const statements of queryRun.statements) {
+        const attempt = await runTraceProcessorScript({
+          repoRoot,
+          traceProcessorPath,
+          tracePath: path.resolve(repoRoot, plan.artifacts.tracePath),
+          sqlPath,
+          statements,
+          timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS,
+        });
+        if (attempt.exitCode === 0) {
+          execution = attempt;
+          resolvedStatements = statements;
+          break;
+        }
+        execution = attempt;
+      }
       analysisCommandLabels.push(`trace_processor_${queryRun.key}`);
       analysisCommands.push(buildTraceProcessorShellCommand(traceProcessorPath, path.resolve(repoRoot, plan.artifacts.tracePath), sqlPath));
-      if (execution.exitCode !== 0) {
-        status = "partial";
-        reasonCode = REASON_CODES.adapterError;
-        analysisSections.push(`# ${queryRun.key}`, execution.stderr.trim(), "");
+      if (!execution || execution.exitCode !== 0) {
+        analysisSections.push(`# ${queryRun.key}`, execution?.stderr.trim() ?? "", "");
         continue;
       }
       const parsed = parseTraceProcessorTsv(execution.stdout);
-      analysisSections.push(`# ${queryRun.key}`, execution.stdout.trim(), "");
-      if (queryRun.key === "cpu") cpuRows = parsed;
+      analysisSections.push(`# ${queryRun.key}`, ...(resolvedStatements ?? []), execution.stdout.trim(), "");
+      if (queryRun.key === "cpu") {
+        cpuRows = parsed;
+        cpuSource = resolvedStatements?.[0]?.includes("thread_state") ? "thread_state" : "sched";
+      }
       if (queryRun.key === "hotspots") hotspotRows = parsed;
-      if (queryRun.key === "frame") frameRows = parsed;
-      if (queryRun.key === "memory") memoryRows = parsed;
+      if (queryRun.key === "frame") {
+        frameRows = parsed;
+        frameSource = resolvedStatements?.[0]?.includes("actual_frame_timeline_slice") ? "actual_frame_timeline_slice" : "slice_name_heuristic";
+      }
+      if (queryRun.key === "memory") {
+        memoryRows = parsed;
+        memorySource = resolvedStatements?.[0]?.includes("process_counter_track") ? "process_counter_track" : "counter_track_heuristic";
+      }
     }
   } else {
     status = "partial";
@@ -4086,7 +4148,7 @@ export async function measureAndroidPerformanceWithMaestro(input: MeasureAndroid
     await writeFile(path.resolve(repoRoot, plan.artifacts.rawAnalysisPath), analysisSections.join(String.fromCharCode(10)), "utf8");
     artifactPaths.push(plan.artifacts.rawAnalysisPath);
   }
-  const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames, cpuRows, hotspotRows, frameRows, memoryRows });
+  const summary = summarizeAndroidPerformance({ durationMs: plan.durationMs, appId, tableNames, cpuRows, hotspotRows, frameRows, memoryRows, cpuSource, frameSource, memorySource });
   const data = buildAndroidPerformanceData({
     dryRun: false,
     runnerProfile,

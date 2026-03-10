@@ -35,6 +35,90 @@ function toMaybeNumber(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function isSeparatorRow(row: string[]): boolean {
+  const flattened = row.join("").replaceAll(" ", "").replaceAll("\t", "");
+  return flattened.length > 0 && flattened.replaceAll("-", "") === "";
+}
+
+function parseXmlRows(xml: string): string[] {
+  return [...xml.matchAll(/<row>([\s\S]*?)<\/row>/g)].map((match) => match[1] ?? "");
+}
+
+function extractXmlAttributeValue(fragment: string, tagName: string, attributeName: string): string | undefined {
+  const tagPattern = new RegExp(`<${tagName}\\b[^>]*\\b${attributeName}="([^"]+)"`, "i");
+  return tagPattern.exec(fragment)?.[1];
+}
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replaceAll("&gt;", ">")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'");
+}
+
+function stripProcessDisplaySuffix(value: string): string {
+  return value.replace(/ \([^)]*\)$/, "").trim();
+}
+
+function normalizeIosProcessName(value: string | undefined): string {
+  if (!value) {
+    return "<unknown>";
+  }
+  return stripProcessDisplaySuffix(decodeXmlEntities(value));
+}
+
+function buildIosHotspotsFromRows(exportXml: string): PerformanceHotspot[] {
+  const totals = new Map<string, { totalDurMs: number; occurrences: number }>();
+  for (const row of parseXmlRows(exportXml)) {
+    const weightRaw = extractXmlAttributeValue(row, "weight", "fmt");
+    const frameName = extractXmlAttributeValue(row, "frame", "name");
+    if (!weightRaw || !frameName) {
+      continue;
+    }
+    const weightMs = toMaybeNumber(weightRaw.replace(/[^0-9.]/g, ""));
+    if (weightMs === undefined) {
+      continue;
+    }
+    const key = decodeXmlEntities(frameName).trim();
+    const previous = totals.get(key) ?? { totalDurMs: 0, occurrences: 0 };
+    previous.totalDurMs += weightMs;
+    previous.occurrences += 1;
+    totals.set(key, previous);
+  }
+  return [...totals.entries()]
+    .map(([name, value]) => ({ name, totalDurMs: Number(value.totalDurMs.toFixed(2)), occurrences: value.occurrences }))
+    .sort((left, right) => (right.totalDurMs ?? 0) - (left.totalDurMs ?? 0))
+    .slice(0, 5);
+}
+
+function buildIosTopProcessesFromRows(exportXml: string, durationMs: number): PerformanceProcessSignal[] {
+  const totals = new Map<string, { scheduledMs: number }>();
+  for (const row of parseXmlRows(exportXml)) {
+    const weightRaw = extractXmlAttributeValue(row, "weight", "fmt");
+    const processName = normalizeIosProcessName(extractXmlAttributeValue(row, "process", "fmt"));
+    if (!weightRaw) {
+      continue;
+    }
+    const weightMs = toMaybeNumber(weightRaw.replace(/[^0-9.]/g, ""));
+    if (weightMs === undefined) {
+      continue;
+    }
+    const previous = totals.get(processName) ?? { scheduledMs: 0 };
+    previous.scheduledMs += weightMs;
+    totals.set(processName, previous);
+  }
+  return [...totals.entries()]
+    .map(([name, value]) => ({
+      name,
+      scheduledMs: Number(value.scheduledMs.toFixed(2)),
+      cpuPercent: durationMs > 0 ? Number(((value.scheduledMs / durationMs) * 100).toFixed(1)) : undefined,
+    }))
+    .sort((left, right) => (right.scheduledMs ?? 0) - (left.scheduledMs ?? 0))
+    .slice(0, 5);
+}
+
 function extractXmlAttributes(xml: string, attribute: string): string[] {
   const pattern = new RegExp(`${attribute}="([^"]+)"`, "g");
   const results: string[] = [];
@@ -74,12 +158,16 @@ export function buildBasePerformanceSummary(durationMs: number, supportLevel: "f
 }
 
 export function parseTraceProcessorTsv(stdout: string): string[][] {
-  return stdout
+  const rows = stdout
     .replaceAll(String.fromCharCode(13), "")
     .split(String.fromCharCode(10))
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => line.split(String.fromCharCode(9)));
+  if (rows.length >= 2 && isSeparatorRow(rows[1])) {
+    return rows.slice(2);
+  }
+  return rows.filter((row) => !isSeparatorRow(row));
 }
 
 export function summarizeAndroidPerformance(params: {
@@ -90,6 +178,9 @@ export function summarizeAndroidPerformance(params: {
   hotspotRows?: string[][];
   frameRows?: string[][];
   memoryRows?: string[][];
+  cpuSource?: "sched" | "thread_state";
+  frameSource?: "actual_frame_timeline_slice" | "slice_name_heuristic";
+  memorySource?: "process_counter_track" | "counter_track_heuristic";
 }): PerformanceStructuredSummary {
   const summary = buildBasePerformanceSummary(params.durationMs, "full");
   const topProcesses: PerformanceProcessSignal[] = (params.cpuRows ?? []).map((row) => {
@@ -110,6 +201,8 @@ export function summarizeAndroidPerformance(params: {
   const cpuSeverity = clampSeverity(topCpu?.cpuPercent, 35, 70);
   const cpuNote = topCpu?.cpuPercent !== undefined
     ? `Top scheduled process is ${topCpu.name} at roughly ${String(topCpu.cpuPercent)}% of the sampled window.`
+    : params.cpuSource === "thread_state"
+      ? "CPU pressure was inferred from running thread-state durations rather than sched slices."
     : params.tableNames.includes("sched")
       ? "CPU scheduling tables were available, but no dominant scheduled process was found."
       : "Perfetto sched data was not available for CPU summarization.";
@@ -135,7 +228,9 @@ export function summarizeAndroidPerformance(params: {
   const jank: PerformanceJankSummary = {
     status: jankSeverity,
     note: avgFrameTimeMs !== undefined || slowFrameCount !== undefined
-      ? `Frame timeline shows ${String(slowFrameCount ?? 0)} slow frame(s) with average frame time ${String(avgFrameTimeMs ?? "unknown")}ms.`
+      ? params.frameSource === "slice_name_heuristic"
+        ? `Heuristic frame-like slices show ${String(slowFrameCount ?? 0)} slow frame(s) with average duration ${String(avgFrameTimeMs ?? "unknown")}ms.`
+        : `Frame timeline shows ${String(slowFrameCount ?? 0)} slow frame(s) with average frame time ${String(avgFrameTimeMs ?? "unknown")}ms.`
       : params.tableNames.includes("actual_frame_timeline_slice")
         ? "Frame timeline data was present but did not yield stable jank counters."
         : "Frame timeline tables were not present in the sampled trace.",
@@ -152,7 +247,9 @@ export function summarizeAndroidPerformance(params: {
   const memory: PerformanceMemorySummary = {
     status: memorySeverity,
     note: rssDeltaKb !== undefined
-      ? `${params.appId ? `App ${params.appId}` : "The sampled process"} RSS changed by about ${String(rssDeltaKb)} KB during the window.`
+      ? params.memorySource === "counter_track_heuristic"
+        ? `Heuristic memory counters changed by about ${String(rssDeltaKb)} units during the window; confirm the backing track before treating this as RSS.`
+        : `${params.appId ? `App ${params.appId}` : "The sampled process"} RSS changed by about ${String(rssDeltaKb)} KB during the window.`
       : params.tableNames.includes("process_counter_track")
         ? "Memory counter tables were present, but no RSS series was confidently associated with the target scope."
         : "Memory counter tables were not present in the sampled trace.",
@@ -176,7 +273,11 @@ export function summarizeAndroidPerformance(params: {
     : [cpu.status, jank.status, memory.status].some((status) => status === "moderate" || status === "high")
       ? "yes"
       : "no";
-  summary.confidence = summary.jank.status !== "unknown" || summary.cpu.status !== "unknown" ? "medium" : "low";
+  summary.confidence = [summary.cpu.status, summary.jank.status, summary.memory.status].some((status) => status === "moderate" || status === "high")
+    ? "high"
+    : summary.jank.status !== "unknown" || summary.cpu.status !== "unknown" || summary.memory.status !== "unknown"
+      ? "medium"
+      : "low";
   return summary;
 }
 
@@ -193,17 +294,26 @@ export function summarizeIosPerformance(params: {
   const frameMentions = (exportText.match(/frame/g) ?? []).length;
   const allocationMentions = (exportText.match(/alloc|malloc|vm:/g) ?? []).length;
   const cpuMentions = (exportText.match(/sample|cpu|thread/g) ?? []).length;
-  const hasCpuSignal = schemaNames.length > 0 || cpuMentions > 0;
-  const hasJankSignal = schemaNames.length > 0 || hitchMentions > 0 || frameMentions > 0;
-  const hasMemorySignal = schemaNames.length > 0 || allocationMentions > 0;
+  const hasJankSignal = hitchMentions > 0 || frameMentions > 0;
+  const hasMemorySignal = allocationMentions > 0;
+  const topProcesses = params.template === "time-profiler" && params.exportXml ? buildIosTopProcessesFromRows(params.exportXml, params.durationMs) : [];
+  const topHotspots = params.template === "time-profiler" && params.exportXml ? buildIosHotspotsFromRows(params.exportXml) : [];
+  const topCpu = topProcesses[0];
+  const hasCpuSignal = topProcesses.length > 0 || topHotspots.length > 0;
 
   const cpu: PerformanceCpuSummary = {
-    status: params.template === "time-profiler" && hasCpuSignal ? clampSeverity(cpuMentions, 10, 40) : "unknown",
+    status: params.template === "time-profiler" && hasCpuSignal
+      ? clampSeverity(topCpu?.cpuPercent ?? cpuMentions, 20, 45)
+      : "unknown",
     note: params.template === "time-profiler"
-      ? `xctrace export exposed ${String(schemaNames.length)} table schema(s); CPU interpretation remains shallow in this MVP.`
+      ? topCpu?.cpuPercent !== undefined
+        ? `Time Profiler export suggests ${topCpu.name} consumed about ${String(topCpu.cpuPercent)}% of sampled CPU weight.`
+        : `xctrace export exposed ${String(schemaNames.length)} table schema(s); CPU interpretation remains shallow in this MVP.`
       : "CPU-focused parsing was not requested by the selected template.",
-    topProcesses: [],
-    topHotspots: [],
+    topProcess: topCpu?.name,
+    topProcessCpuPercent: topCpu?.cpuPercent,
+    topProcesses,
+    topHotspots,
   };
   const jank: PerformanceJankSummary = {
     status: params.template === "animation-hitches" && hasJankSignal ? clampSeverity(hitchMentions || frameMentions, 3, 10) : "unknown",
@@ -234,7 +344,7 @@ export function summarizeIosPerformance(params: {
     : [cpu.status, jank.status, memory.status].some((status) => status === "moderate" || status === "high")
       ? "yes"
       : "no";
-  summary.confidence = schemaNames.length > 0 ? "low" : "low";
+  summary.confidence = topProcesses.length > 0 || topHotspots.length > 0 ? "medium" : schemaNames.length > 0 ? "low" : "low";
   return summary;
 }
 

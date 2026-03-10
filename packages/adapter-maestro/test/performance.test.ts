@@ -3,10 +3,16 @@ import test from "node:test";
 import { classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPerformanceWithMaestro, measureIosPerformanceWithMaestro } from "../src/index.ts";
 import type { DoctorCheck } from "@mobile-e2e-mcp/contracts";
 import { buildAndroidPerformancePlan, resolveAndroidPerformancePlanStrategy, resolveTraceProcessorPath } from "../src/performance-runtime.ts";
+import { parseTraceProcessorTsv, summarizeAndroidPerformance, summarizeIosPerformance } from "../src/performance-model.ts";
 
 test("isPerfettoShellProbeAvailable rejects missing sentinel output", () => {
   assert.equal(isPerfettoShellProbeAvailable({ exitCode: 0, stdout: "missing\n", stderr: "" }), false);
   assert.equal(isPerfettoShellProbeAvailable({ exitCode: 0, stdout: "/system/bin/perfetto\n", stderr: "" }), true);
+});
+
+test("parseTraceProcessorTsv strips shell headers and separators", () => {
+  const rows = parseTraceProcessorTsv("name\n--------------------\nsched\nthread\n");
+  assert.deepEqual(rows, [["sched"], ["thread"]]);
 });
 
 test("classifyDoctorOutcome keeps optional tooling gaps partial", () => {
@@ -123,4 +129,41 @@ test("measureIosPerformanceWithMaestro previews iOS dry-run output", async () =>
   assert.equal(result.data.captureMode, "time_window");
   assert.equal(result.data.template, "time-profiler");
   assert.equal(result.data.evidence?.some((item) => item.kind === "performance_trace"), true);
+});
+
+test("summarizeIosPerformance extracts top processes and hotspots from time profiler export", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><summary><duration>3.0</duration></summary></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'><schema name="time-profile"></schema><row><process fmt="MyApp (123)"/><weight fmt="2.00 ms">2000000</weight><backtrace><frame name="MyAppMain"/></backtrace></row><row><process fmt="MyApp (123)"/><weight fmt="1.50 ms">1500000</weight><backtrace><frame name="MyHotLoop"/></backtrace></row><row><process fmt="WindowServer (511)"/><weight fmt="0.50 ms">500000</weight><backtrace><frame name="FrameInfoNotifyFuncIOShq"/></backtrace></row></node></trace-query-result>`;
+
+  const summary = summarizeIosPerformance({ durationMs: 10, template: "time-profiler", tocXml, exportXml });
+
+  assert.equal(summary.likelyCategory, "cpu");
+  assert.equal(summary.cpu.topProcesses[0]?.name, "MyApp");
+  assert.equal(summary.cpu.topHotspots[0]?.name, "MyAppMain");
+  assert.equal(summary.cpu.status !== "unknown", true);
+});
+
+test("summarizeIosPerformance stays unknown when schema exists but rows do not parse", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><data><table schema="time-profile"/></data></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'><schema name="time-profile"></schema></node></trace-query-result>`;
+
+  const summary = summarizeIosPerformance({ durationMs: 10, template: "time-profiler", tocXml, exportXml });
+
+  assert.equal(summary.likelyCategory, "unknown");
+  assert.equal(summary.performanceProblemLikely, "unknown");
+  assert.equal(summary.cpu.status, "unknown");
+});
+
+test("summarizeAndroidPerformance labels slice and counter fallbacks as heuristic", () => {
+  const summary = summarizeAndroidPerformance({
+    durationMs: 1000,
+    tableNames: ["slice", "counter", "counter_track"],
+    frameRows: [["2", "0", "18.5", "42"]],
+    memoryRows: [["100", "220", "120"]],
+    frameSource: "slice_name_heuristic",
+    memorySource: "counter_track_heuristic",
+  });
+
+  assert.match(summary.jank.note, /Heuristic frame-like slices/);
+  assert.match(summary.memory.note, /Heuristic memory counters/);
 });
