@@ -23,6 +23,8 @@ test("createServer lists newly added UI tools", () => {
   assert.ok(tools.includes("describe_capabilities"));
   assert.ok(tools.includes("get_crash_signals"));
   assert.ok(tools.includes("list_js_debug_targets"));
+  assert.ok(tools.includes("measure_android_performance"));
+  assert.ok(tools.includes("measure_ios_performance"));
   assert.ok(tools.includes("query_ui"));
   assert.ok(tools.includes("resolve_ui_target"));
   assert.ok(tools.includes("wait_for_ui"));
@@ -350,6 +352,40 @@ test("server invoke supports collect_debug_evidence Android dry-run", async () =
   assert.equal(result.data.jsNetworkSummary?.failedRequestCount, 0);
   assert.equal(result.data.evidence?.some((item) => item.kind === "log"), true);
   assert.equal(result.data.evidence?.some((item) => item.kind === "crash_signal"), true);
+});
+
+test("server invoke supports measure_android_performance dry-run", async () => {
+  const server = createServer();
+  const result = await server.invoke("measure_android_performance", {
+    sessionId: "server-android-performance-dry-run",
+    runnerProfile: "phase1",
+    durationMs: 4000,
+    preset: "interaction",
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.supportLevel, "full");
+  assert.equal(result.data.captureMode, "time_window");
+  assert.equal(result.data.preset, "interaction");
+});
+
+test("server invoke supports measure_ios_performance dry-run", async () => {
+  const server = createServer();
+  const result = await server.invoke("measure_ios_performance", {
+    sessionId: "server-ios-performance-dry-run",
+    runnerProfile: "phase1",
+    durationMs: 4000,
+    template: "time-profiler",
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.supportLevel, "partial");
+  assert.equal(result.data.captureMode, "time_window");
+  assert.equal(result.data.template, "time-profiler");
 });
 
 test("server invoke supports list_js_debug_targets dry-run", async () => {
