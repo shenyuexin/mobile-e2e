@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ActionOutcomeSummary, EvidenceDeltaSummary, ExecutionEvidence, FailureSignature, ReasonCode, Session, SessionTimelineEvent, StateSummary, ToolStatus } from "@mobile-e2e-mcp/contracts";
+import type { ActionIntent, ActionOutcomeSummary, EvidenceDeltaSummary, ExecutionEvidence, FailureSignature, ReasonCode, Session, SessionTimelineEvent, StateSummary, ToolStatus } from "@mobile-e2e-mcp/contracts";
 import { buildSessionAuditRecord, loadArtifactGovernanceConfig, loadSessionAuditSchemaConfig, type SessionAuditRecord } from "./governance.js";
 
 export interface PersistedSessionRecord {
@@ -29,6 +29,7 @@ export interface PersistSessionStateResult {
 export interface PersistedActionRecord {
   actionId: string;
   sessionId: string;
+  intent?: ActionIntent;
   outcome: ActionOutcomeSummary;
   evidenceDelta: EvidenceDeltaSummary;
   evidence: ExecutionEvidence[];

@@ -1,6 +1,8 @@
 export { REASON_CODES, type ReasonCode } from "./reason-codes.js";
 export type {
   ActionIntent,
+  AutoRemediationResult,
+  AutoRemediationStopReason,
   AffectedLayer,
   ActionOutcomeStatus,
   ActionOutcomeSummary,

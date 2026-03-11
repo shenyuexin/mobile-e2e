@@ -109,6 +109,36 @@ export interface RecoverySummary {
   stateAfter?: StateSummary;
   replayedActionId?: string;
 }
+export type AutoRemediationStopReason =
+  | "not_requested"
+  | "action_succeeded"
+  | "missing_session_record"
+  | "missing_evidence_window"
+  | "weak_attribution"
+  | "allowlist_miss"
+  | "policy_denied"
+  | "audit_unavailable"
+  | "already_attempted"
+  | "high_risk_replay"
+  | "recovery_failed"
+  | "recovery_not_recovered"
+  | "recovered";
+export interface AutoRemediationResult {
+  attempted: boolean;
+  actionId?: string;
+  triggerReason: string;
+  selectedRecovery?: RecoveryStrategy;
+  recovered: boolean;
+  stopReason: AutoRemediationStopReason;
+  stopDetail: string;
+  stateBefore?: StateSummary;
+  stateAfter?: StateSummary;
+  artifactRefs: string[];
+  attribution?: FailureAttribution;
+  remediationSuggestions: string[];
+  candidateLayers?: AffectedLayer[];
+  policyProfile?: string;
+}
 export interface FailureSignature {
   actionType: SupportedActionType;
   screenId?: string;
@@ -661,6 +691,7 @@ export interface PerformActionWithEvidenceInput {
   deviceId?: string;
   appId?: string;
   includeDebugSignals?: boolean;
+  autoRemediate?: boolean;
   action: ActionIntent;
   dryRun?: boolean;
 }
@@ -673,6 +704,8 @@ export interface PerformActionWithEvidenceData {
   lowLevelStatus: ToolStatus;
   lowLevelReasonCode: ReasonCode;
   evidence?: ExecutionEvidence[];
+  sessionAuditPath?: string;
+  autoRemediation?: AutoRemediationResult;
 }
 export interface GetActionOutcomeInput {
   sessionId?: string;
