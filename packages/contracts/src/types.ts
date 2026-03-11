@@ -381,6 +381,7 @@ export interface PerformanceProcessSignal {
 }
 export interface PerformanceHotspot {
   name: string;
+  processName?: string;
   totalDurMs?: number;
   occurrences?: number;
 }
@@ -406,7 +407,10 @@ export interface PerformanceMemorySummary extends PerformanceSignalSummary {
   dominantProcess?: string;
   allocationRowCount?: number;
   largestAllocationKb?: number;
+  totalAllocatedKb?: number;
   topAllocationCategories?: string[];
+  allocationCountByProcess?: Record<string, number>;
+  memoryPressureSignal?: "growth_spike" | "steady" | "unknown";
   captureScope?: "attached_process" | "all_processes" | "unknown";
 }
 export interface PerformanceStructuredSummary {

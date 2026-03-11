@@ -2,11 +2,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPerformanceWithMaestro, measureIosPerformanceWithMaestro } from "../src/index.ts";
+import { classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPerformanceWithMaestro, measureIosPerformanceWithMaestro, runDoctor } from "../src/index.ts";
 import type { DoctorCheck } from "@mobile-e2e-mcp/contracts";
 import { buildCapabilityProfile } from "../src/capability-model.ts";
 import { buildAndroidPerformancePlan, buildIosPerformancePlan, resolveAndroidPerformancePlanStrategy, resolveTraceProcessorPath } from "../src/performance-runtime.ts";
-import { parseTraceProcessorTsv, summarizeAndroidPerformance, summarizeIosPerformance } from "../src/performance-model.ts";
+import { buildPerformanceNextSuggestions, parseTraceProcessorTsv, summarizeAndroidPerformance, summarizeIosPerformance } from "../src/performance-model.ts";
 import { buildFailureReason } from "../src/runtime-shared.ts";
 
 const fixtureRoot = path.resolve(import.meta.dirname, "fixtures", "performance");
@@ -262,6 +262,19 @@ test("summarizeIosPerformance uses real memory fixture to expose process and cap
   assert.match(summary.memory.note, /Allocations trace attached to Expo Go/);
 });
 
+test("summarizeIosPerformance includes aggregated allocation fields and pressure signal", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><info><target><process type="attached" name="MyApp"/></target></info><data><table schema="allocations"/></data></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'><schema name="allocations"></schema><row><process fmt="MyApp (123)"/><category fmt="Malloc 16 KB"/><size fmt="16 KB">16384</size></row><row><process fmt="MyApp (123)"/><category fmt="VM: ImageIO 4 MB"/><size fmt="4 MB">4194304</size></row><row><process fmt="MyApp (123)"/><category fmt="VM: ImageIO 4 MB"/><size fmt="8 MB">8388608</size></row></node></trace-query-result>`;
+
+  const summary = summarizeIosPerformance({ durationMs: 1000, template: "memory", tocXml, exportXml });
+
+  assert.equal(summary.memory.dominantProcess, "MyApp");
+  assert.equal(summary.memory.totalAllocatedKb, 12304);
+  assert.equal(summary.memory.allocationCountByProcess?.MyApp, 3);
+  assert.equal(summary.memory.memoryPressureSignal, "growth_spike");
+  assert.equal(summary.memory.topAllocationCategories?.[0], "VM: ImageIO 4 MB");
+});
+
 test("summarizeAndroidPerformance labels slice and counter fallbacks as heuristic", () => {
   const summary = summarizeAndroidPerformance({
     durationMs: 1000,
@@ -300,4 +313,47 @@ test("summarizeAndroidPerformance prioritizes the target app over noisier system
   assert.equal(summary.cpu.topProcesses[0]?.name, "com.example.app");
   assert.match(summary.cpu.note, /Target app com.example.app used about 35%/);
   assert.match(summary.cpu.note, /highest overall process was system_server/);
+});
+
+test("summarizeAndroidPerformance prioritizes target-app-owned hotspots", () => {
+  const summary = summarizeAndroidPerformance({
+    durationMs: 1000,
+    appId: "com.example.app",
+    tableNames: ["slice"],
+    hotspotRows: [["system_server", "binder transaction", "300", "50"], ["com.example.app", "MyView draw", "140", "10"], ["surfaceflinger", "waitForever", "200", "30"]],
+  });
+
+  assert.equal(summary.cpu.topHotspots[0]?.processName, "com.example.app");
+  assert.equal(summary.cpu.topHotspots[0]?.name, "MyView draw");
+});
+
+test("buildPerformanceNextSuggestions uses richer memory and hotspot guidance", () => {
+  const summary = summarizeIosPerformance({
+    durationMs: 1000,
+    template: "memory",
+    tocXml: `<?xml version="1.0"?><trace-toc><run number="1"><info><target><process type="attached" name="MyApp"/></target></info><data><table schema="allocations"/></data></run></trace-toc>`,
+    exportXml: `<?xml version="1.0"?><trace-query-result><node><schema name="allocations"></schema><row><process fmt="MyApp (123)"/><category fmt="VM: ImageIO 4 MB"/><size fmt="8 MB">8388608</size></row></node></trace-query-result>`,
+  });
+  const suggestions = buildPerformanceNextSuggestions(summary, {
+    summaryPath: "summary.json",
+    reportPath: "report.md",
+    exportPath: "memory.xml",
+  });
+
+  assert.equal(suggestions.some((item) => item.includes("MyApp")), true);
+  assert.equal(suggestions.some((item) => item.includes("VM: ImageIO 4 MB")), true);
+  assert.equal(suggestions.some((item) => item.includes("spiky")), true);
+});
+
+test("runDoctor includes an explicit iOS performance recommendation check", async () => {
+  const originalSimUdid = process.env.SIM_UDID;
+  delete process.env.SIM_UDID;
+  try {
+    const result = await runDoctor({ includeUnavailable: true });
+    assert.equal(result.data.checks.some((check) => check.name === "ios performance recommendation"), true);
+  } finally {
+    if (originalSimUdid !== undefined) {
+      process.env.SIM_UDID = originalSimUdid;
+    }
+  }
 });

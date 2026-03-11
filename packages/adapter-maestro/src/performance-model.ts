@@ -18,6 +18,39 @@ function matchesAndroidAppProcess(processName: string, appId: string | undefined
   return processName === appId || processName.startsWith(`${appId}:`) || processName.endsWith(appId) || processName.includes(appId);
 }
 
+function isLikelySystemProcessName(processName: string | undefined): boolean {
+  if (!processName) {
+    return true;
+  }
+  return processName === "<unknown>"
+    || processName === "system_server"
+    || processName.startsWith("/system/")
+    || processName.startsWith("surfaceflinger")
+    || processName.startsWith("kworker")
+    || processName.startsWith("swapper")
+    || processName.startsWith("traced");
+}
+
+function classifyAndroidHotspotAffinity(processName: string | undefined, appId: string | undefined): "target_app" | "system" | "unknown" {
+  if (matchesAndroidAppProcess(processName ?? "", appId)) {
+    return "target_app";
+  }
+  if (isLikelySystemProcessName(processName)) {
+    return processName ? "system" : "unknown";
+  }
+  return "unknown";
+}
+
+function summarizeMemoryPressureSignal(allocationRowCount: number | undefined, totalAllocatedKb: number | undefined, largestAllocationKb: number | undefined): "growth_spike" | "steady" | "unknown" {
+  if (largestAllocationKb !== undefined && largestAllocationKb >= 8192) {
+    return "growth_spike";
+  }
+  if ((allocationRowCount ?? 0) >= 10 || (totalAllocatedKb ?? 0) >= 16384) {
+    return "steady";
+  }
+  return "unknown";
+}
+
 function clampSeverity(value: number | undefined, medium: number, high: number): "none" | "low" | "moderate" | "high" | "unknown" {
   if (value === undefined || Number.isNaN(value)) {
     return "unknown";
@@ -122,6 +155,19 @@ function toMaybeSizeKb(value: string | undefined): number | undefined {
   return undefined;
 }
 
+function looksLikeProcessName(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return value === "<unknown>"
+    || value.includes(".")
+    || value.includes("/")
+    || value.includes(":")
+    || value.includes("(")
+    || value.toLowerCase().includes("server")
+    || value.toLowerCase().includes("renderthread");
+}
+
 function buildIosTemplateRowSignals(exportXml: string): Array<{ rowText: string; processName: string; fmtEntries: Array<{ tagName: string; value: string }> }> {
   return parseXmlRows(exportXml).map((row) => ({
     rowText: decodeXmlEntities(row).toLowerCase(),
@@ -174,12 +220,15 @@ function buildIosAnimationMetrics(exportXml: string): {
 function buildIosAllocationMetrics(exportXml: string): {
   allocationRowCount: number;
   largestAllocationKb?: number;
+  totalAllocatedKb?: number;
   dominantProcess?: string;
   topAllocationCategories: string[];
+  allocationCountByProcess: Record<string, number>;
 } {
   const rowSignals = buildIosTemplateRowSignals(exportXml);
   const sizeValuesKb: number[] = [];
   const processCounts = new Map<string, number>();
+  const processAllocatedKb = new Map<string, number>();
   const categoryCounts = new Map<string, number>();
   let allocationRowCount = 0;
   for (const signal of rowSignals) {
@@ -195,31 +244,50 @@ function buildIosAllocationMetrics(exportXml: string): {
           categoryCounts.set(label, (categoryCounts.get(label) ?? 0) + 1);
         }
       }
-      const sizeKb = toMaybeSizeKb(entry.value);
+      const tagName = entry.tagName.toLowerCase();
+      const sizeKb = tagName.includes("size") || tagName.includes("bytes") || tagName.includes("dirty") || tagName.includes("resident")
+        ? toMaybeSizeKb(entry.value)
+        : undefined;
       if (sizeKb !== undefined) {
         sizeValuesKb.push(sizeKb);
+        processAllocatedKb.set(signal.processName, (processAllocatedKb.get(signal.processName) ?? 0) + sizeKb);
       }
     }
   }
+  const totalAllocatedKb = sizeValuesKb.length > 0 ? Number(sizeValuesKb.reduce((sum, value) => sum + value, 0).toFixed(2)) : undefined;
+  const dominantProcess = [...processCounts.entries()].sort((left, right) => {
+    const rightKb = processAllocatedKb.get(right[0]) ?? 0;
+    const leftKb = processAllocatedKb.get(left[0]) ?? 0;
+    if (rightKb !== leftKb) {
+      return rightKb - leftKb;
+    }
+    return right[1] - left[1];
+  })[0]?.[0];
   return {
     allocationRowCount,
     largestAllocationKb: sizeValuesKb.length > 0 ? Number(Math.max(...sizeValuesKb).toFixed(2)) : undefined,
-    dominantProcess: [...processCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0],
+    totalAllocatedKb,
+    dominantProcess,
     topAllocationCategories: [...categoryCounts.entries()].sort((left, right) => right[1] - left[1]).map(([name]) => name).slice(0, 5),
+    allocationCountByProcess: Object.fromEntries([...processCounts.entries()].sort((left, right) => right[1] - left[1]).slice(0, 5)),
   };
 }
 
 function buildEmptyIosAllocationMetrics(): {
   allocationRowCount: number;
   largestAllocationKb?: number;
+  totalAllocatedKb?: number;
   dominantProcess?: string;
   topAllocationCategories: string[];
+  allocationCountByProcess: Record<string, number>;
 } {
   return {
     allocationRowCount: 0,
     largestAllocationKb: undefined,
+    totalAllocatedKb: undefined,
     dominantProcess: undefined,
     topAllocationCategories: [],
+    allocationCountByProcess: {},
   };
 }
 
@@ -397,13 +465,28 @@ export function summarizeAndroidPerformance(params: {
     return (right.scheduledMs ?? 0) - (left.scheduledMs ?? 0);
   });
   const topHotspots: PerformanceHotspot[] = (params.hotspotRows ?? []).map((rawRow) => {
-    const row = normalizeRightAnchoredRow(rawRow, 2);
+    const row = normalizeRightAnchoredRow(rawRow, rawRow.length >= 4 ? 3 : 2);
+    const treatAsProcessAware = rawRow.length >= 4 && looksLikeProcessName(row[0]);
+    const processName = treatAsProcessAware ? row[0] : undefined;
+    const nameIndex = treatAsProcessAware ? 1 : 0;
+    const durationIndex = treatAsProcessAware ? 2 : 2;
+    const occurrencesIndex = treatAsProcessAware ? 3 : 3;
+    const hotspotName = treatAsProcessAware ? row[nameIndex] : `${row[0] ?? ""} ${row[1] ?? ""}`.trim();
     return {
-      name: row[0] ?? "<unknown>",
-      totalDurMs: toMaybeNumber(row[1]),
-      occurrences: toMaybeNumber(row[2]),
+      processName,
+      name: hotspotName || "<unknown>",
+      totalDurMs: toMaybeNumber(row[durationIndex]),
+      occurrences: toMaybeNumber(row[occurrencesIndex]),
     };
-  });
+  }).sort((left, right) => {
+    const leftAffinity = classifyAndroidHotspotAffinity(left.processName, params.appId);
+    const rightAffinity = classifyAndroidHotspotAffinity(right.processName, params.appId);
+    const rank = { target_app: 0, unknown: 1, system: 2 } as const;
+    if (rank[leftAffinity] !== rank[rightAffinity]) {
+      return rank[leftAffinity] - rank[rightAffinity];
+    }
+    return (right.totalDurMs ?? 0) - (left.totalDurMs ?? 0);
+  }).slice(0, 5);
   const topCpu = topProcesses[0];
   const targetAppCpu = params.appId ? parsedTopProcesses.find((item) => matchesAndroidAppProcess(item.name, params.appId)) : undefined;
   const highestOverallCpu = parsedTopProcesses[0];
@@ -553,7 +636,7 @@ export function summarizeIosPerformance(params: {
       : "unknown",
     note: params.template === "memory"
       ? allocationMetrics.largestAllocationKb !== undefined
-        ? `Allocations export highlights about ${String(allocationMetrics.allocationRowCount)} allocation-heavy row(s); the largest parsed allocation is roughly ${String(allocationMetrics.largestAllocationKb)} KB${allocationMetrics.dominantProcess ? ` in ${allocationMetrics.dominantProcess}` : tocTargetProcess ? ` in ${tocTargetProcess}` : ""}.`
+        ? `Allocations export highlights about ${String(allocationMetrics.allocationRowCount)} allocation-heavy row(s); the largest parsed allocation is roughly ${String(allocationMetrics.largestAllocationKb)} KB${allocationMetrics.totalAllocatedKb !== undefined ? ` with about ${String(allocationMetrics.totalAllocatedKb)} KB total parsed allocation volume` : ""}${allocationMetrics.dominantProcess ? ` in ${allocationMetrics.dominantProcess}` : tocTargetProcess ? ` in ${tocTargetProcess}` : ""}.`
         : tocTargetProcess
           ? `Allocations trace attached to ${tocTargetProcess} (${captureScope === "attached_process" ? "attached process" : "unknown scope"}), but the export did not contain allocation-sized rows this parser could summarize.`
           : `Allocations export contains ${String(allocationMentions)} allocation-related token(s); this is a lightweight signal, not a full heap analysis.`
@@ -561,7 +644,10 @@ export function summarizeIosPerformance(params: {
     dominantProcess: selectPreferredProcessName(allocationMetrics.dominantProcess, tocTargetProcess),
     allocationRowCount: allocationMetrics.allocationRowCount,
     largestAllocationKb: allocationMetrics.largestAllocationKb,
+    totalAllocatedKb: allocationMetrics.totalAllocatedKb,
     topAllocationCategories: allocationMetrics.topAllocationCategories,
+    allocationCountByProcess: allocationMetrics.allocationCountByProcess,
+    memoryPressureSignal: summarizeMemoryPressureSignal(allocationMetrics.allocationRowCount, allocationMetrics.totalAllocatedKb, allocationMetrics.largestAllocationKb),
     captureScope,
   };
 
@@ -621,9 +707,27 @@ export function buildPerformanceNextSuggestions(summary: PerformanceStructuredSu
   }
   if (summary.likelyCategory === "cpu") {
     suggestions.push(`Inspect ${artifacts.summaryPath} for top scheduled process and hotspot slices first.`);
+    if (summary.cpu.topProcess && summary.cpu.topProcess !== "<unknown>") {
+      suggestions.push(`Prioritize hotspot slices owned by ${summary.cpu.topProcess} before chasing system-wide CPU noise.`);
+    }
+    const dominantHotspot = summary.cpu.topHotspots[0];
+    if (dominantHotspot?.processName) {
+      suggestions.push(`Start with hotspot '${dominantHotspot.name}' in process ${dominantHotspot.processName}; it currently ranks highest among captured slices.`);
+    }
   }
   if (summary.likelyCategory === "memory") {
     suggestions.push(`Inspect ${artifacts.summaryPath} for RSS or allocation signals before deeper trace exploration.`);
+    if (summary.memory.captureScope === "attached_process" && summary.memory.dominantProcess) {
+      suggestions.push(`Focus first on allocation categories owned by ${summary.memory.dominantProcess}; this capture was attached directly to that process.`);
+    }
+    if ((summary.memory.topAllocationCategories?.length ?? 0) > 0) {
+      suggestions.push(`Inspect allocation category '${summary.memory.topAllocationCategories?.[0]}' first; it is currently the strongest parsed memory category.`);
+    }
+    if (summary.memory.memoryPressureSignal === "growth_spike") {
+      suggestions.push(`The parsed memory shape looks spiky; inspect the largest allocation category and compare it against the exact user action window.`);
+    } else if (summary.memory.memoryPressureSignal === "steady") {
+      suggestions.push(`The parsed memory shape looks steady rather than spiky; compare allocation categories across repeated runs to check for persistent growth.`);
+    }
   }
   if (summary.likelyCategory === "unknown") {
     suggestions.push(`Inspect ${artifacts.reportPath} first; the MVP summary is inconclusive and may require manual trace review.`);
