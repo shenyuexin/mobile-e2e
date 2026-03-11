@@ -14,26 +14,28 @@ export MAESTRO_CLI_NO_ANALYTICS=1
 
 mkdir -p "$OUT_DIR"
 
-for i in $(seq 1 "$RUN_COUNT"); do
-  RUN_DIR="$OUT_DIR/run-$(printf '%03d' "$i")"
-  mkdir -p "$RUN_DIR"
+if [ "$RUN_COUNT" -gt 0 ]; then
+  for i in $(seq 1 "$RUN_COUNT"); do
+    RUN_DIR="$OUT_DIR/run-$(printf '%03d' "$i")"
+    mkdir -p "$RUN_DIR"
 
-  xcrun simctl terminate "$SIM_UDID" host.exp.Exponent || true
-  sleep 2
-  xcrun simctl openurl "$SIM_UDID" "$EXPO_URL"
-  sleep 10
+    xcrun simctl terminate "$SIM_UDID" host.exp.Exponent || true
+    sleep 2
+    xcrun simctl openurl "$SIM_UDID" "$EXPO_URL"
+    sleep 10
 
-  if maestro test --platform ios --udid "$SIM_UDID" --debug-output "$RUN_DIR/debug" "$FLOW" > "$RUN_DIR/maestro.out" 2>&1; then
-    printf 'PASS\n' > "$RUN_DIR/result.txt"
-  else
-    printf 'FAIL\n' > "$RUN_DIR/result.txt"
-  fi
+    if maestro test --platform ios --udid "$SIM_UDID" --debug-output "$RUN_DIR/debug" "$FLOW" > "$RUN_DIR/maestro.out" 2>&1; then
+      printf 'PASS\n' > "$RUN_DIR/result.txt"
+    else
+      printf 'FAIL\n' > "$RUN_DIR/result.txt"
+    fi
 
-  xcrun simctl io "$SIM_UDID" screenshot "$RUN_DIR/final-raw.png" >/dev/null 2>&1 || true
-  if [ -f "$RUN_DIR/final-raw.png" ]; then
-    sips -Z 1280 -s format jpeg -s formatOptions 75 "$RUN_DIR/final-raw.png" --out "$RUN_DIR/final.jpg" >/dev/null 2>&1 || true
-  fi
-done
+    xcrun simctl io "$SIM_UDID" screenshot "$RUN_DIR/final-raw.png" >/dev/null 2>&1 || true
+    if [ -f "$RUN_DIR/final-raw.png" ]; then
+      sips -Z 1280 -s format jpeg -s formatOptions 75 "$RUN_DIR/final-raw.png" --out "$RUN_DIR/final.jpg" >/dev/null 2>&1 || true
+    fi
+  done
+fi
 
 OUT_DIR="$OUT_DIR" python3 - <<'PY'
 import os

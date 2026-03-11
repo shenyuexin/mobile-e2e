@@ -21,7 +21,7 @@ if [ "$RUN_COUNT" -gt 0 ]; then
   fi
 
   if [ -f "$APK_PATH" ]; then
-    adb -s "$DEVICE_ID" install -r "$APK_PATH" >/dev/null
+    adb -s "$DEVICE_ID" install -r -d "$APK_PATH" >/dev/null
   fi
 fi
 
