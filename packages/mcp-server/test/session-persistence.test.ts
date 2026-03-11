@@ -65,7 +65,7 @@ test("end_session finalizes an existing persisted session record", async () => {
     assert.equal(stored.closed, true);
     assert.equal(stored.endedAt !== undefined, true);
     assert.deepEqual(stored.artifacts, ["artifacts/demo/output.txt"]);
-    assert.equal(stored.session.timeline.at(-1)?.type, "session_ended");
+    assert.equal(stored.session.timeline[stored.session.timeline.length - 1]?.type, "session_ended");
   } finally {
     await cleanupSessionArtifact(sessionId);
   }
@@ -116,6 +116,67 @@ test("end_session returns the persisted endedAt timestamp and stays idempotent",
     assert.ok(stored);
     assert.equal(stored.session.timeline.filter((event) => event.type === "session_ended").length, 1);
     assert.equal(stored.endedAt, firstResult.data.endedAt);
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
+});
+
+test("get_session_state persists latest known state into the session record", async () => {
+  const sessionId = "persisted-session-state-test";
+  await cleanupSessionArtifact(sessionId);
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", {
+      sessionId,
+      platform: "android",
+      profile: "phase1",
+    });
+
+    const result = await server.invoke("get_session_state", {
+      sessionId,
+      dryRun: true,
+    });
+
+    assert.equal(result.status, "success");
+
+    const stored = await loadSessionRecord(repoRoot, sessionId);
+    assert.ok(stored);
+    assert.equal(stored.session.latestStateSummary?.appPhase, "unknown");
+    assert.equal(stored.session.timeline[stored.session.timeline.length - 1]?.type, "state_summary_captured");
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
+});
+
+test("perform_action_with_evidence appends an action event to the persisted session", async () => {
+  const sessionId = "persisted-action-event-test";
+  await cleanupSessionArtifact(sessionId);
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", {
+      sessionId,
+      platform: "android",
+      profile: "phase1",
+    });
+
+    const actionResult = await server.invoke("perform_action_with_evidence", {
+      sessionId,
+      dryRun: true,
+      action: {
+        actionType: "tap_element",
+        contentDesc: "View products",
+      },
+    });
+
+    assert.equal(actionResult.status, "partial");
+
+    const stored = await loadSessionRecord(repoRoot, sessionId);
+    assert.ok(stored);
+    const lastEvent = stored.session.timeline[stored.session.timeline.length - 1];
+    assert.equal(lastEvent?.type, "action_outcome_recorded");
+    assert.equal(lastEvent?.actionId, actionResult.data.outcome.actionId);
   } finally {
     await cleanupSessionArtifact(sessionId);
   }

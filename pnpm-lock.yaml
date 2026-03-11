@@ -45,6 +45,9 @@ importers:
       '@mobile-e2e-mcp/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@mobile-e2e-mcp/core':
+        specifier: workspace:*
+        version: link:../core
       yaml:
         specifier: ^2.8.1
         version: 2.8.2

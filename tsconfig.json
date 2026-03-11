@@ -6,6 +6,9 @@
       "path": "./packages/contracts"
     },
     {
+      "path": "./packages/core"
+    },
+    {
       "path": "./packages/adapter-maestro"
     },
     {
