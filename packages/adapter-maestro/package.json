@@ -12,12 +12,13 @@
     }
   },
   "dependencies": {
+    "@mobile-e2e-mcp/core": "workspace:*",
     "@mobile-e2e-mcp/contracts": "workspace:*",
     "yaml": "^2.8.1"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm --filter @mobile-e2e-mcp/contracts build && pnpm --filter @mobile-e2e-mcp/core build && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/**/*.test.ts"
+    "test": "pnpm build && tsx --test test/**/*.test.ts"
   }
 }

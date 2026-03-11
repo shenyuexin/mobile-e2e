@@ -1,7 +1,11 @@
 import {
+  type ActionIntent,
+  type ActionOutcomeSummary,
   type AndroidPerformancePreset,
   type CollectDebugEvidenceData,
   type CollectDebugEvidenceInput,
+  type CompareAgainstBaselineData,
+  type CompareAgainstBaselineInput,
   type CaptureJsConsoleLogsData,
   type CaptureJsConsoleLogsInput,
   type JsConsoleLogSummary,
@@ -12,9 +16,22 @@ import {
   type CollectDiagnosticsData,
   type CollectDiagnosticsInput,
   type DebugSignalSummary,
+  type EvidenceDeltaSummary,
+  type ExplainLastFailureData,
+  type ExplainLastFailureInput,
+  type FailureAttribution,
+  type FailureSignature,
+  type FindSimilarFailuresData,
+  type FindSimilarFailuresInput,
   type GetCrashSignalsData,
   type GetCrashSignalsInput,
   type ExecutionEvidence,
+  type GetActionOutcomeData,
+  type GetActionOutcomeInput,
+  type GetScreenSummaryData,
+  type GetScreenSummaryInput,
+  type GetSessionStateData,
+  type GetSessionStateInput,
   type GetLogsData,
   type GetLogsInput,
   type InspectUiData,
@@ -43,12 +60,22 @@ import {
   type MeasureIosPerformanceData,
   type MeasureIosPerformanceInput,
   type Platform,
+  type PerformActionWithEvidenceData,
+  type PerformActionWithEvidenceInput,
   type QueryUiData,
   type QueryUiInput,
   type QueryUiMatch,
+  type RankFailureCandidatesData,
+  type RankFailureCandidatesInput,
+  type RecoverToKnownStateData,
+  type RecoverToKnownStateInput,
+  type RecoverySummary,
+  type ReplayLastStablePathData,
+  type ReplayLastStablePathInput,
   type ReasonCode,
   type RunFlowInput,
   type RunnerProfile,
+  type SessionTimelineEvent,
   type ScreenshotInput,
   type ScrollAndTapElementData,
   type ScrollAndTapElementInput,
@@ -63,6 +90,10 @@ import {
   type TypeTextInput,
   type TypeIntoElementData,
   type TypeIntoElementInput,
+  type SimilarFailure,
+  type StateSummary,
+  type SuggestKnownRemediationData,
+  type SuggestKnownRemediationInput,
   type UiOrchestrationStepResult,
   type UiScrollDirection,
   type WaitForUiData,
@@ -70,6 +101,7 @@ import {
   type WaitForUiMode,
   REASON_CODES,
 } from "@mobile-e2e-mcp/contracts";
+import { listActionRecordsForSession, loadActionRecord, loadBaselineIndex, loadFailureIndex, loadLatestActionRecordForSession, loadSessionRecord, recordBaselineEntry, recordFailureSignature, persistActionRecord, persistSessionState, queryTimelineAroundAction } from "@mobile-e2e-mcp/core";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -360,6 +392,269 @@ function mergeSignalSummaries(...summaries: Array<LogSummary | undefined>): Debu
   return [...merged.values()].sort((left, right) => right.count - left.count).slice(0, 10);
 }
 
+function uniqueNonEmpty(values: Array<string | undefined>, limit = 8): string[] {
+  return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))).slice(0, limit);
+}
+
+function toScreenId(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function detectBlockingSignals(visibleTexts: string[], candidateActions: string[]): string[] {
+  const signals = new Set<string>();
+  const combined = [...visibleTexts, ...candidateActions].map((value) => value.toLowerCase());
+
+  for (const value of combined) {
+    if (value.includes("allow") || value.includes("permission") || value.includes("while using") || value.includes("don\'t allow")) {
+      signals.add("permission_prompt");
+    }
+    if (value.includes("loading") || value.includes("please wait") || value.includes("signing in") || value.includes("progress")) {
+      signals.add("loading_indicator");
+    }
+    if (value.includes("try again") || value.includes("retry") || value.includes("failed") || value.includes("error")) {
+      signals.add("error_state");
+    }
+    if (value.includes("cancel") || value.includes("not now") || value.includes("ok") || value.includes("open settings")) {
+      signals.add("dialog_actions");
+    }
+  }
+
+  return [...signals].slice(0, 6);
+}
+
+function buildRecentFailures(logSummary?: LogSummary, crashSummary?: LogSummary): string[] {
+  return uniqueNonEmpty([
+    ...(crashSummary?.topSignals.map((signal) => signal.sample) ?? []),
+    ...(logSummary?.topSignals.map((signal) => signal.sample) ?? []),
+  ], 5);
+}
+
+function buildStateSummaryFromSignals(params: {
+  uiSummary?: InspectUiSummary;
+  logSummary?: LogSummary;
+  crashSummary?: LogSummary;
+}): StateSummary {
+  const sampleNodes = params.uiSummary?.sampleNodes ?? [];
+  const visibleTexts = uniqueNonEmpty(sampleNodes.flatMap((node) => [node.text, node.contentDesc]));
+  const candidateActions = uniqueNonEmpty(sampleNodes.filter((node) => node.clickable).flatMap((node) => [node.text, node.contentDesc, node.resourceId]));
+  const blockingSignals = detectBlockingSignals(visibleTexts, candidateActions);
+  const recentFailures = buildRecentFailures(params.logSummary, params.crashSummary);
+  const topCrash = params.crashSummary?.topSignals[0]?.sample?.toLowerCase();
+  const topLog = params.logSummary?.topSignals[0]?.sample?.toLowerCase();
+  const hasCrash = Boolean(topCrash && (topCrash.includes("crash") || topCrash.includes("fatal") || topCrash.includes("anr")));
+  const hasLoading = blockingSignals.includes("loading_indicator");
+  const hasInterruption = blockingSignals.includes("permission_prompt") || blockingSignals.includes("dialog_actions");
+  const hasErrorState = blockingSignals.includes("error_state") || Boolean(topLog && (topLog.includes("timeout") || topLog.includes("failed") || topLog.includes("error")));
+  const appPhase = hasCrash
+    ? "crashed"
+    : hasInterruption || hasErrorState
+      ? "blocked"
+      : hasLoading
+        ? "loading"
+        : (params.uiSummary?.totalNodes ?? 0) > 0
+          ? "ready"
+          : "unknown";
+  const readiness = hasInterruption
+    ? "interrupted"
+    : hasLoading
+      ? (topLog?.includes("network") || recentFailures.some((value) => value.toLowerCase().includes("http")) ? "waiting_network" : "waiting_ui")
+      : appPhase === "ready"
+        ? "ready"
+        : "unknown";
+  const screenTitle = visibleTexts[0] ?? candidateActions[0];
+
+  return {
+    screenId: toScreenId(screenTitle ?? visibleTexts.join("-")),
+    screenTitle,
+    appPhase,
+    readiness,
+    blockingSignals,
+    visibleTargetCount: params.uiSummary?.clickableNodes,
+    candidateActions,
+    recentFailures,
+    topVisibleTexts: visibleTexts,
+  };
+}
+
+function buildSessionStateTimelineEvent(params: {
+  screenSummary: StateSummary;
+  artifacts: string[];
+  dryRun: boolean;
+}): SessionTimelineEvent {
+  const timestamp = new Date().toISOString();
+  return {
+    eventId: `state-summary-${Date.now()}`,
+    timestamp,
+    type: "state_summary_captured",
+    detail: params.dryRun ? "Captured session state summary in dry-run mode." : "Captured session state summary.",
+    eventType: "state_summary",
+    layer: "state",
+    summary: params.screenSummary.screenTitle ?? params.screenSummary.appPhase,
+    artifactRefs: params.artifacts,
+    stateSummary: params.screenSummary,
+    evidenceCompleteness: {
+      level: params.artifacts.length >= 3 ? "complete" : params.artifacts.length > 0 ? "partial" : "missing",
+      capturedKinds: params.artifacts.map((artifactPath) => artifactPath.includes("ui-dumps") ? "ui_dump" : artifactPath.includes("logs") ? "log" : artifactPath.includes("crash") ? "crash_signal" : "debug_summary"),
+      missingEvidence: params.artifacts.length >= 3 ? [] : ["ui/log/crash evidence is not fully populated"],
+    },
+  };
+}
+
+function buildActionOutcomeConfidence(status: ToolResult["status"], stateChanged: boolean): number {
+  if (status === "success" && stateChanged) {
+    return 0.95;
+  }
+  if (status === "success") {
+    return 0.7;
+  }
+  if (status === "partial") {
+    return 0.45;
+  }
+  return 0.2;
+}
+
+function summarizeStateTransition(preState?: StateSummary, postState?: StateSummary): string {
+  if (!preState && !postState) {
+    return "State transition is unknown.";
+  }
+  if (!preState && postState) {
+    return `Observed new state ${postState.screenTitle ?? postState.appPhase}.`;
+  }
+  if (preState && !postState) {
+    return `Lost state visibility after action from ${preState.screenTitle ?? preState.appPhase}.`;
+  }
+  const changes: string[] = [];
+  if (preState?.screenTitle !== postState?.screenTitle) {
+    changes.push(`screen ${preState?.screenTitle ?? "<unknown>"} -> ${postState?.screenTitle ?? "<unknown>"}`);
+  }
+  if (preState?.appPhase !== postState?.appPhase) {
+    changes.push(`phase ${preState?.appPhase ?? "unknown"} -> ${postState?.appPhase ?? "unknown"}`);
+  }
+  if (preState?.readiness !== postState?.readiness) {
+    changes.push(`readiness ${preState?.readiness ?? "unknown"} -> ${postState?.readiness ?? "unknown"}`);
+  }
+  const preBlocking = preState?.blockingSignals.join(",") ?? "";
+  const postBlocking = postState?.blockingSignals.join(",") ?? "";
+  if (preBlocking !== postBlocking) {
+    changes.push(`blocking [${preBlocking}] -> [${postBlocking}]`);
+  }
+  return changes.length > 0 ? changes.join("; ") : "No visible state change detected.";
+}
+
+function buildActionEvidenceDelta(params: {
+  preState?: StateSummary;
+  postState?: StateSummary;
+  preLogSummary?: LogSummary;
+  postLogSummary?: LogSummary;
+  preCrashSummary?: LogSummary;
+  postCrashSummary?: LogSummary;
+}): EvidenceDeltaSummary {
+  const runtimeSignalsBefore = mergeSignalSummaries(params.preLogSummary, params.preCrashSummary).map((item) => item.sample);
+  const runtimeSignalsAfter = mergeSignalSummaries(params.postLogSummary, params.postCrashSummary).map((item) => item.sample);
+  const newSignals = runtimeSignalsAfter.filter((item) => !runtimeSignalsBefore.includes(item));
+  return {
+    uiDiffSummary: summarizeStateTransition(params.preState, params.postState),
+    logDeltaSummary: newSignals.length > 0 ? `New runtime signals: ${newSignals.slice(0, 3).join(" | ")}` : "No new high-confidence runtime signals after action.",
+    runtimeDeltaSummary: newSignals.length > 0 ? newSignals.slice(0, 3).join(" | ") : "No new runtime delta detected.",
+    networkDeltaSummary: undefined,
+  };
+}
+
+async function executeIntentWithMaestro(
+  params: {
+    sessionId: string;
+    platform: Platform;
+    runnerProfile: RunnerProfile;
+    harnessConfigPath?: string;
+    deviceId?: string;
+    appId?: string;
+    dryRun?: boolean;
+  },
+  action: ActionIntent,
+): Promise<ToolResult<TapElementData | TypeIntoElementData | WaitForUiData | LaunchAppData | TerminateAppData>> {
+  if (action.actionType === "tap_element") {
+    return tapElementWithMaestro({
+      sessionId: params.sessionId,
+      platform: params.platform,
+      runnerProfile: params.runnerProfile,
+      harnessConfigPath: params.harnessConfigPath,
+      deviceId: params.deviceId,
+      resourceId: action.resourceId,
+      contentDesc: action.contentDesc,
+      text: action.text,
+      className: action.className,
+      clickable: action.clickable,
+      limit: action.limit,
+      dryRun: params.dryRun,
+    });
+  }
+  if (action.actionType === "type_into_element") {
+    return typeIntoElementWithMaestro({
+      sessionId: params.sessionId,
+      platform: params.platform,
+      runnerProfile: params.runnerProfile,
+      harnessConfigPath: params.harnessConfigPath,
+      deviceId: params.deviceId,
+      resourceId: action.resourceId,
+      contentDesc: action.contentDesc,
+      text: action.text,
+      className: action.className,
+      clickable: action.clickable,
+      limit: action.limit,
+      value: action.value ?? "",
+      dryRun: params.dryRun,
+    });
+  }
+  if (action.actionType === "wait_for_ui") {
+    return waitForUiWithMaestro({
+      sessionId: params.sessionId,
+      platform: params.platform,
+      runnerProfile: params.runnerProfile,
+      harnessConfigPath: params.harnessConfigPath,
+      deviceId: params.deviceId,
+      resourceId: action.resourceId,
+      contentDesc: action.contentDesc,
+      text: action.text,
+      className: action.className,
+      clickable: action.clickable,
+      limit: action.limit,
+      timeoutMs: action.timeoutMs,
+      intervalMs: action.intervalMs,
+      waitUntil: action.waitUntil,
+      dryRun: params.dryRun,
+    });
+  }
+  if (action.actionType === "launch_app") {
+    return launchAppWithMaestro({
+      sessionId: params.sessionId,
+      platform: params.platform,
+      runnerProfile: params.runnerProfile,
+      harnessConfigPath: params.harnessConfigPath,
+      deviceId: params.deviceId,
+      appId: action.appId ?? params.appId,
+      launchUrl: action.launchUrl,
+      dryRun: params.dryRun,
+    });
+  }
+  return terminateAppWithMaestro({
+    sessionId: params.sessionId,
+    platform: params.platform,
+    runnerProfile: params.runnerProfile,
+    harnessConfigPath: params.harnessConfigPath,
+    deviceId: params.deviceId,
+    appId: action.appId ?? params.appId,
+    dryRun: params.dryRun,
+  });
+}
+
 function buildDebugNarrative(params: {
   appId?: string;
   appFilterApplied: boolean;
@@ -599,6 +894,906 @@ export async function describeCapabilitiesWithMaestro(
       capabilities,
     },
     nextSuggestions: ["Use the returned capability profile to pick tools before invoking platform-specific UI actions."],
+  };
+}
+
+export async function getScreenSummaryWithMaestro(
+  input: GetScreenSummaryInput,
+): Promise<ToolResult<GetScreenSummaryData>> {
+  const startTime = Date.now();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const inspectResult = await inspectUiWithMaestro({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    outputPath: input.outputPath,
+    dryRun: input.dryRun,
+  });
+  const includeDebugSignals = input.includeDebugSignals ?? false;
+  const logOutputPath = path.posix.join("artifacts", "state-summaries", input.sessionId, `${input.platform}-${runnerProfile}.logs.txt`);
+  const crashOutputPath = path.posix.join("artifacts", "state-summaries", input.sessionId, `${input.platform}-${runnerProfile}.crash.txt`);
+  const logResult = includeDebugSignals
+    ? await getLogsWithMaestro({
+      sessionId: input.sessionId,
+      platform: input.platform,
+      runnerProfile,
+      harnessConfigPath: input.harnessConfigPath,
+      deviceId: input.deviceId,
+      appId: input.appId,
+      outputPath: logOutputPath,
+      dryRun: input.dryRun,
+    })
+    : undefined;
+  const crashResult = includeDebugSignals
+    ? await getCrashSignalsWithMaestro({
+      sessionId: input.sessionId,
+      platform: input.platform,
+      runnerProfile,
+      harnessConfigPath: input.harnessConfigPath,
+      deviceId: input.deviceId,
+      appId: input.appId,
+      outputPath: crashOutputPath,
+      dryRun: input.dryRun,
+    })
+    : undefined;
+  const screenSummary = buildStateSummaryFromSignals({
+    uiSummary: inspectResult.data.summary,
+    logSummary: logResult?.data.summary,
+    crashSummary: crashResult?.data.summary,
+  });
+  const artifacts = Array.from(new Set([...inspectResult.artifacts, ...(logResult?.artifacts ?? []), ...(crashResult?.artifacts ?? [])]));
+  const evidence = [
+    ...(inspectResult.data.evidence ?? []),
+    ...(logResult?.data.evidence ?? []),
+    ...(crashResult?.data.evidence ?? []),
+  ];
+  const status = inspectResult.status === "failed"
+    ? "failed"
+    : ((logResult?.status === "failed" || crashResult?.status === "failed") ? "partial" : inspectResult.status);
+  const reasonCode = inspectResult.status === "failed"
+    ? inspectResult.reasonCode
+    : logResult?.status === "failed"
+      ? logResult.reasonCode
+      : crashResult?.status === "failed"
+        ? crashResult.reasonCode
+        : inspectResult.reasonCode;
+
+  return {
+    status,
+    reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1 + (logResult?.attempts ?? 0) + (crashResult?.attempts ?? 0),
+    artifacts,
+    data: {
+      dryRun: Boolean(input.dryRun),
+      runnerProfile,
+      outputPath: inspectResult.data.outputPath,
+      command: inspectResult.data.command,
+      exitCode: inspectResult.data.exitCode,
+      supportLevel: inspectResult.data.supportLevel,
+      summarySource: includeDebugSignals ? "ui_and_debug_signals" : "ui_only",
+      screenSummary,
+      evidence: evidence.length > 0 ? evidence : undefined,
+      content: inspectResult.data.content,
+      uiSummary: inspectResult.data.summary,
+      logSummary: logResult?.data.summary,
+      crashSummary: crashResult?.data.summary,
+    },
+    nextSuggestions: Array.from(new Set([
+      ...inspectResult.nextSuggestions,
+      ...(logResult?.nextSuggestions ?? []),
+      ...(crashResult?.nextSuggestions ?? []),
+    ])).slice(0, 5),
+  };
+}
+
+export async function getSessionStateWithMaestro(
+  input: GetSessionStateInput,
+): Promise<ToolResult<GetSessionStateData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
+  const platform = input.platform ?? sessionRecord?.session.platform;
+
+  if (!platform) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        platform: "android",
+        runnerProfile: input.runnerProfile ?? DEFAULT_RUNNER_PROFILE,
+        sessionRecordFound: false,
+        state: {
+          appPhase: "unknown",
+          readiness: "unknown",
+          blockingSignals: [],
+        },
+        capabilities: buildCapabilityProfile("android", input.runnerProfile ?? DEFAULT_RUNNER_PROFILE),
+        screenSummary: {
+          appPhase: "unknown",
+          readiness: "unknown",
+          blockingSignals: [],
+        },
+      },
+      nextSuggestions: ["Provide platform explicitly or call start_session first so get_session_state can infer session defaults."],
+    };
+  }
+
+  const runnerProfile = input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE;
+  const screenSummaryResult = await getScreenSummaryWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    includeDebugSignals: true,
+    dryRun: input.dryRun,
+  });
+  const capabilities = buildCapabilityProfile(platform, runnerProfile);
+  const persisted = sessionRecord && screenSummaryResult.status !== "failed"
+    ? await persistSessionState(
+      repoRoot,
+      input.sessionId,
+      screenSummaryResult.data.screenSummary,
+      buildSessionStateTimelineEvent({
+        screenSummary: screenSummaryResult.data.screenSummary,
+        artifacts: screenSummaryResult.artifacts,
+        dryRun: Boolean(input.dryRun),
+      }),
+      screenSummaryResult.artifacts,
+    )
+    : { updated: false as const, relativePath: undefined };
+  const artifacts = persisted.relativePath
+    ? Array.from(new Set([persisted.relativePath, ...screenSummaryResult.artifacts]))
+    : screenSummaryResult.artifacts;
+
+  return {
+    status: screenSummaryResult.status,
+    reasonCode: screenSummaryResult.reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: screenSummaryResult.attempts,
+    artifacts,
+    data: {
+      dryRun: Boolean(input.dryRun),
+      platform,
+      runnerProfile,
+      sessionRecordFound: Boolean(sessionRecord),
+      state: screenSummaryResult.data.screenSummary,
+      latestKnownState: sessionRecord?.session.latestStateSummary,
+      capabilities,
+      screenSummary: screenSummaryResult.data.screenSummary,
+      logSummary: screenSummaryResult.data.logSummary,
+      crashSummary: screenSummaryResult.data.crashSummary,
+      evidence: screenSummaryResult.data.evidence,
+    },
+    nextSuggestions: sessionRecord
+      ? screenSummaryResult.nextSuggestions
+      : Array.from(new Set([
+        "start_session before long-running execution if you want state snapshots persisted across tools.",
+        ...screenSummaryResult.nextSuggestions,
+      ])).slice(0, 5),
+  };
+}
+
+export async function performActionWithEvidenceWithMaestro(
+  input: PerformActionWithEvidenceInput,
+): Promise<ToolResult<PerformActionWithEvidenceData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
+  const platform = input.platform ?? sessionRecord?.session.platform;
+
+  if (!platform) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        sessionRecordFound: false,
+        outcome: {
+          actionId: `action-${Date.now()}`,
+          actionType: input.action.actionType,
+          resolutionStrategy: "deterministic",
+          stateChanged: false,
+          fallbackUsed: false,
+          retryCount: 0,
+          confidence: 0.1,
+          outcome: "unknown",
+        },
+        evidenceDelta: { uiDiffSummary: "Action was not executed because platform could not be resolved." },
+        lowLevelStatus: "failed",
+        lowLevelReasonCode: REASON_CODES.configurationError,
+      },
+      nextSuggestions: ["Provide platform explicitly or start a session before calling perform_action_with_evidence."],
+    };
+  }
+
+  const runnerProfile = input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE;
+  const preStateResult = await getScreenSummaryWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    includeDebugSignals: input.includeDebugSignals ?? true,
+    dryRun: input.dryRun,
+  });
+  const lowLevelResult = await executeIntentWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    dryRun: input.dryRun,
+  }, input.action);
+  const postStateResult = await getScreenSummaryWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    includeDebugSignals: input.includeDebugSignals ?? true,
+    dryRun: input.dryRun,
+  });
+  const preStateSummary = preStateResult.data.screenSummary;
+  const postStateSummary = postStateResult.data.screenSummary;
+  const stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
+  const actionId = `action-${Date.now()}`;
+  const evidenceDelta = buildActionEvidenceDelta({
+    preState: preStateSummary,
+    postState: postStateSummary,
+    preLogSummary: preStateResult.data.logSummary,
+    postLogSummary: postStateResult.data.logSummary,
+    preCrashSummary: preStateResult.data.crashSummary,
+    postCrashSummary: postStateResult.data.crashSummary,
+  });
+  const outcome: ActionOutcomeSummary = {
+    actionId,
+    actionType: input.action.actionType,
+    resolutionStrategy: "deterministic",
+    preState: preStateSummary,
+    postState: postStateSummary,
+    stateChanged,
+    fallbackUsed: false,
+    retryCount: 0,
+    confidence: buildActionOutcomeConfidence(lowLevelResult.status, stateChanged),
+    outcome: lowLevelResult.status === "success" ? "success" : lowLevelResult.status === "partial" ? "partial" : "failed",
+  };
+  const evidence = [
+    ...(preStateResult.data.evidence ?? []),
+    ...(postStateResult.data.evidence ?? []),
+  ];
+  const artifacts = Array.from(new Set([...preStateResult.artifacts, ...lowLevelResult.artifacts, ...postStateResult.artifacts]));
+  const actionEvent: SessionTimelineEvent = {
+    eventId: actionId,
+    timestamp: new Date().toISOString(),
+    type: "action_outcome_recorded",
+    detail: evidenceDelta.uiDiffSummary,
+    eventType: "action_outcome",
+    actionId,
+    layer: "action",
+    summary: `${input.action.actionType} -> ${outcome.outcome}`,
+    artifactRefs: artifacts,
+    stateSummary: postStateSummary,
+    evidenceCompleteness: {
+      level: artifacts.length >= 3 ? "complete" : artifacts.length > 0 ? "partial" : "missing",
+      capturedKinds: evidence.map((item) => item.kind),
+      missingEvidence: artifacts.length > 0 ? [] : ["pre/post evidence was not captured"],
+    },
+  };
+
+  if (sessionRecord) {
+    await persistSessionState(repoRoot, input.sessionId, postStateSummary, actionEvent, artifacts);
+  }
+  const persistedAction = await persistActionRecord(repoRoot, {
+    actionId,
+    sessionId: input.sessionId,
+    outcome,
+    evidenceDelta,
+    evidence,
+    lowLevelStatus: lowLevelResult.status,
+    lowLevelReasonCode: lowLevelResult.reasonCode,
+    updatedAt: new Date().toISOString(),
+  });
+  if (outcome.outcome === "success") {
+    await recordBaselineEntry(repoRoot, {
+      actionId,
+      sessionId: input.sessionId,
+      actionType: outcome.actionType,
+      screenId: outcome.postState?.screenId ?? outcome.preState?.screenId,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+  const allArtifacts = persistedAction.relativePath ? [persistedAction.relativePath, ...artifacts] : artifacts;
+
+  return {
+    status: lowLevelResult.status,
+    reasonCode: lowLevelResult.reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: allArtifacts,
+    data: {
+      sessionRecordFound: Boolean(sessionRecord),
+      outcome,
+      evidenceDelta,
+      preStateSummary,
+      postStateSummary,
+      lowLevelStatus: lowLevelResult.status,
+      lowLevelReasonCode: lowLevelResult.reasonCode,
+      evidence,
+    },
+    nextSuggestions: lowLevelResult.status === "success"
+      ? stateChanged
+        ? []
+        : ["Action transport succeeded but the app state did not change; inspect selector quality or blocking UI state."]
+      : ["Inspect the returned pre/post state summaries and action evidence before retrying the same action."],
+  };
+}
+
+export async function getActionOutcomeWithMaestro(
+  input: GetActionOutcomeInput,
+): Promise<ToolResult<GetActionOutcomeData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const record = await loadActionRecord(repoRoot, input.actionId);
+  const found = Boolean(record) && (input.sessionId === undefined || record?.sessionId === input.sessionId);
+
+  return {
+    status: found ? "success" : "failed",
+    reasonCode: found ? REASON_CODES.ok : REASON_CODES.configurationError,
+    sessionId: input.sessionId ?? record?.sessionId ?? input.actionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: found ? [`artifacts/actions/${input.actionId}.json`] : [],
+    data: found
+      ? {
+        found: true,
+        actionId: input.actionId,
+        sessionId: record?.sessionId,
+        outcome: record?.outcome,
+        evidenceDelta: record?.evidenceDelta,
+        evidence: record?.evidence,
+        lowLevelStatus: record?.lowLevelStatus,
+        lowLevelReasonCode: record?.lowLevelReasonCode,
+      }
+      : {
+        found: false,
+        actionId: input.actionId,
+        sessionId: input.sessionId,
+      },
+    nextSuggestions: found ? [] : ["Use perform_action_with_evidence first, then retrieve the action record by actionId."],
+  };
+}
+
+function buildFailureAttribution(params: {
+  outcome: ActionOutcomeSummary;
+  evidenceDelta?: EvidenceDeltaSummary;
+  surroundingEvents?: SessionTimelineEvent[];
+}): FailureAttribution {
+  const postState = params.outcome.postState;
+  const delta = params.evidenceDelta;
+  const candidateCauses: string[] = [];
+  let affectedLayer: FailureAttribution["affectedLayer"] = "unknown";
+  let mostLikelyCause = "The current evidence is too weak to assign a precise cause.";
+  let recommendedNextProbe = "Capture another bounded action with evidence to strengthen the timeline window.";
+  let recommendedRecovery = "Retry only after confirming the current state is stable.";
+
+  if (postState?.blockingSignals.some((signal) => signal === "permission_prompt" || signal === "dialog_actions")) {
+    affectedLayer = "interruption";
+    mostLikelyCause = `Blocking UI interruption detected: ${postState.blockingSignals.join(", ")}.`;
+    candidateCauses.push(mostLikelyCause);
+    recommendedNextProbe = "Inspect the latest screen summary for blocking dialog text and action buttons.";
+    recommendedRecovery = "Dismiss the interruption or grant the required permission, then replay the bounded action.";
+  } else if ((delta?.runtimeDeltaSummary ?? "").toLowerCase().includes("crash") || (delta?.runtimeDeltaSummary ?? "").toLowerCase().includes("anr")) {
+    affectedLayer = "crash";
+    mostLikelyCause = delta?.runtimeDeltaSummary ?? "Crash-like runtime signal detected after the action.";
+    candidateCauses.push(mostLikelyCause);
+    recommendedNextProbe = "Inspect crash-signal artifacts captured around the action window.";
+    recommendedRecovery = "Relaunch the app before retrying the same action.";
+  } else if ((delta?.runtimeDeltaSummary ?? "").toLowerCase().includes("network") || (delta?.logDeltaSummary ?? "").toLowerCase().includes("http")) {
+    affectedLayer = "network";
+    mostLikelyCause = delta?.logDeltaSummary ?? "New network-related signal detected after the action.";
+    candidateCauses.push(mostLikelyCause);
+    recommendedNextProbe = "Inspect JS/network deltas and backend response status around the action.";
+    recommendedRecovery = "Wait for network readiness or retry after the dependent request stabilizes.";
+  } else if ((delta?.runtimeDeltaSummary ?? "").toLowerCase().includes("exception") || (delta?.runtimeDeltaSummary ?? "").toLowerCase().includes("runtime")) {
+    affectedLayer = "runtime";
+    mostLikelyCause = delta?.runtimeDeltaSummary ?? "Runtime exception-like signal detected after the action.";
+    candidateCauses.push(mostLikelyCause);
+    recommendedNextProbe = "Inspect runtime and JS console deltas after the action.";
+    recommendedRecovery = "Stabilize the runtime error before retrying the same path.";
+  } else if (!params.outcome.stateChanged && ["tap_element", "type_into_element", "wait_for_ui"].includes(params.outcome.actionType)) {
+    affectedLayer = params.outcome.outcome === "partial" ? "ui_locator" : "ui_state";
+    mostLikelyCause = params.outcome.outcome === "partial"
+      ? "The selector-driven action did not execute fully, so locator ambiguity or unsupported resolution is most likely."
+      : "The selector resolved but the app state did not change after the action.";
+    candidateCauses.push(mostLikelyCause);
+    recommendedNextProbe = "Inspect the pre/post screen summaries and selector resolution outcome for the bounded action.";
+    recommendedRecovery = "Refine the selector or wait for a more stable screen before retrying.";
+  }
+
+  for (const event of params.surroundingEvents ?? []) {
+    if (event.type !== "action_outcome_recorded" && event.detail) {
+      candidateCauses.push(event.detail);
+    }
+  }
+
+  return {
+    affectedLayer,
+    mostLikelyCause,
+    candidateCauses: uniqueNonEmpty(candidateCauses, 5),
+    missingEvidence: params.outcome.preState && params.outcome.postState ? [] : ["pre/post state summaries are incomplete"],
+    recommendedNextProbe,
+    recommendedRecovery,
+  };
+}
+
+export async function explainLastFailureWithMaestro(
+  input: ExplainLastFailureInput,
+): Promise<ToolResult<ExplainLastFailureData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
+  const lastActionEvent = sessionRecord?.session.timeline.filter((event) => event.type === "action_outcome_recorded").slice(-1)[0];
+  const fallbackActionRecord = !lastActionEvent?.actionId ? await loadLatestActionRecordForSession(repoRoot, input.sessionId) : undefined;
+  const resolvedActionId = lastActionEvent?.actionId ?? fallbackActionRecord?.actionId;
+
+  if (!resolvedActionId) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { found: false },
+      nextSuggestions: ["Run perform_action_with_evidence first so the session contains an attributable action window."],
+    };
+  }
+
+  const record = fallbackActionRecord ?? await loadActionRecord(repoRoot, resolvedActionId);
+  if (!record) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+        data: { found: false, actionId: resolvedActionId },
+      nextSuggestions: ["The session references an actionId without a persisted action record; rerun the bounded action."],
+    };
+  }
+
+  const timelineWindow = sessionRecord ? await queryTimelineAroundAction(repoRoot, input.sessionId, resolvedActionId) : { surroundingEvents: [] };
+  const attribution = buildFailureAttribution({
+    outcome: record.outcome,
+    evidenceDelta: record.evidenceDelta,
+    surroundingEvents: timelineWindow.surroundingEvents,
+  });
+  await recordFailureSignature(repoRoot, {
+    actionId: resolvedActionId,
+    sessionId: input.sessionId,
+    signature: buildFailureSignature({
+      outcome: record.outcome,
+      attribution,
+      evidenceDelta: record.evidenceDelta,
+    }),
+    remediation: [attribution.recommendedRecovery, attribution.recommendedNextProbe].filter((value): value is string => Boolean(value)),
+    updatedAt: new Date().toISOString(),
+  });
+  const status = record.outcome.outcome === "success" ? "partial" : "success";
+
+  return {
+    status,
+    reasonCode: REASON_CODES.ok,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [`artifacts/actions/${resolvedActionId}.json`],
+    data: {
+      found: true,
+      actionId: resolvedActionId,
+      outcome: record.outcome,
+      attribution,
+    },
+    nextSuggestions: status === "success" ? [] : ["The last recorded action succeeded; use rank_failure_candidates only when the latest action window is actually problematic."],
+  };
+}
+
+export async function rankFailureCandidatesWithMaestro(
+  input: RankFailureCandidatesInput,
+): Promise<ToolResult<RankFailureCandidatesData>> {
+  const explained = await explainLastFailureWithMaestro({ sessionId: input.sessionId });
+  if (explained.status === "failed") {
+    return {
+      status: "failed",
+      reasonCode: explained.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: explained.durationMs,
+      attempts: 1,
+      artifacts: explained.artifacts,
+      data: { found: false, candidates: [] },
+      nextSuggestions: explained.nextSuggestions,
+    };
+  }
+
+  const primary = explained.data.attribution;
+  const candidates: FailureAttribution[] = primary
+    ? [
+      primary,
+      {
+        ...primary,
+        affectedLayer: primary.affectedLayer === "unknown" ? "ui_state" : "unknown",
+        mostLikelyCause: primary.affectedLayer === "unknown" ? "No strong signal exists, but unchanged UI suggests a stale app state candidate." : "Unknown remains plausible because evidence is still incomplete.",
+      },
+    ]
+    : [];
+
+  return {
+    status: explained.status,
+    reasonCode: explained.reasonCode,
+    sessionId: input.sessionId,
+    durationMs: explained.durationMs,
+    attempts: 1,
+    artifacts: explained.artifacts,
+    data: {
+      found: Boolean(primary),
+      actionId: explained.data.actionId,
+      candidates,
+    },
+    nextSuggestions: explained.nextSuggestions,
+  };
+}
+
+function buildRecoveryTimelineEvent(summary: RecoverySummary, artifacts: string[]): SessionTimelineEvent {
+  return {
+    eventId: `recovery-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    type: "recovery_attempted",
+    detail: summary.note,
+    eventType: "recovery",
+    layer: "action",
+    summary: `${summary.strategy} -> ${summary.recovered ? "recovered" : "not_recovered"}`,
+    artifactRefs: artifacts,
+    stateSummary: summary.stateAfter ?? summary.stateBefore,
+  };
+}
+
+function topRuntimeSignal(delta?: EvidenceDeltaSummary): string | undefined {
+  return delta?.runtimeDeltaSummary ?? delta?.logDeltaSummary;
+}
+
+function buildFailureSignature(params: {
+  outcome: ActionOutcomeSummary;
+  attribution: FailureAttribution;
+  evidenceDelta?: EvidenceDeltaSummary;
+}): FailureSignature {
+  return {
+    actionType: params.outcome.actionType,
+    screenId: params.outcome.postState?.screenId ?? params.outcome.preState?.screenId,
+    affectedLayer: params.attribution.affectedLayer,
+    topSignal: topRuntimeSignal(params.evidenceDelta),
+    interruptionCategory: params.outcome.postState?.blockingSignals[0],
+  };
+}
+
+function scoreSimilarFailure(left: FailureSignature, right: FailureSignature): number {
+  let score = 0;
+  if (left.actionType === right.actionType) score += 3;
+  if (left.affectedLayer === right.affectedLayer) score += 3;
+  if (left.screenId && left.screenId === right.screenId) score += 2;
+  if (left.interruptionCategory && left.interruptionCategory === right.interruptionCategory) score += 1;
+  if (left.topSignal && right.topSignal && left.topSignal === right.topSignal) score += 2;
+  return score;
+}
+
+export async function recoverToKnownStateWithMaestro(
+  input: RecoverToKnownStateInput,
+): Promise<ToolResult<RecoverToKnownStateData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
+  const platform = input.platform ?? sessionRecord?.session.platform;
+  if (!platform) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { summary: { strategy: "none", recovered: false, note: "Platform could not be resolved for recovery." } },
+      nextSuggestions: ["Provide platform explicitly or start a session before invoking recover_to_known_state."],
+    };
+  }
+
+  const runnerProfile = input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE;
+  const before = await getSessionStateWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    dryRun: input.dryRun,
+  });
+  let strategy: RecoverySummary["strategy"] = "none";
+  let note = "State is already considered ready enough; no bounded recovery was required.";
+  let artifacts = [...before.artifacts];
+  let status: ToolResult["status"] = "success";
+  let reasonCode: ReasonCode = REASON_CODES.ok;
+
+  if (before.data.state.appPhase === "crashed" || before.data.state.blockingSignals.includes("error_state")) {
+    strategy = "relaunch_app";
+    const result = await launchAppWithMaestro({
+      sessionId: input.sessionId,
+      platform,
+      runnerProfile,
+      harnessConfigPath: input.harnessConfigPath,
+      deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+      appId: input.appId ?? sessionRecord?.session.appId,
+      dryRun: input.dryRun,
+    });
+    artifacts = Array.from(new Set([...artifacts, ...result.artifacts]));
+    status = result.status;
+    reasonCode = result.reasonCode;
+    note = "Recovery relaunched the app because the session looked crashed or error-blocked.";
+  } else if (before.data.state.readiness === "waiting_network" || before.data.state.readiness === "waiting_ui" || before.data.state.appPhase === "loading") {
+    strategy = "wait_until_ready";
+    note = "Recovery re-sampled session state waiting for the screen to stabilize.";
+  }
+
+  const after = await getSessionStateWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    dryRun: input.dryRun,
+  });
+  artifacts = Array.from(new Set([...artifacts, ...after.artifacts]));
+  const recovered = after.data.state.readiness === "ready" || after.data.state.appPhase === "ready";
+  const summary: RecoverySummary = {
+    strategy,
+    recovered,
+    note,
+    stateBefore: before.data.state,
+    stateAfter: after.data.state,
+  };
+
+  if (sessionRecord) {
+    await persistSessionState(repoRoot, input.sessionId, after.data.state, buildRecoveryTimelineEvent(summary, artifacts), artifacts);
+  }
+
+  return {
+    status,
+    reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts,
+    data: { summary },
+    nextSuggestions: recovered ? [] : ["Recovery stopped at a deterministic boundary; inspect the latest state summary before escalating."],
+  };
+}
+
+export async function replayLastStablePathWithMaestro(
+  input: ReplayLastStablePathInput,
+): Promise<ToolResult<ReplayLastStablePathData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
+  const platform = input.platform ?? sessionRecord?.session.platform;
+  if (!platform) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { summary: { strategy: "replay_last_successful_action", recovered: false, note: "Platform could not be resolved for replay." } },
+      nextSuggestions: ["Provide platform explicitly or start a session before invoking replay_last_stable_path."],
+    };
+  }
+
+  const stableRecord = (await listActionRecordsForSession(repoRoot, input.sessionId)).find((record: { outcome: ActionOutcomeSummary }) => record.outcome.outcome === "success");
+  if (!stableRecord) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { summary: { strategy: "replay_last_successful_action", recovered: false, note: "No stable successful action was recorded for this session." } },
+      nextSuggestions: ["Record at least one successful perform_action_with_evidence step before replaying a stable path."],
+    };
+  }
+
+  const replayed = await performActionWithEvidenceWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile: input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    action: {
+      actionType: stableRecord.outcome.actionType,
+      resourceId: stableRecord.outcome.postState?.screenId,
+    },
+    dryRun: input.dryRun,
+  });
+  const summary: RecoverySummary = {
+    strategy: "replay_last_successful_action",
+    recovered: replayed.status !== "failed",
+    note: "Recovery replayed the last successful bounded action from local session history.",
+    stateBefore: stableRecord.outcome.preState,
+    stateAfter: replayed.data.postStateSummary,
+    replayedActionId: stableRecord.actionId,
+  };
+
+  return {
+    status: replayed.status,
+    reasonCode: replayed.reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: replayed.artifacts,
+    data: { summary, replayedOutcome: replayed.data.outcome },
+    nextSuggestions: replayed.nextSuggestions,
+  };
+}
+
+export async function findSimilarFailuresWithMaestro(
+  input: FindSimilarFailuresInput,
+): Promise<ToolResult<FindSimilarFailuresData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const actionId = input.actionId ?? (await loadLatestActionRecordForSession(repoRoot, input.sessionId))?.actionId;
+  if (!actionId) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { found: false, similarFailures: [] },
+      nextSuggestions: ["Explain or record a failed action first so a failure signature exists."],
+    };
+  }
+
+  const explained = await explainLastFailureWithMaestro({ sessionId: input.sessionId });
+  const signature = explained.data.attribution && explained.data.outcome
+    ? buildFailureSignature({ outcome: explained.data.outcome, attribution: explained.data.attribution, evidenceDelta: (await loadActionRecord(repoRoot, actionId))?.evidenceDelta })
+    : undefined;
+  const failureIndex = await loadFailureIndex(repoRoot);
+  const similarFailures: SimilarFailure[] = signature
+    ? failureIndex
+      .filter((entry) => entry.actionId !== actionId)
+      .map((entry) => ({
+        actionId: entry.actionId,
+        sessionId: entry.sessionId,
+        signature: entry.signature,
+        matchScore: scoreSimilarFailure(signature, entry.signature),
+      }))
+      .filter((entry) => entry.matchScore > 0)
+      .sort((left, right) => right.matchScore - left.matchScore)
+      .slice(0, 5)
+    : [];
+
+  return {
+    status: "success",
+    reasonCode: REASON_CODES.ok,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [],
+    data: { found: Boolean(signature), actionId, signature, similarFailures },
+    nextSuggestions: similarFailures.length > 0 ? [] : ["No strong similar failures were indexed yet; build more local history or inspect the baseline diff next."],
+  };
+}
+
+export async function compareAgainstBaselineWithMaestro(
+  input: CompareAgainstBaselineInput,
+): Promise<ToolResult<CompareAgainstBaselineData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const current = input.actionId ? await loadActionRecord(repoRoot, input.actionId) : await loadLatestActionRecordForSession(repoRoot, input.sessionId);
+  if (!current) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { found: false },
+      nextSuggestions: ["Record an action outcome before comparing it against a baseline."],
+    };
+  }
+
+  const baselines = await loadBaselineIndex(repoRoot);
+  const baseline = baselines.find((entry) => entry.actionType === current.outcome.actionType && entry.actionId !== current.actionId);
+  const differences: string[] = [];
+  if (baseline) {
+    if ((current.outcome.postState?.screenId ?? current.outcome.preState?.screenId) !== baseline.screenId) {
+      differences.push(`screen ${current.outcome.postState?.screenId ?? current.outcome.preState?.screenId ?? "unknown"} != ${baseline.screenId ?? "unknown"}`);
+    }
+    if (current.outcome.outcome !== "success") {
+      differences.push(`outcome ${current.outcome.outcome} differs from successful baseline`);
+    }
+  }
+
+  return {
+    status: "success",
+    reasonCode: REASON_CODES.ok,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      found: Boolean(baseline),
+      actionId: current.actionId,
+      comparison: {
+        baselineActionId: baseline?.actionId,
+        comparedActionId: current.actionId,
+        differences,
+        matched: differences.length === 0 && Boolean(baseline),
+      },
+    },
+    nextSuggestions: baseline ? [] : ["No successful baseline exists yet for this action type; create one by recording a successful bounded action."],
+  };
+}
+
+export async function suggestKnownRemediationWithMaestro(
+  input: SuggestKnownRemediationInput,
+): Promise<ToolResult<SuggestKnownRemediationData>> {
+  const similar = await findSimilarFailuresWithMaestro({ sessionId: input.sessionId, actionId: input.actionId });
+  const baseline = await compareAgainstBaselineWithMaestro({ sessionId: input.sessionId, actionId: input.actionId });
+  const repoRoot = resolveRepoPath();
+  const failureIndex = await loadFailureIndex(repoRoot);
+  const actionId = similar.data.actionId ?? baseline.data.actionId;
+  const indexedRemediation = actionId ? failureIndex.find((entry) => entry.actionId === actionId)?.remediation ?? [] : [];
+  const remediation = uniqueNonEmpty([
+    ...indexedRemediation,
+    ...(similar.data.similarFailures.length > 0 ? ["This failure resembles previous incidents; inspect the closest matching signature before changing selectors."] : []),
+    ...(baseline.data.comparison?.differences.length ? ["Current action diverges from a successful baseline; inspect the listed differences first."] : []),
+  ], 5);
+
+  return {
+    status: "success",
+    reasonCode: REASON_CODES.ok,
+    sessionId: input.sessionId,
+    durationMs: 0,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      found: remediation.length > 0,
+      actionId,
+      remediation,
+    },
+    nextSuggestions: remediation.length > 0 ? [] : ["No known remediation was indexed yet; explain the failure first to seed local memory."],
   };
 }
 
@@ -3717,6 +4912,40 @@ async function resolveAndroidSdkLevel(repoRoot: string, deviceId: string): Promi
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+async function resolveIosSimulatorProcessId(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
+  const execution = await runCommandSafely([
+    "xcrun",
+    "simctl",
+    "spawn",
+    deviceId,
+    "launchctl",
+    "list",
+  ], repoRoot, DEFAULT_DEVICE_COMMAND_TIMEOUT_MS);
+  if (execution.exitCode !== 0) {
+    return undefined;
+  }
+  const lines = execution.stdout.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
+  const match = lines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .find((line) => line.includes(appId));
+  if (!match) {
+    return undefined;
+  }
+  const pid = match.split(String.fromCharCode(9))[0]?.trim();
+  return pid && /^\d+$/.test(pid) ? pid : undefined;
+}
+
+async function launchIosSimulatorApp(repoRoot: string, deviceId: string, appId: string): Promise<CommandExecution> {
+  return runCommandSafely([
+    "xcrun",
+    "simctl",
+    "launch",
+    deviceId,
+    appId,
+  ], repoRoot, DEFAULT_DEVICE_COMMAND_TIMEOUT_MS);
+}
+
 export function isPerfettoShellProbeAvailable(execution: CommandExecution): boolean {
   const output = execution.stdout.trim();
   return execution.exitCode === 0 && output.length > 0 && output !== "missing";
@@ -4213,10 +5442,27 @@ function buildIosTemplateSuggestion(template: IosPerformanceTemplate): string {
   return "Inspect the exported Time Profiler tables next; this template is best for CPU-heavy windows.";
 }
 
-function buildIosAppScopeNote(appId?: string): string {
+function buildIosAppScopeNote(appId?: string, attachTarget?: string): string {
+  if (attachTarget && appId) {
+    return `iOS MVP note: appId '${appId}' was attached by pid ${attachTarget} for this run, but other templates may still fall back to all-process capture.`;
+  }
   return appId
     ? `iOS MVP note: appId '${appId}' is currently used for labeling only; xctrace capture still records all processes in the selected time window.`
     : "iOS MVP note: xctrace capture records all processes in the selected time window unless a narrower launch/attach flow is added later.";
+}
+
+function buildIosRecordFailureSuggestions(appId: string | undefined, template: IosPerformanceTemplate, stderr: string, attachTarget?: string): string[] {
+  const suggestions: string[] = [];
+  const lowered = stderr.toLowerCase();
+  if (lowered.includes("not supported on this platform")) {
+    suggestions.push(`The ${template} template is not supported on this simulator/runtime combination; try a different simulator or keep using Time Profiler for MVP validation.`);
+  } else if (lowered.includes("cannot handle a target type of 'all processes'")) {
+    suggestions.push(`The ${template} template cannot record All Processes; keep the target app running so the tool can attach directly by pid.`);
+  } else {
+    suggestions.push("xctrace recording failed. Ensure the simulator/device is available and retry the sampled window.");
+  }
+  suggestions.push(buildIosAppScopeNote(appId, attachTarget));
+  return suggestions;
 }
 
 export async function measureIosPerformanceWithMaestro(input: MeasureIosPerformanceInput): Promise<ToolResult<MeasureIosPerformanceData>> {
@@ -4226,7 +5472,15 @@ export async function measureIosPerformanceWithMaestro(input: MeasureIosPerforma
   const selection = await loadHarnessSelection(repoRoot, "ios", runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
   const deviceId = input.deviceId ?? selection.deviceId ?? "ADA078B9-3C6B-4875-8B85-A7789F368816";
   const appId = input.appId ?? selection.appId;
-  const plan = buildIosPerformancePlan({ ...input, appId }, runnerProfile, deviceId);
+  const requestedTemplate = input.template ?? "time-profiler";
+  let attachTarget = !input.dryRun && requestedTemplate === "memory" && appId
+    ? await resolveIosSimulatorProcessId(repoRoot, deviceId, appId)
+    : undefined;
+  if (!input.dryRun && requestedTemplate === "memory" && appId && !attachTarget) {
+    await launchIosSimulatorApp(repoRoot, deviceId, appId);
+    attachTarget = await resolveIosSimulatorProcessId(repoRoot, deviceId, appId);
+  }
+  const plan = buildIosPerformancePlan({ ...input, appId }, runnerProfile, deviceId, attachTarget);
   const supportLevel: "partial" = "partial";
 
   await mkdir(path.resolve(repoRoot, plan.outputPath), { recursive: true });
@@ -4261,7 +5515,7 @@ export async function measureIosPerformanceWithMaestro(input: MeasureIosPerforma
       data,
       nextSuggestions: [
         "Run measure_ios_performance without dryRun to capture an xctrace bundle.",
-        buildIosAppScopeNote(appId),
+        buildIosAppScopeNote(appId, attachTarget),
         buildIosTemplateSuggestion(plan.template),
       ],
     };
@@ -4295,7 +5549,7 @@ export async function measureIosPerformanceWithMaestro(input: MeasureIosPerforma
       attempts: 1,
       artifacts: [],
       data,
-      nextSuggestions: ["xctrace recording failed. Ensure the simulator/device is available and retry the sampled window.", buildIosAppScopeNote(appId)],
+      nextSuggestions: buildIosRecordFailureSuggestions(appId, plan.template, `${recordExecution.stderr}\n${recordExecution.stdout}`, attachTarget),
     };
   }
 
@@ -4357,7 +5611,7 @@ export async function measureIosPerformanceWithMaestro(input: MeasureIosPerforma
     attempts: 1,
     artifacts: data.artifactPaths,
     data,
-    nextSuggestions: [...buildPerformanceNextSuggestions(data.summary, plan.artifacts), buildIosAppScopeNote(appId), buildIosTemplateSuggestion(plan.template)],
+    nextSuggestions: [...buildPerformanceNextSuggestions(data.summary, plan.artifacts), buildIosAppScopeNote(appId, attachTarget), buildIosTemplateSuggestion(plan.template)],
   };
 }
 
