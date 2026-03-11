@@ -191,6 +191,7 @@ test("handleRequest supports tools/call alias for perform_action_with_evidence",
         sessionId: "stdio-action-evidence-dry-run",
         platform: "android",
         dryRun: true,
+        autoRemediate: true,
         action: {
           actionType: "tap_element",
           contentDesc: "View products",
@@ -201,13 +202,14 @@ test("handleRequest supports tools/call alias for perform_action_with_evidence",
   const typedResult = result as {
     status: string;
     reasonCode: string;
-    data: { outcome: { actionType: string; actionId: string } };
+    data: { outcome: { actionType: string; actionId: string }; autoRemediation?: { stopReason: string } };
   };
 
   assert.equal(typedResult.status, "partial");
   assert.equal(typedResult.reasonCode, "UNSUPPORTED_OPERATION");
   assert.equal(typedResult.data.outcome.actionType, "tap_element");
   assert.equal(typeof typedResult.data.outcome.actionId, "string");
+  assert.equal(typeof typedResult.data.autoRemediation?.stopReason, "string");
 });
 
 test("handleRequest supports tools/call alias for get_action_outcome", async () => {

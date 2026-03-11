@@ -71,6 +71,7 @@ test("parseCliArgs captures describe_capabilities flags", () => {
 test("parseCliArgs captures perform_action_with_evidence flags", () => {
   const options = parseCliArgs([
     "--perform-action-with-evidence",
+    "--auto-remediate",
     "--platform", "android",
     "--action-type", "tap_element",
     "--content-desc", "View products",
@@ -78,6 +79,7 @@ test("parseCliArgs captures perform_action_with_evidence flags", () => {
   ]);
 
   assert.equal(options.performActionWithEvidence, true);
+  assert.equal(options.autoRemediate, true);
   assert.equal(options.actionType, "tap_element");
   assert.equal(options.queryContentDesc, "View products");
   assert.equal(options.dryRun, true);
@@ -607,18 +609,20 @@ test("main dispatches describe_capabilities through the CLI", async () => {
 test("main dispatches perform_action_with_evidence Android dry-run through the CLI", async () => {
   const output = await runCli([
     "--perform-action-with-evidence",
+    "--auto-remediate",
     "--platform", "android",
     "--action-type", "tap_element",
     "--content-desc", "View products",
     "--dry-run",
   ]) as {
-    performActionWithEvidenceResult: { status: string; reasonCode: string; data: { outcome: { actionType: string; actionId: string } } };
+    performActionWithEvidenceResult: { status: string; reasonCode: string; data: { outcome: { actionType: string; actionId: string }; autoRemediation?: { stopReason: string } } };
   };
 
   assert.equal(output.performActionWithEvidenceResult.status, "partial");
   assert.equal(output.performActionWithEvidenceResult.reasonCode, "UNSUPPORTED_OPERATION");
   assert.equal(output.performActionWithEvidenceResult.data.outcome.actionType, "tap_element");
   assert.equal(typeof output.performActionWithEvidenceResult.data.outcome.actionId, "string");
+  assert.equal(typeof output.performActionWithEvidenceResult.data.autoRemediation?.stopReason, "string");
 });
 
 test("main dispatches get_action_outcome through the CLI", async () => {

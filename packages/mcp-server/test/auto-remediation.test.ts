@@ -1,0 +1,247 @@
+import assert from "node:assert/strict";
+import { rm } from "node:fs/promises";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { buildSessionAuditRelativePath, buildSessionRecordRelativePath, loadSessionRecord } from "@mobile-e2e-mcp/core";
+import { REASON_CODES, type FailureAttribution, type PerformActionWithEvidenceData, type PerformActionWithEvidenceInput, type ToolResult } from "@mobile-e2e-mcp/contracts";
+import { createServer } from "../src/index.ts";
+import { performActionWithAutoRemediation } from "../src/tools/perform-action-with-auto-remediation.ts";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+
+async function cleanupSessionArtifacts(sessionId: string): Promise<void> {
+  await rm(path.resolve(repoRoot, buildSessionRecordRelativePath(sessionId)), { force: true });
+  await rm(path.resolve(repoRoot, buildSessionAuditRelativePath(sessionId)), { force: true });
+}
+
+function buildBasePerformActionResult(params: {
+  sessionId: string;
+  status: ToolResult<PerformActionWithEvidenceData>["status"];
+  actionId: string;
+  actionType?: PerformActionWithEvidenceInput["action"]["actionType"];
+  appPhase?: "loading" | "crashed" | "unknown" | "ready";
+  readiness?: "waiting_ui" | "waiting_network" | "unknown" | "ready" | "interrupted";
+}): ToolResult<PerformActionWithEvidenceData> {
+  return {
+    status: params.status,
+    reasonCode: params.status === "failed" ? REASON_CODES.adapterError : REASON_CODES.unsupportedOperation,
+    sessionId: params.sessionId,
+    durationMs: 5,
+    attempts: 1,
+    artifacts: [`artifacts/actions/${params.actionId}.json`],
+    data: {
+      sessionRecordFound: true,
+      outcome: {
+        actionId: params.actionId,
+        actionType: params.actionType ?? "tap_element",
+        resolutionStrategy: "deterministic",
+        preState: {
+          appPhase: "ready",
+          readiness: "ready",
+          blockingSignals: [],
+        },
+        postState: {
+          appPhase: params.appPhase ?? "unknown",
+          readiness: params.readiness ?? "unknown",
+          blockingSignals: [],
+        },
+        stateChanged: false,
+        fallbackUsed: false,
+        retryCount: 0,
+        confidence: 0.2,
+        outcome: params.status === "success" ? "success" : params.status,
+      },
+      evidenceDelta: {
+        runtimeDeltaSummary: params.appPhase === "crashed" ? "crash signal detected" : undefined,
+      },
+      preStateSummary: {
+        appPhase: "ready",
+        readiness: "ready",
+        blockingSignals: [],
+      },
+      postStateSummary: {
+        appPhase: params.appPhase ?? "unknown",
+        readiness: params.readiness ?? "unknown",
+        blockingSignals: [],
+      },
+      lowLevelStatus: params.status,
+      lowLevelReasonCode: params.status === "failed" ? REASON_CODES.adapterError : REASON_CODES.unsupportedOperation,
+      evidence: [],
+      sessionAuditPath: buildSessionAuditRelativePath(params.sessionId),
+    },
+    nextSuggestions: [],
+  };
+}
+
+function buildAttribution(affectedLayer: FailureAttribution["affectedLayer"]): FailureAttribution {
+  return {
+    affectedLayer,
+    mostLikelyCause: `layer=${affectedLayer}`,
+    candidateCauses: [`layer=${affectedLayer}`],
+    missingEvidence: [],
+    recommendedNextProbe: "inspect",
+    recommendedRecovery: affectedLayer === "interruption" ? "Replay the bounded action once." : "Recover to known state.",
+  };
+}
+
+test("performActionWithAutoRemediation short-circuits when the action already succeeded", async () => {
+  const sessionId = `auto-remediation-success-${Date.now()}`;
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    const result = await performActionWithAutoRemediation(
+      {
+        sessionId,
+        platform: "android",
+        dryRun: true,
+        autoRemediate: true,
+        action: { actionType: "launch_app", appId: "host.exp.exponent" },
+      },
+      {
+        performAction: async () => buildBasePerformActionResult({ sessionId, status: "success", actionId: "auto-success", actionType: "launch_app", appPhase: "ready", readiness: "ready" }),
+        explainLastFailure: async () => { throw new Error("explain should not run"); },
+        rankFailureCandidates: async () => { throw new Error("rank should not run"); },
+        suggestKnownRemediation: async () => { throw new Error("suggest should not run"); },
+        recoverToKnownState: async () => { throw new Error("recover should not run"); },
+        replayLastStablePath: async () => { throw new Error("replay should not run"); },
+      },
+    );
+
+    assert.equal(result.data.autoRemediation?.stopReason, "action_succeeded");
+    assert.equal(result.data.autoRemediation?.attempted, false);
+  } finally {
+    await cleanupSessionArtifacts(sessionId);
+  }
+});
+
+test("performActionWithAutoRemediation executes one bounded recovery attempt for allowlisted crash attribution", async () => {
+  const sessionId = `auto-remediation-crash-${Date.now()}`;
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    const result = await performActionWithAutoRemediation(
+      {
+        sessionId,
+        platform: "android",
+        dryRun: true,
+        autoRemediate: true,
+        action: { actionType: "tap_element", contentDesc: "View products" },
+      },
+      {
+        performAction: async () => buildBasePerformActionResult({ sessionId, status: "failed", actionId: "auto-crash", appPhase: "crashed", readiness: "unknown" }),
+        explainLastFailure: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-crash", attribution: buildAttribution("crash") }, nextSuggestions: [] }),
+        rankFailureCandidates: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-crash", candidates: [buildAttribution("crash")] }, nextSuggestions: [] }),
+        suggestKnownRemediation: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-crash", remediation: ["Recover to known state."] }, nextSuggestions: [] }),
+        recoverToKnownState: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: ["artifacts/recovery/relaunch.txt"], data: { summary: { strategy: "relaunch_app", recovered: true, note: "Recovered after one relaunch.", stateBefore: { appPhase: "crashed", readiness: "unknown", blockingSignals: [] }, stateAfter: { appPhase: "ready", readiness: "ready", blockingSignals: [] } } }, nextSuggestions: [] }),
+        replayLastStablePath: async () => { throw new Error("replay should not run"); },
+      },
+    );
+
+    assert.equal(result.data.autoRemediation?.attempted, true);
+    assert.equal(result.data.autoRemediation?.selectedRecovery, "relaunch_app");
+    assert.equal(result.data.autoRemediation?.stopReason, "recovered");
+    const stored = await loadSessionRecord(repoRoot, sessionId);
+    assert.ok(stored);
+    assert.equal(stored?.session.timeline.some((event) => event.type === "auto_remediation_triggered" && event.actionId === "auto-crash"), true);
+    assert.equal(stored?.session.timeline.some((event) => event.type === "auto_remediation_succeeded" && event.actionId === "auto-crash"), true);
+  } finally {
+    await cleanupSessionArtifacts(sessionId);
+  }
+});
+
+test("performActionWithAutoRemediation stops when the recovery tool is denied by policy", async () => {
+  const sessionId = `auto-remediation-denied-${Date.now()}`;
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1", policyProfile: "read-only" });
+    const result = await performActionWithAutoRemediation(
+      {
+        sessionId,
+        platform: "android",
+        dryRun: true,
+        autoRemediate: true,
+        action: { actionType: "wait_for_ui", contentDesc: "Loading" },
+      },
+      {
+        performAction: async () => buildBasePerformActionResult({ sessionId, status: "partial", actionId: "auto-denied", actionType: "wait_for_ui", appPhase: "loading", readiness: "waiting_ui" }),
+        explainLastFailure: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-denied", attribution: buildAttribution("network") }, nextSuggestions: [] }),
+        rankFailureCandidates: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-denied", candidates: [buildAttribution("network")] }, nextSuggestions: [] }),
+        suggestKnownRemediation: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-denied", remediation: ["Recover to known state."] }, nextSuggestions: [] }),
+        recoverToKnownState: async () => ({ status: "failed", reasonCode: REASON_CODES.policyDenied, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { summary: { strategy: "wait_until_ready", recovered: false, note: "Policy denied recovery." } }, nextSuggestions: [] }),
+        replayLastStablePath: async () => { throw new Error("replay should not run"); },
+      },
+    );
+
+    assert.equal(result.data.autoRemediation?.stopReason, "policy_denied");
+    assert.equal(result.data.autoRemediation?.attempted, true);
+  } finally {
+    await cleanupSessionArtifacts(sessionId);
+  }
+});
+
+test("performActionWithAutoRemediation stops when the audit gate is unavailable", async () => {
+  const sessionId = `auto-remediation-audit-${Date.now()}`;
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    await rm(path.resolve(repoRoot, buildSessionAuditRelativePath(sessionId)), { force: true });
+    let recoverCalled = false;
+    const result = await performActionWithAutoRemediation(
+      {
+        sessionId,
+        platform: "android",
+        dryRun: true,
+        autoRemediate: true,
+        action: { actionType: "tap_element", contentDesc: "View products" },
+      },
+      {
+        performAction: async () => buildBasePerformActionResult({ sessionId, status: "failed", actionId: "auto-audit", appPhase: "crashed", readiness: "unknown" }),
+        explainLastFailure: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-audit", attribution: buildAttribution("crash") }, nextSuggestions: [] }),
+        rankFailureCandidates: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-audit", candidates: [buildAttribution("crash")] }, nextSuggestions: [] }),
+        suggestKnownRemediation: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-audit", remediation: ["Recover to known state."] }, nextSuggestions: [] }),
+        recoverToKnownState: async () => { recoverCalled = true; throw new Error("recover should not run"); },
+        replayLastStablePath: async () => { throw new Error("replay should not run"); },
+      },
+    );
+
+    assert.equal(result.data.autoRemediation?.stopReason, "audit_unavailable");
+    assert.equal(recoverCalled, false);
+  } finally {
+    await cleanupSessionArtifacts(sessionId);
+  }
+});
+
+test("performActionWithAutoRemediation blocks high-risk replay suggestions", async () => {
+  const sessionId = `auto-remediation-replay-${Date.now()}`;
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    const result = await performActionWithAutoRemediation(
+      {
+        sessionId,
+        platform: "android",
+        dryRun: true,
+        autoRemediate: true,
+        action: { actionType: "tap_element", contentDesc: "Pay now" },
+      },
+      {
+        performAction: async () => buildBasePerformActionResult({ sessionId, status: "failed", actionId: "auto-replay", appPhase: "unknown", readiness: "unknown" }),
+        explainLastFailure: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-replay", attribution: buildAttribution("runtime") }, nextSuggestions: [] }),
+        rankFailureCandidates: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-replay", candidates: [buildAttribution("runtime")] }, nextSuggestions: [] }),
+        suggestKnownRemediation: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-replay", remediation: ["Replay the bounded action once."] }, nextSuggestions: [] }),
+        recoverToKnownState: async () => { throw new Error("recover should not run"); },
+        replayLastStablePath: async () => { throw new Error("replay should not run"); },
+      },
+    );
+
+    assert.equal(result.data.autoRemediation?.stopReason, "high_risk_replay");
+  } finally {
+    await cleanupSessionArtifacts(sessionId);
+  }
+});

@@ -3,13 +3,14 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildSessionRecordRelativePath } from "@mobile-e2e-mcp/core";
+import { buildSessionAuditRelativePath, buildSessionRecordRelativePath, persistActionRecord } from "@mobile-e2e-mcp/core";
 import { createServer } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 async function cleanupSessionArtifact(sessionId: string): Promise<void> {
   await rm(path.resolve(repoRoot, buildSessionRecordRelativePath(sessionId)), { force: true });
+  await rm(path.resolve(repoRoot, buildSessionAuditRelativePath(sessionId)), { force: true });
 }
 
 test("createServer lists newly added UI tools", () => {
@@ -140,6 +141,35 @@ test("server invoke supports perform_action_with_evidence Android dry-run", asyn
   assert.equal(typeof result.data.outcome.actionId, "string");
 });
 
+test("server invoke returns bounded auto-remediation stop details for allowlist misses", async () => {
+  const server = createServer();
+  const sessionId = `server-auto-remediation-stop-${Date.now()}`;
+
+  try {
+    await server.invoke("start_session", {
+      sessionId,
+      platform: "android",
+      profile: "phase1",
+    });
+    const result = await server.invoke("perform_action_with_evidence", {
+      sessionId,
+      platform: "android",
+      dryRun: true,
+      autoRemediate: true,
+      action: {
+        actionType: "tap_element",
+        contentDesc: "View products",
+      },
+    });
+
+    assert.equal(result.status, "partial");
+    assert.equal(typeof result.data.autoRemediation?.stopReason, "string");
+    assert.equal(result.data.autoRemediation?.stopReason === "allowlist_miss" || result.data.autoRemediation?.stopReason === "weak_attribution", true);
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
+});
+
 test("server invoke supports get_action_outcome after perform_action_with_evidence", async () => {
   const server = createServer();
   const actionResult = await server.invoke("perform_action_with_evidence", {
@@ -242,6 +272,55 @@ test("server invoke supports replay_last_stable_path after a stable action", asy
 
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.summary.strategy, "replay_last_successful_action");
+});
+
+test("server invoke blocks replay_last_stable_path for high-risk persisted actions", async () => {
+  const server = createServer();
+  const sessionId = `server-replay-blocked-${Date.now()}`;
+
+  try {
+    await server.invoke("start_session", {
+      sessionId,
+      platform: "android",
+      profile: "phase1",
+    });
+    await persistActionRecord(repoRoot, {
+      actionId: "action-high-risk-replay",
+      sessionId,
+      intent: {
+        actionType: "tap_element",
+        contentDesc: "Pay now",
+      },
+      outcome: {
+        actionId: "action-high-risk-replay",
+        actionType: "tap_element",
+        resolutionStrategy: "deterministic",
+        preState: { appPhase: "ready", readiness: "ready", blockingSignals: [] },
+        postState: { appPhase: "ready", readiness: "ready", blockingSignals: [] },
+        stateChanged: true,
+        fallbackUsed: false,
+        retryCount: 0,
+        confidence: 0.9,
+        outcome: "success",
+      },
+      evidenceDelta: {},
+      evidence: [],
+      lowLevelStatus: "success",
+      lowLevelReasonCode: "OK",
+      updatedAt: new Date().toISOString(),
+    });
+
+    const result = await server.invoke("replay_last_stable_path", {
+      sessionId,
+      platform: "android",
+      dryRun: true,
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
 });
 
 test("server invoke supports Phase F lookup tools", async () => {
