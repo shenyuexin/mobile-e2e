@@ -288,6 +288,11 @@ pnpm mcp:stdio
 - Android 当前支持 level 为 `full`，但真实执行依赖宿主机已安装 `trace_processor`
 - iOS 当前支持 level 为 `partial`，当前 parser 只做轻量摘要，不伪装成完整 Instruments 深分析
 - iOS 当前即使接收 `appId`，也只是用于结果标注；MVP 采集范围仍是所选时间窗口内的全进程 trace，不承诺 app 级精确隔离
+- iOS capability matrix 现在需要这样理解：
+  - `time-profiler`：当前已 real validated，适合先判断 CPU / hot path
+  - `memory`：当前已 real validated，但在 simulator 上更依赖 attach-to-app / pid attach，而不是无差别 `--all-processes`
+  - `animation-hitches`：当前 parser 和 dry-run 已有，但在现有 simulator/runtime 上真实录制可能受平台限制，device-preferred
+- 对 AI 和开源用户都应显式接受这一点：iOS 三个模板并不是同等成熟，当前最稳的是 `time-profiler`，其次是 `memory`，`animation-hitches` 需要把平台支持作为前提条件
 - Android 的 Perfetto 目录不是“所有手机永远都一样”：当前实现按 Android 版本分流，Android 12+ 优先使用 `/data/misc/perfetto-configs` 与 `/data/misc/perfetto-traces`；较老的非 root 设备会改走 stdin 传 config；更老的 Android 版本在 trace 拉取上也可能需要 `adb exec-out cat` 风格的兼容路径
 - 因此不应把 `/data/misc/...` 视为所有设备的唯一真理；对开源用户，更重要的是让工具在可探测到 Android SDK 时推导策略，在探测失败时退回现代默认策略，并让 `doctor` 清楚展示“当前推导/假设的路径”
 - `trace_processor` 也不存在统一安装目录；当前实现会优先读取 `TRACE_PROCESSOR_PATH`，否则先查 `PATH`，再尝试常见 fallback（如 `~/.local/bin/trace_processor`、`/opt/homebrew/bin/trace_processor`、`/usr/local/bin/trace_processor`）

@@ -96,35 +96,23 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 
 ### P0 - 必要收口
 
-#### 1. 把当前最新 real-path 改动补文档
+#### 1. iOS capability matrix 已显式化
 
-还需要明确写入 docs：
+当前已明确：
 
-- `time-profiler`：real validated
-- `memory`：real validated via attach-to-app
-- `animation-hitches`：parser 已有，但真实录制受平台支持约束
+- `time-profiler`：real validated on simulator
+- `memory`：real validated via attach-to-app / pid attach
+- `animation-hitches`：parser 已有，但当前 simulator/runtime 真实录制受平台支持限制，device-preferred
 
-为什么必要：
+这些信息现在已进入：
 
-- 否则开源用户会误以为三个 iOS 模板都已同等成熟
-
-#### 2. 把 iOS real-path 新增行为补到 doctor / capability narrative
-
-当前 doctor 更偏 Android。
-
-还可以补：
-
-- iOS current template caveats
-- `memory` 需要 app attach 才更稳
-- `animation-hitches` 在当前 simulator/runtime 可能不可用
-
-为什么必要：
-
-- AI-first 工具不能只在运行失败后才告诉用户限制
+- capability narrative
+- doctor 输出
+- 本文档
 
 ### P1 - 很值得继续做
 
-#### 3. iOS memory parser 仍然偏浅
+#### 2. iOS memory parser 仍然偏浅
 
 当前已经能：
 
@@ -140,7 +128,7 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 
 - AI-first 里 memory 问题很常见，当前 summary 仍然偏保守
 
-#### 4. iOS time-profiler 仍缺 process filtering / symbol cleanup
+#### 3. iOS time-profiler 仍缺 process filtering / symbol cleanup
 
 当前 real run 里仍可能看到：
 
@@ -152,17 +140,18 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 
 - 这直接影响 AI 能否给出高质量 diagnosisBriefing
 
-#### 5. Android CPU summary 仍缺 target-app 优先视角
+#### 4. Android summary 仍需继续 app-centric 打磨
 
-当前 Android real run 中 top process 可能是：
+当前已做：
 
-- `<unknown>`
-- 系统服务
+- target app process 会优先出现在 CPU summary 中
+- CPU note 会同时区分 target app 与 overall highest process
+- memory note 会优先使用 app-scoped 结果，fallback 才退到 heuristic / broader counters
 
-还可以做：
+但还可以继续做：
 
-- 更优先展示 `appId` 命中进程
-- 把系统级 noise 与 app-level suspect 分开
+- 把 topHotspots 也更强地和 target app 线程关联
+- 更好地区分系统噪声与 app-level suspect
 
 为什么值得做：
 
@@ -170,7 +159,7 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 
 ### P2 - 后续增强
 
-#### 6. flow 包裹模式
+#### 5. flow 包裹模式
 
 当前仍是 time-window mode。
 
@@ -185,7 +174,7 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 
 - 这才是最适合 AI 自动化与 CI 的性能闭环
 
-#### 7. 并入 `collect_debug_evidence`
+#### 6. 并入 `collect_debug_evidence`
 
 当前 performance 还是独立工具。
 
@@ -228,17 +217,17 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 
 ### 仍需继续打磨
 
-- iOS template 之间成熟度不均衡
-- Android / iOS summary 还可以更 app-centric
-- doctor 对 iOS performance 的限制说明还不够强
+- iOS template 之间成熟度仍不均衡，但矩阵和限制现在已显式可见
+- Android / iOS summary 还可以进一步更 app-centric
+- iOS memory 现在更结构化，但仍不是深度 heap analysis
 
 ---
 
 ## 建议的下一步顺序
 
-1. 更新 docs / doctor，对 iOS real-path 支持矩阵讲清楚
-2. 提升 iOS `memory` summary 的结构化程度
-3. 提升 Android CPU summary 对目标 app 的优先展示
+1. 继续提升 iOS `memory` summary 的结构化程度
+2. 继续提升 Android CPU / hotspot summary 对目标 app 的优先展示
+3. 增加更真实的 iOS template fixtures 与 simulator/device regression
 4. 再考虑 flow 包裹模式
 
 ---
