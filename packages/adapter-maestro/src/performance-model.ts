@@ -76,6 +76,123 @@ function decodeXmlEntities(value: string): string {
     .replaceAll("&apos;", "'");
 }
 
+function extractXmlFmtEntries(fragment: string): Array<{ tagName: string; value: string }> {
+  return [...fragment.matchAll(/<([a-zA-Z0-9_:-]+)\b[^>]*\bfmt="([^"]+)"/g)].map((match) => ({
+    tagName: match[1] ?? "",
+    value: match[2] ?? "",
+  }));
+}
+
+function toMaybeFormattedNumber(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const match = value.match(/-?\d+(?:\.\d+)?/);
+  return match ? toMaybeNumber(match[0]) : undefined;
+}
+
+function toMaybeSizeKb(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const numberValue = toMaybeFormattedNumber(value);
+  if (numberValue === undefined) {
+    return undefined;
+  }
+  const lowered = value.toLowerCase();
+  if (lowered.includes("gb")) {
+    return Number((numberValue * 1024 * 1024).toFixed(2));
+  }
+  if (lowered.includes("mb")) {
+    return Number((numberValue * 1024).toFixed(2));
+  }
+  if (lowered.includes("kb")) {
+    return Number(numberValue.toFixed(2));
+  }
+  if (lowered.includes("bytes") || lowered.endsWith("b")) {
+    return Number((numberValue / 1024).toFixed(2));
+  }
+  return undefined;
+}
+
+function buildIosTemplateRowSignals(exportXml: string): Array<{ rowText: string; processName: string; fmtEntries: Array<{ tagName: string; value: string }> }> {
+  return parseXmlRows(exportXml).map((row) => ({
+    rowText: decodeXmlEntities(row).toLowerCase(),
+    processName: normalizeIosProcessName(extractXmlAttributeValue(row, "process", "fmt")),
+    fmtEntries: extractXmlFmtEntries(row),
+  }));
+}
+
+function buildIosAnimationMetrics(exportXml: string): {
+  slowFrameCount?: number;
+  frozenFrameCount?: number;
+  avgFrameTimeMs?: number;
+  worstFrameTimeMs?: number;
+  dominantProcess?: string;
+} {
+  const rowSignals = buildIosTemplateRowSignals(exportXml);
+  const durations: number[] = [];
+  const processCounts = new Map<string, number>();
+  for (const signal of rowSignals) {
+    if (!(signal.rowText.includes("hitch") || signal.rowText.includes("frame"))) {
+      continue;
+    }
+    processCounts.set(signal.processName, (processCounts.get(signal.processName) ?? 0) + 1);
+    for (const entry of signal.fmtEntries) {
+      const tagName = entry.tagName.toLowerCase();
+      const value = entry.value.toLowerCase();
+      if (!(tagName.includes("duration") || tagName.includes("time") || tagName.includes("frame") || tagName.includes("hitch"))) {
+        continue;
+      }
+      if (!value.includes("ms")) {
+        continue;
+      }
+      const durationMs = toMaybeFormattedNumber(entry.value);
+      if (durationMs !== undefined) {
+        durations.push(durationMs);
+      }
+    }
+  }
+  const dominantProcess = [...processCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
+  if (durations.length === 0) {
+    return { dominantProcess };
+  }
+  const slowFrameCount = durations.filter((duration) => duration > 16.67).length;
+  const frozenFrameCount = durations.filter((duration) => duration > 700).length;
+  const avgFrameTimeMs = Number((durations.reduce((sum, value) => sum + value, 0) / durations.length).toFixed(2));
+  const worstFrameTimeMs = Number(Math.max(...durations).toFixed(2));
+  return { slowFrameCount, frozenFrameCount, avgFrameTimeMs, worstFrameTimeMs, dominantProcess };
+}
+
+function buildIosAllocationMetrics(exportXml: string): {
+  allocationRowCount: number;
+  largestAllocationKb?: number;
+  dominantProcess?: string;
+} {
+  const rowSignals = buildIosTemplateRowSignals(exportXml);
+  const sizeValuesKb: number[] = [];
+  const processCounts = new Map<string, number>();
+  let allocationRowCount = 0;
+  for (const signal of rowSignals) {
+    if (!(signal.rowText.includes("alloc") || signal.rowText.includes("malloc") || signal.rowText.includes("vm:"))) {
+      continue;
+    }
+    allocationRowCount += 1;
+    processCounts.set(signal.processName, (processCounts.get(signal.processName) ?? 0) + 1);
+    for (const entry of signal.fmtEntries) {
+      const sizeKb = toMaybeSizeKb(entry.value);
+      if (sizeKb !== undefined) {
+        sizeValuesKb.push(sizeKb);
+      }
+    }
+  }
+  return {
+    allocationRowCount,
+    largestAllocationKb: sizeValuesKb.length > 0 ? Number(Math.max(...sizeValuesKb).toFixed(2)) : undefined,
+    dominantProcess: [...processCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0],
+  };
+}
+
 function stripProcessDisplaySuffix(value: string): string {
   return value.replace(/ \([^)]*\)$/, "").trim();
 }
@@ -320,6 +437,8 @@ export function summarizeIosPerformance(params: {
   const cpuMentions = (exportText.match(/sample|cpu|thread/g) ?? []).length;
   const hasJankSignal = hitchMentions > 0 || frameMentions > 0;
   const hasMemorySignal = allocationMentions > 0;
+  const animationMetrics = params.template === "animation-hitches" && params.exportXml ? buildIosAnimationMetrics(params.exportXml) : {};
+  const allocationMetrics = params.template === "memory" && params.exportXml ? buildIosAllocationMetrics(params.exportXml) : { allocationRowCount: 0 };
   const topProcesses = params.template === "time-profiler" && params.exportXml ? buildIosTopProcessesFromRows(params.exportXml, params.durationMs) : [];
   const topHotspots = params.template === "time-profiler" && params.exportXml ? buildIosHotspotsFromRows(params.exportXml) : [];
   const topCpu = topProcesses[0];
@@ -340,16 +459,27 @@ export function summarizeIosPerformance(params: {
     topHotspots,
   };
   const jank: PerformanceJankSummary = {
-    status: params.template === "animation-hitches" && hasJankSignal ? clampSeverity(hitchMentions || frameMentions, 3, 10) : "unknown",
+    status: params.template === "animation-hitches" && (hasJankSignal || animationMetrics.avgFrameTimeMs !== undefined)
+      ? clampSeverity(animationMetrics.worstFrameTimeMs ?? animationMetrics.slowFrameCount ?? (hitchMentions || frameMentions), 24, 48)
+      : "unknown",
     note: params.template === "animation-hitches"
-      ? `Animation/Hitch export contains ${String(hitchMentions)} hitch-related token(s) and ${String(frameMentions)} frame token(s).`
+      ? animationMetrics.avgFrameTimeMs !== undefined
+        ? `Animation Hitches export shows ${String(animationMetrics.slowFrameCount ?? 0)} slow frame(s) with average duration ${String(animationMetrics.avgFrameTimeMs)}ms${animationMetrics.dominantProcess ? `, concentrated in ${animationMetrics.dominantProcess}` : ""}.`
+        : `Animation/Hitch export contains ${String(hitchMentions)} hitch-related token(s) and ${String(frameMentions)} frame token(s).`
       : "Animation hitch parsing was not requested by the selected template.",
-    slowFrameCount: hitchMentions > 0 ? hitchMentions : undefined,
+    slowFrameCount: animationMetrics.slowFrameCount ?? (hitchMentions > 0 ? hitchMentions : undefined),
+    frozenFrameCount: animationMetrics.frozenFrameCount,
+    avgFrameTimeMs: animationMetrics.avgFrameTimeMs,
+    worstFrameTimeMs: animationMetrics.worstFrameTimeMs,
   };
   const memory: PerformanceMemorySummary = {
-    status: params.template === "memory" && hasMemorySignal ? clampSeverity(allocationMentions, 10, 40) : "unknown",
+    status: params.template === "memory" && (hasMemorySignal || allocationMetrics.allocationRowCount > 0)
+      ? clampSeverity(allocationMetrics.largestAllocationKb ?? allocationMetrics.allocationRowCount, 1024, 8192)
+      : "unknown",
     note: params.template === "memory"
-      ? `Allocations export contains ${String(allocationMentions)} allocation-related token(s); this is a lightweight signal, not a full heap analysis.`
+      ? allocationMetrics.largestAllocationKb !== undefined
+        ? `Allocations export highlights about ${String(allocationMetrics.allocationRowCount)} allocation-heavy row(s); the largest parsed allocation is roughly ${String(allocationMetrics.largestAllocationKb)} KB${allocationMetrics.dominantProcess ? ` in ${allocationMetrics.dominantProcess}` : ""}.`
+        : `Allocations export contains ${String(allocationMentions)} allocation-related token(s); this is a lightweight signal, not a full heap analysis.`
       : "Memory parsing was not requested by the selected template.",
   };
 
@@ -368,7 +498,9 @@ export function summarizeIosPerformance(params: {
     : [cpu.status, jank.status, memory.status].some((status) => status === "moderate" || status === "high")
       ? "yes"
       : "no";
-  summary.confidence = topProcesses.length > 0 || topHotspots.length > 0 ? "medium" : schemaNames.length > 0 ? "low" : "low";
+  summary.confidence = topProcesses.length > 0 || topHotspots.length > 0 || animationMetrics.avgFrameTimeMs !== undefined || allocationMetrics.largestAllocationKb !== undefined
+    ? "medium"
+    : schemaNames.length > 0 ? "low" : "low";
   return summary;
 }
 

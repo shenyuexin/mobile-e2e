@@ -161,6 +161,30 @@ test("summarizeIosPerformance stays unknown when schema exists but rows do not p
   assert.equal(summary.cpu.status, "unknown");
 });
 
+test("summarizeIosPerformance extracts animation hitch timing signals", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><data><table schema="animation-hitches"/></data></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'><schema name="animation-hitches"></schema><row><process fmt="MyApp (123)"/><event fmt="Hitch detected"/><duration fmt="24.00 ms">24</duration></row><row><process fmt="MyApp (123)"/><event fmt="Frame presented"/><duration fmt="42.00 ms">42</duration></row><row><process fmt="WindowServer (511)"/><event fmt="Hitch detected"/><duration fmt="18.00 ms">18</duration></row></node></trace-query-result>`;
+
+  const summary = summarizeIosPerformance({ durationMs: 1000, template: "animation-hitches", tocXml, exportXml });
+
+  assert.equal(summary.likelyCategory, "jank");
+  assert.equal(summary.jank.status !== "unknown", true);
+  assert.equal(summary.jank.slowFrameCount, 3);
+  assert.equal(summary.jank.avgFrameTimeMs, 28);
+  assert.match(summary.jank.note, /Animation Hitches export shows/);
+});
+
+test("summarizeIosPerformance extracts allocation-heavy memory hints", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><data><table schema="allocations"/></data></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'><schema name="allocations"></schema><row><process fmt="MyApp (123)"/><category fmt="Malloc 16 KB"/><size fmt="16 KB">16384</size></row><row><process fmt="MyApp (123)"/><category fmt="VM: ImageIO 4 MB"/><size fmt="4 MB">4194304</size></row></node></trace-query-result>`;
+
+  const summary = summarizeIosPerformance({ durationMs: 1000, template: "memory", tocXml, exportXml });
+
+  assert.equal(summary.likelyCategory, "memory");
+  assert.equal(summary.memory.status !== "unknown", true);
+  assert.match(summary.memory.note, /largest parsed allocation is roughly 4096 KB/);
+});
+
 test("summarizeAndroidPerformance labels slice and counter fallbacks as heuristic", () => {
   const summary = summarizeAndroidPerformance({
     durationMs: 1000,
