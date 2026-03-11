@@ -1,4 +1,5 @@
 import type { CapabilityGroup, CapabilityProfile, CapabilitySupportLevel, Platform, RunnerProfile, ToolCapability } from "@mobile-e2e-mcp/contracts";
+import { DEFAULT_OCR_FALLBACK_POLICY } from "@mobile-e2e-mcp/adapter-vision";
 
 const FULL: CapabilitySupportLevel = "full";
 const PARTIAL: CapabilitySupportLevel = "partial";
@@ -85,6 +86,19 @@ export function buildCapabilityProfile(platform: Platform, runnerProfile: Runner
     platform,
     runnerProfile,
     toolCapabilities,
+    ocrFallback: {
+      supported: process.platform === "darwin",
+      deterministicFirst: true,
+      hostRequirement: "darwin",
+      defaultProvider: process.platform === "darwin" ? "mac-vision" : undefined,
+      configuredProviders: process.platform === "darwin" ? ["mac-vision"] : [],
+      allowedActions: ["tap", "assertText"],
+      blockedActions: ["delete", "purchase", "confirmPayment"],
+      minConfidenceForAssert: DEFAULT_OCR_FALLBACK_POLICY.minConfidenceForAssert,
+      minConfidenceForTap: DEFAULT_OCR_FALLBACK_POLICY.minConfidenceForTap,
+      maxCandidatesBeforeFail: DEFAULT_OCR_FALLBACK_POLICY.maxCandidatesBeforeFail,
+      retryLimit: DEFAULT_OCR_FALLBACK_POLICY.maxRetryCount,
+    },
     groups: [
       summarizeGroup(toolCapabilities, "session_management", ["describe_capabilities", "start_session", "run_flow", "end_session"], "Session lifecycle and capability discovery layer."),
       summarizeGroup(toolCapabilities, "app_lifecycle", ["install_app", "launch_app", "terminate_app"], "Install, launch, and terminate application workflows."),

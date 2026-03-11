@@ -58,6 +58,7 @@ test("server invoke returns capability discovery profiles", async () => {
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.capabilities.platform, "ios");
   assert.equal(result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "full");
+  assert.equal(result.data.capabilities.ocrFallback?.deterministicFirst, true);
 });
 
 test("server invoke keeps resolve_ui_target Android dry-run semantics", async () => {

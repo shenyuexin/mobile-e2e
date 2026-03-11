@@ -517,6 +517,7 @@ test("describeCapabilitiesWithMaestro returns a capability profile", async () =>
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.capabilities.platform, "ios");
   assert.equal(result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "inspect_ui")?.supportLevel, "partial");
+  assert.equal(result.data.capabilities.ocrFallback?.deterministicFirst, true);
 });
 
 test("scrollAndTapElementWithMaestro keeps iOS partial and unsupported", async () => {
