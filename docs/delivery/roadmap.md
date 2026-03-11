@@ -87,6 +87,7 @@ Exit criteria:
 
 - Native and at least one framework profile (RN or Flutter) pass compatibility matrix acceptance targets.
 - Framework onboarding checklist adopted for supported sample apps.
+- At least one real-run path produces reusable acceptance evidence (`phase-sample-report` + `acceptance-evidence`).
 
 Transition rule:
 
@@ -106,6 +107,7 @@ Exit criteria:
 
 - Policy profile enforcement validated in CI + staging environments.
 - Retention/redaction and audit export checks approved by designated owner.
+- Evidence-producing tools persist governed artifact refs into session audit/timeline for supported runtime paths.
 
 ---
 
@@ -114,6 +116,7 @@ Exit criteria:
 - Goal-to-flow planner.
 - Self-healing suggestions (non-destructive by default).
 - Historical failure pattern mining and prioritized stabilization recommendations.
+- Bounded auto-remediation remains the minimum baseline; broader agentic integration must stay policy-gated, auditable, and low-side-effect.
 
 ---
 
