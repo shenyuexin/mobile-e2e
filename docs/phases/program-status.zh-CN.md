@@ -60,5 +60,6 @@
 - **Phase 3：共享 runner/report 路径已覆盖 RN / Native / Flutter，等待新 sample 实证**
 - **Phase 3：RN / Native / Flutter 三条主路径均已建立实证样本与 harness 基线**
 - **Phase 3：dry-run 校验链与 self-hosted real-run lane 准备已建立，等待更稳定的真实运行验收**
+- **Phase 3：本机 Android emulator real-run 已可执行，并已生成 `reports/acceptance-evidence.*`；当前 Flutter / Native Android sample 登录流仍存在真实失败点**
 - **Phase 4：基线已建，运行时接入已开始但仍未完全覆盖**
 - **Phase 5：bounded auto-remediation baseline 已落地，等待更完整的 agentic integration 讨论**

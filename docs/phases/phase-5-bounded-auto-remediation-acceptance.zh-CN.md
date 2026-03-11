@@ -65,6 +65,18 @@
 
 - `scripts/validate-dry-run.ts` 已加入 auto-remediation case
 
+### real-run 验证
+
+- 已新增 `pnpm run validate:bounded-auto-remediation-real-run`
+- 本机 Android emulator 已生成：
+  - `reports/bounded-auto-remediation-acceptance.json`
+  - `reports/bounded-auto-remediation-acceptance.md`
+- 当前 real-run 样例验证到的是 **stop-path acceptance**：
+  - action 真实执行
+  - auto-remediation 真实触发
+  - 因 `allowlist_miss` 停止
+  - session / audit / timeline 证据均已落盘
+
 ---
 
 ## 当前仍未扩展的范围
