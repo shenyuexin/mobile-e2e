@@ -42,6 +42,9 @@ importers:
 
   packages/adapter-maestro:
     dependencies:
+      '@mobile-e2e-mcp/adapter-vision':
+        specifier: workspace:*
+        version: link:../adapter-vision
       '@mobile-e2e-mcp/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -51,6 +54,12 @@ importers:
       yaml:
         specifier: ^2.8.1
         version: 2.8.2
+
+  packages/adapter-vision:
+    dependencies:
+      '@mobile-e2e-mcp/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/cli: {}
 
