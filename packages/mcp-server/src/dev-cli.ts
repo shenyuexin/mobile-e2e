@@ -29,6 +29,7 @@ interface CliOptions {
   measureAndroidPerformance: boolean;
   measureIosPerformance: boolean;
   performActionWithEvidence: boolean;
+  autoRemediate: boolean;
   rankFailureCandidates: boolean;
   recoverToKnownState: boolean;
   replayLastStablePath: boolean;
@@ -126,6 +127,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let measureAndroidPerformance = false;
   let measureIosPerformance = false;
   let performActionWithEvidence = false;
+  let autoRemediate = false;
   let rankFailureCandidates = false;
   let recoverToKnownState = false;
   let replayLastStablePath = false;
@@ -212,6 +214,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--measure-android-performance") { measureAndroidPerformance = true; }
     else if (arg === "--measure-ios-performance") { measureIosPerformance = true; }
     else if (arg === "--perform-action-with-evidence") { performActionWithEvidence = true; }
+    else if (arg === "--auto-remediate") { autoRemediate = true; }
     else if (arg === "--rank-failure-candidates") { rankFailureCandidates = true; }
     else if (arg === "--recover-to-known-state") { recoverToKnownState = true; }
     else if (arg === "--replay-last-stable-path") { replayLastStablePath = true; }
@@ -297,6 +300,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     measureAndroidPerformance,
     measureIosPerformance,
     performActionWithEvidence,
+    autoRemediate,
     rankFailureCandidates,
     recoverToKnownState,
     replayLastStablePath,
@@ -612,6 +616,7 @@ export async function main(): Promise<void> {
       deviceId: cliOptions.deviceId,
       appId: cliOptions.appId,
       includeDebugSignals: true,
+      autoRemediate: cliOptions.autoRemediate,
       action,
       dryRun: cliOptions.dryRun,
     };

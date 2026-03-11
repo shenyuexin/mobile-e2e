@@ -1,4 +1,5 @@
 import { MobileE2EMcpServer } from "./server.js";
+import type { PerformActionWithEvidenceInput } from "@mobile-e2e-mcp/contracts";
 import { enforcePolicyForTool } from "./policy-guard.js";
 import { captureJsConsoleLogs } from "./tools/capture-js-console-logs.js";
 import { captureJsNetworkEvents } from "./tools/capture-js-network-events.js";
@@ -25,6 +26,7 @@ import { measureIosPerformance } from "./tools/measure-ios-performance.js";
 import { queryUi } from "./tools/query-ui.js";
 import { recoverToKnownState } from "./tools/recover-to-known-state.js";
 import { performActionWithEvidence } from "./tools/perform-action-with-evidence.js";
+import { performActionWithAutoRemediation } from "./tools/perform-action-with-auto-remediation.js";
 import { resolveUiTarget } from "./tools/resolve-ui-target.js";
 import { rankFailureCandidates } from "./tools/rank-failure-candidates.js";
 import { replayLastStablePath } from "./tools/replay-last-stable-path.js";
@@ -51,47 +53,95 @@ export function createServer(): MobileE2EMcpServer {
       return handler(input);
     };
   };
+  const captureJsConsoleLogsHandler = withPolicy("capture_js_console_logs", captureJsConsoleLogs);
+  const captureJsNetworkEventsHandler = withPolicy("capture_js_network_events", captureJsNetworkEvents);
+  const compareAgainstBaselineHandler = withPolicy("compare_against_baseline", compareAgainstBaseline);
+  const collectDebugEvidenceHandler = withPolicy("collect_debug_evidence", collectDebugEvidence);
+  const collectDiagnosticsHandler = withPolicy("collect_diagnostics", collectDiagnostics);
+  const describeCapabilitiesHandler = withPolicy("describe_capabilities", describeCapabilities);
+  const doctorHandler = withPolicy("doctor", doctor);
+  const explainLastFailureHandler = withPolicy("explain_last_failure", explainLastFailure);
+  const findSimilarFailuresHandler = withPolicy("find_similar_failures", findSimilarFailures);
+  const getActionOutcomeHandler = withPolicy("get_action_outcome", getActionOutcome);
+  const getCrashSignalsHandler = withPolicy("get_crash_signals", getCrashSignals);
+  const getLogsHandler = withPolicy("get_logs", getLogs);
+  const getScreenSummaryHandler = withPolicy("get_screen_summary", getScreenSummary);
+  const getSessionStateHandler = withPolicy("get_session_state", getSessionState);
+  const inspectUiHandler = withPolicy("inspect_ui", inspectUi);
+  const queryUiHandler = withPolicy("query_ui", queryUi);
+  const recoverToKnownStateHandler = withPolicy("recover_to_known_state", recoverToKnownState);
+  const resolveUiTargetHandler = withPolicy("resolve_ui_target", resolveUiTarget);
+  const replayLastStablePathHandler = withPolicy("replay_last_stable_path", replayLastStablePath);
+  const scrollAndResolveUiTargetHandler = withPolicy("scroll_and_resolve_ui_target", scrollAndResolveUiTarget);
+  const scrollAndTapElementHandler = withPolicy("scroll_and_tap_element", scrollAndTapElement);
+  const installAppHandler = withPolicy("install_app", installApp);
+  const listJsDebugTargetsHandler = withPolicy("list_js_debug_targets", listJsDebugTargets);
+  const launchAppHandler = withPolicy("launch_app", launchApp);
+  const listDevicesHandler = withPolicy("list_devices", listDevices);
+  const measureAndroidPerformanceHandler = withPolicy("measure_android_performance", measureAndroidPerformance);
+  const measureIosPerformanceHandler = withPolicy("measure_ios_performance", measureIosPerformance);
+  const rankFailureCandidatesHandler = withPolicy("rank_failure_candidates", rankFailureCandidates);
+  const runFlowHandler = withPolicy("run_flow", runFlow);
+  const takeScreenshotHandler = withPolicy("take_screenshot", takeScreenshot);
+  const tapHandler = withPolicy("tap", tap);
+  const tapElementHandler = withPolicy("tap_element", tapElement);
+  const terminateAppHandler = withPolicy("terminate_app", terminateApp);
+  const typeTextHandler = withPolicy("type_text", typeText);
+  const typeIntoElementHandler = withPolicy("type_into_element", typeIntoElement);
+  const waitForUiHandler = withPolicy("wait_for_ui", waitForUi);
+  const suggestKnownRemediationHandler = withPolicy("suggest_known_remediation", suggestKnownRemediation);
+  const performActionWithEvidenceHandler = withPolicy(
+    "perform_action_with_evidence",
+    (input: PerformActionWithEvidenceInput) => performActionWithAutoRemediation(input, {
+      performAction: performActionWithEvidence,
+      explainLastFailure: explainLastFailureHandler,
+      rankFailureCandidates: rankFailureCandidatesHandler,
+      suggestKnownRemediation: suggestKnownRemediationHandler,
+      recoverToKnownState: recoverToKnownStateHandler,
+      replayLastStablePath: replayLastStablePathHandler,
+    }),
+  );
 
   return new MobileE2EMcpServer({
-    capture_js_console_logs: withPolicy("capture_js_console_logs", captureJsConsoleLogs),
-    capture_js_network_events: withPolicy("capture_js_network_events", captureJsNetworkEvents),
-    compare_against_baseline: withPolicy("compare_against_baseline", compareAgainstBaseline),
-    collect_debug_evidence: withPolicy("collect_debug_evidence", collectDebugEvidence),
-    collect_diagnostics: withPolicy("collect_diagnostics", collectDiagnostics),
-    describe_capabilities: withPolicy("describe_capabilities", describeCapabilities),
-    doctor: withPolicy("doctor", doctor),
-    explain_last_failure: withPolicy("explain_last_failure", explainLastFailure),
-    find_similar_failures: withPolicy("find_similar_failures", findSimilarFailures),
-    get_action_outcome: withPolicy("get_action_outcome", getActionOutcome),
-    get_crash_signals: withPolicy("get_crash_signals", getCrashSignals),
-    get_logs: withPolicy("get_logs", getLogs),
-    get_screen_summary: withPolicy("get_screen_summary", getScreenSummary),
-    get_session_state: withPolicy("get_session_state", getSessionState),
-    inspect_ui: withPolicy("inspect_ui", inspectUi),
-    query_ui: withPolicy("query_ui", queryUi),
-    recover_to_known_state: withPolicy("recover_to_known_state", recoverToKnownState),
-    resolve_ui_target: withPolicy("resolve_ui_target", resolveUiTarget),
-    replay_last_stable_path: withPolicy("replay_last_stable_path", replayLastStablePath),
-    scroll_and_resolve_ui_target: withPolicy("scroll_and_resolve_ui_target", scrollAndResolveUiTarget),
-    scroll_and_tap_element: withPolicy("scroll_and_tap_element", scrollAndTapElement),
-    install_app: withPolicy("install_app", installApp),
-    list_js_debug_targets: withPolicy("list_js_debug_targets", listJsDebugTargets),
-    launch_app: withPolicy("launch_app", launchApp),
-    list_devices: withPolicy("list_devices", listDevices),
-    measure_android_performance: withPolicy("measure_android_performance", measureAndroidPerformance),
-    measure_ios_performance: withPolicy("measure_ios_performance", measureIosPerformance),
-    perform_action_with_evidence: withPolicy("perform_action_with_evidence", performActionWithEvidence),
-    rank_failure_candidates: withPolicy("rank_failure_candidates", rankFailureCandidates),
+    capture_js_console_logs: captureJsConsoleLogsHandler,
+    capture_js_network_events: captureJsNetworkEventsHandler,
+    compare_against_baseline: compareAgainstBaselineHandler,
+    collect_debug_evidence: collectDebugEvidenceHandler,
+    collect_diagnostics: collectDiagnosticsHandler,
+    describe_capabilities: describeCapabilitiesHandler,
+    doctor: doctorHandler,
+    explain_last_failure: explainLastFailureHandler,
+    find_similar_failures: findSimilarFailuresHandler,
+    get_action_outcome: getActionOutcomeHandler,
+    get_crash_signals: getCrashSignalsHandler,
+    get_logs: getLogsHandler,
+    get_screen_summary: getScreenSummaryHandler,
+    get_session_state: getSessionStateHandler,
+    inspect_ui: inspectUiHandler,
+    query_ui: queryUiHandler,
+    recover_to_known_state: recoverToKnownStateHandler,
+    resolve_ui_target: resolveUiTargetHandler,
+    replay_last_stable_path: replayLastStablePathHandler,
+    scroll_and_resolve_ui_target: scrollAndResolveUiTargetHandler,
+    scroll_and_tap_element: scrollAndTapElementHandler,
+    install_app: installAppHandler,
+    list_js_debug_targets: listJsDebugTargetsHandler,
+    launch_app: launchAppHandler,
+    list_devices: listDevicesHandler,
+    measure_android_performance: measureAndroidPerformanceHandler,
+    measure_ios_performance: measureIosPerformanceHandler,
+    perform_action_with_evidence: performActionWithEvidenceHandler,
+    rank_failure_candidates: rankFailureCandidatesHandler,
     start_session: async (input) => startSession(input),
-    run_flow: withPolicy("run_flow", runFlow),
-    take_screenshot: withPolicy("take_screenshot", takeScreenshot),
-    tap: withPolicy("tap", tap),
-    tap_element: withPolicy("tap_element", tapElement),
-    terminate_app: withPolicy("terminate_app", terminateApp),
-    type_text: withPolicy("type_text", typeText),
-    type_into_element: withPolicy("type_into_element", typeIntoElement),
-    wait_for_ui: withPolicy("wait_for_ui", waitForUi),
-    suggest_known_remediation: withPolicy("suggest_known_remediation", suggestKnownRemediation),
+    run_flow: runFlowHandler,
+    take_screenshot: takeScreenshotHandler,
+    tap: tapHandler,
+    tap_element: tapElementHandler,
+    terminate_app: terminateAppHandler,
+    type_text: typeTextHandler,
+    type_into_element: typeIntoElementHandler,
+    wait_for_ui: waitForUiHandler,
+    suggest_known_remediation: suggestKnownRemediationHandler,
     end_session: endSession,
   });
 }
