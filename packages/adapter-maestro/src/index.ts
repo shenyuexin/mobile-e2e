@@ -103,6 +103,7 @@ import {
 } from "@mobile-e2e-mcp/contracts";
 import { listActionRecordsForSession, loadActionRecord, loadBaselineIndex, loadFailureIndex, loadLatestActionRecordForSession, loadSessionRecord, recordBaselineEntry, recordFailureSignature, persistActionRecord, persistSessionState, queryTimelineAroundAction } from "@mobile-e2e-mcp/core";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
@@ -1104,7 +1105,7 @@ export async function performActionWithEvidenceWithMaestro(
       data: {
         sessionRecordFound: false,
         outcome: {
-          actionId: `action-${Date.now()}`,
+          actionId: `action-${randomUUID()}`,
           actionType: input.action.actionType,
           resolutionStrategy: "deterministic",
           stateChanged: false,
@@ -1154,7 +1155,7 @@ export async function performActionWithEvidenceWithMaestro(
   const preStateSummary = preStateResult.data.screenSummary;
   const postStateSummary = postStateResult.data.screenSummary;
   const stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
-  const actionId = `action-${Date.now()}`;
+  const actionId = `action-${randomUUID()}`;
   const evidenceDelta = buildActionEvidenceDelta({
     preState: preStateSummary,
     postState: postStateSummary,
@@ -1465,7 +1466,7 @@ export async function rankFailureCandidatesWithMaestro(
 
 function buildRecoveryTimelineEvent(summary: RecoverySummary, artifacts: string[]): SessionTimelineEvent {
   return {
-    eventId: `recovery-${Date.now()}`,
+    eventId: `recovery-${randomUUID()}`,
     timestamp: new Date().toISOString(),
     type: "recovery_attempted",
     detail: summary.note,
