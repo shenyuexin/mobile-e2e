@@ -1,0 +1,100 @@
+name: Phase 3 Real Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_flutter_android:
+        description: Run Flutter Android validation
+        required: false
+        default: true
+        type: boolean
+      run_native_android:
+        description: Run native Android validation
+        required: false
+        default: true
+        type: boolean
+      run_native_ios:
+        description: Run native iOS validation
+        required: false
+        default: true
+        type: boolean
+      phase1_ios_runs:
+        description: Phase 1 iOS run count
+        required: false
+        default: "1"
+        type: string
+      phase1_android_runs:
+        description: Phase 1 Android run count
+        required: false
+        default: "1"
+        type: string
+      phase3_flutter_runs:
+        description: Phase 3 Flutter Android run count
+        required: false
+        default: "1"
+        type: string
+      phase3_native_android_runs:
+        description: Phase 3 native Android run count
+        required: false
+        default: "1"
+        type: string
+      phase3_native_ios_runs:
+        description: Phase 3 native iOS run count
+        required: false
+        default: "1"
+        type: string
+
+jobs:
+  dry-run-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run validate:phase3-samples
+
+  real-run-matrix:
+    needs: dry-run-baseline
+    runs-on: self-hosted
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run Phase 3 real-run matrix
+        env:
+          RUN_FLUTTER_ANDROID: ${{ inputs.run_flutter_android && '1' || '0' }}
+          RUN_NATIVE_ANDROID: ${{ inputs.run_native_android && '1' || '0' }}
+          RUN_NATIVE_IOS: ${{ inputs.run_native_ios && '1' || '0' }}
+          PHASE1_IOS_RUNS: ${{ inputs.phase1_ios_runs }}
+          PHASE1_ANDROID_RUNS: ${{ inputs.phase1_android_runs }}
+          PHASE3_FLUTTER_RUNS: ${{ inputs.phase3_flutter_runs }}
+          PHASE3_NATIVE_ANDROID_RUNS: ${{ inputs.phase3_native_android_runs }}
+          PHASE3_NATIVE_IOS_RUNS: ${{ inputs.phase3_native_ios_runs }}
+        run: pnpm run validate:phase3-real-run
+      - name: Upload phase report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-real-run-report
+          path: |
+            reports/phase-sample-report.json
+            reports/phase-sample-report.md
+            artifacts/audit/*.json
+            artifacts/phase1-ios/**
+            artifacts/phase1-android/**
+            artifacts/phase3-flutter-android/**
+            artifacts/phase3-native-android/**
+            artifacts/phase3-native-ios/**

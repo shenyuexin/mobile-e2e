@@ -27,24 +27,27 @@
 - Native sample onboarding 已完成第一轮 Mobitru 双端验证
 - Native harness baseline 已落地（Android 登录 flow 已通过，iOS baseline 与输入型 flow 均已通过）
 - Flutter onboarding 已完成第一轮本机构建与 harness 验证
+- 已建立 `validate:phase3-samples` 自动校验链，并新增 self-hosted real-run lane plumbing
 
 ### Phase 4
 
 - 已建立治理配置基线
-- 尚未形成运行时强制执行能力
+- policy / audit / retention / redaction 已开始进入运行时执行链路
 
 ### Phase 5
 
 - 已建立 bug packet / self-healing review 的最小骨架
-- 尚未接入真实 agentic 自动修复闭环
+- 已落地 bounded auto-remediation 最小闭环（sample / dry-run 范围）
+- 尚未接入开放式真实 agentic 自动修复闭环
 
 ---
 
 ## 当前最重要的剩余工作
 
 1. 在新的 sample 上继续验证 Phase 3 的扩展有效性
-2. 开始把 Phase 4 治理基线接入运行时执行链路
-3. 为 Phase 5 的真实 agentic integration 准备可复用的失败输入与审计边界
+2. 把 Phase 3 real-run lane 真正接到稳定的 self-hosted / device 基础设施
+3. 继续扩大 Phase 4 运行时治理覆盖面
+4. 在 bounded auto-remediation 基线之上再讨论 Phase 5 的真实 agentic integration
 
 ---
 
@@ -56,5 +59,6 @@
 - **Phase 2：完成**
 - **Phase 3：共享 runner/report 路径已覆盖 RN / Native / Flutter，等待新 sample 实证**
 - **Phase 3：RN / Native / Flutter 三条主路径均已建立实证样本与 harness 基线**
-- **Phase 4：基线已建，等待运行时接入**
-- **Phase 5：基线已建，等待真实 agentic integration**
+- **Phase 3：dry-run 校验链与 self-hosted real-run lane 准备已建立，等待更稳定的真实运行验收**
+- **Phase 4：基线已建，运行时接入已开始但仍未完全覆盖**
+- **Phase 5：bounded auto-remediation baseline 已落地，等待更完整的 agentic integration 讨论**
