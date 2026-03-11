@@ -17,6 +17,8 @@ This repository contains a comprehensive technical blueprint for building a larg
 - `docs/phases/phase-3-framework-profiles.zh-CN.md` — Phase 3 框架 profile 基线
 - `docs/phases/phase-4-governance-baseline.zh-CN.md` — Phase 4 治理基线
 - `docs/phases/phase-5-agentic-baseline.zh-CN.md` — Phase 5 agentic 基线
+- `docs/phases/phase-5-bounded-auto-remediation.zh-CN.md` — Phase 5 有边界自动恢复设计
+- `docs/phases/phase-5-bounded-auto-remediation-checklist.zh-CN.md` — Phase 5 有边界自动恢复实施任务清单
 - `docs/phases/program-status.zh-CN.md` — 当前项目阶段状态与剩余工作
 - `docs/phases/native-onboarding-mobitru.zh-CN.md` — Mobitru native onboarding 计划
 - `docs/phases/native-onboarding-results.zh-CN.md` — Mobitru native onboarding 结果
