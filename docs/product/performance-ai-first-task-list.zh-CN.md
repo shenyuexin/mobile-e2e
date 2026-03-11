@@ -39,6 +39,10 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
   - memory：`process_counter_track` + `counter_track` fallback
 - 已支持 heuristic honesty：
   - fallback 路径会在 note 中明确标识为 heuristic
+- 已支持更 app-centric 的排序与解释：
+  - target app process 会优先出现在 CPU summary 中
+  - hotspot 现在会优先展示 target-app-owned process slices，而不是被系统噪声主导
+  - nextSuggestions 会优先提示先看 target app 的 hotspot / process，再判断是否要追系统级 CPU 噪声
 - 已修复：
   - `trace_processor` fixed-width 输出解析
   - footer / 分隔线污染 summary
@@ -65,6 +69,12 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 - `memory`
   - allocation-heavy row signals
   - largest parsed allocation summary
+  - `dominantProcess`
+  - `allocationRowCount`
+  - `topAllocationCategories`
+  - `allocationCountByProcess`
+  - `memoryPressureSignal`
+  - `captureScope`
 
 ### 5. iOS failure semantics 已更诚实
 
@@ -81,6 +91,9 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
   - iOS `time-profiler` / `animation-hitches` / `memory` parser
   - iOS missing `xcrun` failure semantics
   - iOS attach-target command planning
+  - Android target-app hotspot prioritization
+  - iOS memory aggregation / pressure signal regression
+  - doctor recommendation check
 - transport tests：
   - server / CLI / stdio dry-run coverage for performance tools
   - additional iOS template dry-run coverage
@@ -118,11 +131,12 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 
 - 抓 allocation-heavy rows
 - 给出 largest allocation summary
+- 给出 dominant process / capture scope / allocation category / pressure-style signal
 
 但还不够：
 
-- 没有更稳定的 process/category aggregation
-- 没有更明确的 “可能是内存增长 / 分配尖峰 / 持续累积” 区分
+- 某些真实 export 仍然没有足够强的 allocation-sized rows
+- pressure signal 目前仍是 lightweight heuristic，不是完整 heap growth model
 
 为什么值得做：
 
@@ -147,10 +161,12 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 - target app process 会优先出现在 CPU summary 中
 - CPU note 会同时区分 target app 与 overall highest process
 - memory note 会优先使用 app-scoped 结果，fallback 才退到 heuristic / broader counters
+- target-app-owned hotspots 会优先排在系统级 hotspots 前面
+- nextSuggestions 会更偏向先检查 target app process / hotspot
 
 但还可以继续做：
 
-- 把 topHotspots 也更强地和 target app 线程关联
+- 把 topHotspots 更强地和 target app 线程 / main-thread / binder critical path 关联
 - 更好地区分系统噪声与 app-level suspect
 
 为什么值得做：
@@ -214,6 +230,7 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 - iOS：至少 `time-profiler` 与 `memory` 已进入真实可运行状态
 - 输出结构已适合 AI 消费
 - failure semantics 已明显更诚实
+- doctor 已能给出更明确的 iOS template recommendation
 
 ### 仍需继续打磨
 
@@ -225,9 +242,9 @@ AI-first 的核心标准不是“能不能录到 trace”，而是：
 
 ## 建议的下一步顺序
 
-1. 继续提升 iOS `memory` summary 的结构化程度
-2. 继续提升 Android CPU / hotspot summary 对目标 app 的优先展示
-3. 增加更真实的 iOS template fixtures 与 simulator/device regression
+1. 增加更真实的 iOS template fixtures 与 simulator/device regression
+2. 继续提升 iOS `memory` summary 的可解释深度（而不是只增加字段）
+3. 继续提升 Android hotspot 与 main-thread / binder critical path 的关联性
 4. 再考虑 flow 包裹模式
 
 ---
