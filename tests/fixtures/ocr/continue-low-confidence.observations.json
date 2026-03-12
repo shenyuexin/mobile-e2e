@@ -1,0 +1,16 @@
+{
+  "durationMs": 21,
+  "model": "VNRecognizeTextRequest.accurate",
+  "observations": [
+    {
+      "text": "Confirm preferences",
+      "confidence": 0.94,
+      "bounds": { "left": 50, "top": 162, "right": 287, "bottom": 192 }
+    },
+    {
+      "text": "Continue",
+      "confidence": 0.54,
+      "bounds": { "left": 128, "top": 619, "right": 261, "bottom": 648 }
+    }
+  ]
+}

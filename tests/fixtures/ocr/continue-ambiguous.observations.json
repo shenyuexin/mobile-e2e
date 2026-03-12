@@ -1,0 +1,21 @@
+{
+  "durationMs": 18,
+  "model": "VNRecognizeTextRequest.accurate",
+  "observations": [
+    {
+      "text": "Pick an option",
+      "confidence": 0.96,
+      "bounds": { "left": 48, "top": 150, "right": 214, "bottom": 181 }
+    },
+    {
+      "text": "Continue",
+      "confidence": 0.95,
+      "bounds": { "left": 130, "top": 360, "right": 259, "bottom": 388 }
+    },
+    {
+      "text": "Continue",
+      "confidence": 0.94,
+      "bounds": { "left": 130, "top": 488, "right": 259, "bottom": 516 }
+    }
+  ]
+}

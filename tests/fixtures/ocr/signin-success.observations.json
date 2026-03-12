@@ -1,0 +1,26 @@
+{
+  "durationMs": 24,
+  "model": "VNRecognizeTextRequest.accurate",
+  "observations": [
+    {
+      "text": "Welcome back",
+      "confidence": 0.99,
+      "bounds": { "left": 109, "top": 160, "right": 282, "bottom": 190 }
+    },
+    {
+      "text": "Email",
+      "confidence": 0.98,
+      "bounds": { "left": 54, "top": 243, "right": 102, "bottom": 264 }
+    },
+    {
+      "text": "Password",
+      "confidence": 0.98,
+      "bounds": { "left": 54, "top": 365, "right": 138, "bottom": 386 }
+    },
+    {
+      "text": "Sign In",
+      "confidence": 0.97,
+      "bounds": { "left": 144, "top": 542, "right": 246, "bottom": 570 }
+    }
+  ]
+}

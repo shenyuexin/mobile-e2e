@@ -1,0 +1,26 @@
+{
+  "durationMs": 19,
+  "model": "VNRecognizeTextRequest.accurate",
+  "observations": [
+    {
+      "text": "Shipping details",
+      "confidence": 0.99,
+      "bounds": { "left": 52, "top": 158, "right": 257, "bottom": 188 }
+    },
+    {
+      "text": "Delivery method",
+      "confidence": 0.96,
+      "bounds": { "left": 52, "top": 238, "right": 176, "bottom": 256 }
+    },
+    {
+      "text": "Standard",
+      "confidence": 0.95,
+      "bounds": { "left": 66, "top": 304, "right": 153, "bottom": 327 }
+    },
+    {
+      "text": "Continue",
+      "confidence": 0.96,
+      "bounds": { "left": 130, "top": 622, "right": 259, "bottom": 650 }
+    }
+  ]
+}
