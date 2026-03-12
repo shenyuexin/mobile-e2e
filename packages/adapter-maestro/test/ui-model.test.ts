@@ -807,6 +807,7 @@ test("performActionWithEvidenceWithMaestro records dry-run action outcome", asyn
   assert.equal(result.data.postActionRefreshAttempted, undefined);
   assert.equal(Array.isArray(result.data.actionabilityReview), true);
   assert.equal(result.data.actionabilityReview?.some((item) => item.startsWith("post_action_refresh_")), false);
+  assert.equal(result.nextSuggestions[0]?.includes("Inspect the returned pre/post state summaries"), true);
 });
 
 test("performActionWithEvidenceWithMaestro includes target-obscured hints in actionability review when available", async () => {

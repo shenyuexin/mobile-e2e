@@ -705,6 +705,64 @@ function shouldAttemptPostActionRefresh(params: {
   return params.failureCategory === "no_state_change" || params.failureCategory === "transport" || params.failureCategory === undefined;
 }
 
+function buildRetryRecommendations(params: {
+  finalStatus: ToolResult["status"];
+  stateChanged: boolean;
+  postActionRefreshAttempted: boolean;
+  actionabilityReview: string[];
+  failureCategory?: ActionOutcomeSummary["failureCategory"];
+  ocrFallbackSuggestions?: string[];
+}): string[] {
+  if (params.ocrFallbackSuggestions && params.ocrFallbackSuggestions.length > 0) {
+    return params.ocrFallbackSuggestions;
+  }
+
+  const hasStaleSignal = params.actionabilityReview.some((item) => item.startsWith("stale_state_candidate:"));
+  const hasBlockedSignal = params.actionabilityReview.some((item) => item.startsWith("blocking:")) || params.failureCategory === "blocked";
+  const hasTargetResolution = params.actionabilityReview.find((item) => item.startsWith("target_resolution:"));
+
+  if (params.finalStatus === "success" && params.stateChanged) {
+    return [];
+  }
+
+  if (params.failureCategory === "selector_missing" || params.failureCategory === "selector_ambiguous") {
+    return [
+      "Retry only after refining the selector; prefer a resourceId/contentDesc-based target over broad text matching.",
+      hasTargetResolution ? `Current target signal: ${hasTargetResolution}.` : "Inspect the top candidate diff before retrying.",
+    ];
+  }
+
+  if (hasBlockedSignal) {
+    return [
+      "Do not retry the same action immediately; clear the blocking dialog/error state first.",
+      "Prefer wait_for_ui, recover_to_known_state, or a more specific recovery step before repeating the action.",
+    ];
+  }
+
+  if (params.postActionRefreshAttempted && !params.stateChanged) {
+    return [
+      "Action transport completed but the screen stayed unchanged even after a follow-up refresh; retry only after changing selector, timing, or screen state.",
+      hasStaleSignal
+        ? "A stale-state hint was detected; refresh UI context or reacquire the target before retrying."
+        : "Prefer waiting for a more stable screen or reacquiring the target before retrying.",
+    ];
+  }
+
+  if (params.finalStatus === "success" && !params.stateChanged) {
+    return [
+      "Action transport succeeded but no meaningful UI change was detected; verify the target side effect before retrying.",
+      "If the action should navigate or update content, reacquire the target and confirm the screen is ready first.",
+    ];
+  }
+
+  return [
+    "Inspect the returned pre/post state summaries and action evidence before retrying the same action.",
+    hasStaleSignal
+      ? "A stale-state hint was detected; refresh UI context or reacquire the target before retrying."
+      : "Prefer waiting or selector refinement before repeating the same action.",
+  ];
+}
+
 function readResolutionSignal(data: unknown): { status?: string; matchCount?: number; obscuredByHigherRanked?: boolean } | undefined {
   if (!isRecord(data) || !isRecord(data.resolution)) {
     return undefined;
@@ -1902,23 +1960,14 @@ export async function performActionWithEvidenceWithMaestro(
       evidence,
       sessionAuditPath: persistedSessionState?.auditPath,
     },
-    nextSuggestions: finalStatus === "success"
-      ? stateChanged
-        ? []
-        : postActionRefreshAttempted
-          ? [
-            "Action transport succeeded but the app state did not change even after a follow-up refresh; retry only after refining the selector or waiting for the screen to stabilize.",
-            "If the target is expected to move the screen, inspect stale-state hints and target quality before retrying the same action.",
-          ]
-          : ["Action transport succeeded but the app state did not change; inspect selector quality or blocking UI state." ]
-      : ocrFallbackResult?.nextSuggestions.length
-        ? ocrFallbackResult.nextSuggestions
-        : postActionRefreshAttempted
-          ? [
-            "Inspect the returned pre/post state summaries and post-action refresh review before retrying the same action.",
-            "Prefer waiting or selector refinement before repeating a no-op action on the same screen.",
-          ]
-          : ["Inspect the returned pre/post state summaries and action evidence before retrying the same action."],
+    nextSuggestions: buildRetryRecommendations({
+      finalStatus,
+      stateChanged,
+      postActionRefreshAttempted,
+      actionabilityReview,
+      failureCategory,
+      ocrFallbackSuggestions: ocrFallbackResult?.nextSuggestions,
+    }),
   };
 }
 
