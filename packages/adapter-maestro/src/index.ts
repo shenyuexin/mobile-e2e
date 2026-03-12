@@ -687,6 +687,20 @@ function classifyTargetQuality(params: { failureCategory?: ActionOutcomeSummary[
   return "medium";
 }
 
+function shouldAttemptPostActionRefresh(params: {
+  failureCategory?: ActionOutcomeSummary["failureCategory"];
+  finalStatus: ToolResult["status"];
+  stateChanged: boolean;
+}): boolean {
+  if (params.stateChanged) {
+    return false;
+  }
+  if (params.finalStatus === "failed") {
+    return false;
+  }
+  return params.failureCategory === "no_state_change" || params.failureCategory === "transport" || params.failureCategory === undefined;
+}
+
 interface OcrFallbackExecutionResult {
   attempted: boolean;
   used: boolean;
@@ -1704,8 +1718,8 @@ export async function performActionWithEvidenceWithMaestro(
     includeDebugSignals: input.includeDebugSignals ?? true,
     dryRun: input.dryRun,
   });
-  const postStateSummary = postStateResult.data.screenSummary;
-  const stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
+  let postStateSummary = postStateResult.data.screenSummary;
+  let stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
   const actionId = `action-${randomUUID()}`;
   const targetResolution = isRecord(lowLevelResult.data) && isRecord(lowLevelResult.data.resolution)
     ? {
@@ -1713,7 +1727,7 @@ export async function performActionWithEvidenceWithMaestro(
       matchCount: typeof lowLevelResult.data.resolution.matchCount === "number" ? lowLevelResult.data.resolution.matchCount : undefined,
     }
     : undefined;
-  const evidenceDelta = buildActionEvidenceDelta({
+  let evidenceDelta = buildActionEvidenceDelta({
     preState: preStateSummary,
     postState: postStateSummary,
     preLogSummary: preStateResult.data.logSummary,
@@ -1721,7 +1735,7 @@ export async function performActionWithEvidenceWithMaestro(
     preCrashSummary: preStateResult.data.crashSummary,
     postCrashSummary: postStateResult.data.crashSummary,
   });
-  const failureCategory = classifyActionFailureCategory({
+  let failureCategory = classifyActionFailureCategory({
     finalStatus,
     finalReasonCode,
     preStateSummary,
@@ -1730,6 +1744,43 @@ export async function performActionWithEvidenceWithMaestro(
     stateChanged,
     targetResolution,
   });
+  let postActionRefreshAttempted = false;
+  let refreshedPostStateSummary: StateSummary | undefined;
+  if (shouldAttemptPostActionRefresh({ failureCategory, finalStatus, stateChanged })) {
+    postActionRefreshAttempted = true;
+    const refreshedPostStateResult = await getScreenSummaryWithMaestro({
+      sessionId: input.sessionId,
+      platform,
+      runnerProfile,
+      harnessConfigPath: input.harnessConfigPath,
+      deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+      appId: input.appId ?? sessionRecord?.session.appId,
+      includeDebugSignals: input.includeDebugSignals ?? true,
+      dryRun: input.dryRun,
+    });
+    refreshedPostStateSummary = refreshedPostStateResult.data.screenSummary;
+    if (JSON.stringify(postStateSummary) !== JSON.stringify(refreshedPostStateSummary)) {
+      postStateSummary = refreshedPostStateSummary;
+      stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
+      evidenceDelta = buildActionEvidenceDelta({
+        preState: preStateSummary,
+        postState: postStateSummary,
+        preLogSummary: preStateResult.data.logSummary,
+        postLogSummary: refreshedPostStateResult.data.logSummary,
+        preCrashSummary: preStateResult.data.crashSummary,
+        postCrashSummary: refreshedPostStateResult.data.crashSummary,
+      });
+      failureCategory = classifyActionFailureCategory({
+        finalStatus,
+        finalReasonCode,
+        preStateSummary,
+        postStateSummary,
+        lowLevelResult,
+        stateChanged,
+        targetResolution,
+      });
+    }
+  }
   const outcome: ActionOutcomeSummary = {
     actionId,
     actionType: input.action.actionType,
@@ -1811,6 +1862,13 @@ export async function performActionWithEvidenceWithMaestro(
     targetResolution,
     stateChanged,
   });
+  if (postActionRefreshAttempted) {
+    actionabilityReview.unshift(
+      refreshedPostStateSummary && JSON.stringify(postStateResult.data.screenSummary) !== JSON.stringify(refreshedPostStateSummary)
+        ? "post_action_refresh_detected_additional_state_change"
+        : "post_action_refresh_no_additional_change",
+    );
+  }
 
   return {
     status: finalStatus,
@@ -1825,6 +1883,7 @@ export async function performActionWithEvidenceWithMaestro(
       evidenceDelta,
       preStateSummary,
       postStateSummary,
+      postActionRefreshAttempted: postActionRefreshAttempted || undefined,
       actionabilityReview,
       lowLevelStatus: finalStatus,
       lowLevelReasonCode: finalReasonCode,

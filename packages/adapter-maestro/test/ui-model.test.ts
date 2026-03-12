@@ -804,7 +804,9 @@ test("performActionWithEvidenceWithMaestro records dry-run action outcome", asyn
   assert.equal(typeof result.data.outcome.actionId, "string");
   assert.equal(typeof result.data.evidenceDelta.uiDiffSummary, "string");
   assert.equal(result.data.outcome.failureCategory, "unsupported");
+  assert.equal(result.data.postActionRefreshAttempted, undefined);
   assert.equal(Array.isArray(result.data.actionabilityReview), true);
+  assert.equal(result.data.actionabilityReview?.some((item) => item.startsWith("post_action_refresh_")), false);
 });
 
 test("queryUiNodes prefers clickable candidates over static label matches", () => {

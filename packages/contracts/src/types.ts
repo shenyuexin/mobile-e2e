@@ -826,6 +826,7 @@ export interface PerformActionWithEvidenceData {
   evidenceDelta: EvidenceDeltaSummary;
   preStateSummary?: StateSummary;
   postStateSummary?: StateSummary;
+  postActionRefreshAttempted?: boolean;
   actionabilityReview?: string[];
   lowLevelStatus: ToolStatus;
   lowLevelReasonCode: ReasonCode;
