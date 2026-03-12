@@ -188,18 +188,32 @@ function annotateOverlap(matches: InspectUiMatch[]): InspectUiMatch[] {
       return match;
     }
     let maxOverlap = 0;
+    let strongestOccluderScore: number | undefined;
+    let strongestOccluderClickable = false;
     for (let candidateIndex = 0; candidateIndex < index; candidateIndex += 1) {
       const higherRanked = matches[candidateIndex];
       const higherBounds = parseUiBounds(higherRanked?.node.bounds);
       if (!higherBounds) {
         continue;
       }
-      maxOverlap = Math.max(maxOverlap, calculateBoundsOverlapRatio(matchBounds, higherBounds));
+      const overlap = calculateBoundsOverlapRatio(matchBounds, higherBounds);
+      if (overlap > maxOverlap) {
+        maxOverlap = overlap;
+        strongestOccluderScore = higherRanked?.score;
+        strongestOccluderClickable = higherRanked?.node.clickable === true;
+      }
     }
+    const visibilityHeuristics = [
+      maxOverlap >= 0.8 ? `heavy_overlap:${String(maxOverlap)}` : undefined,
+      strongestOccluderClickable ? "occluded_by_clickable_candidate" : undefined,
+      typeof strongestOccluderScore === "number" && typeof match.score === "number" ? `occluder_score_delta:${String(Number((strongestOccluderScore - match.score).toFixed(2)))}` : undefined,
+      match.viewportOverlapPercent !== undefined && match.viewportOverlapPercent < 0.25 ? `low_viewport_visibility:${String(match.viewportOverlapPercent)}` : undefined,
+    ].filter((value): value is string => Boolean(value));
     return {
       ...match,
       overlapPercentWithHigherRanked: maxOverlap > 0 ? maxOverlap : undefined,
       obscuredByHigherRanked: maxOverlap >= 0.8 ? true : undefined,
+      visibilityHeuristics: visibilityHeuristics.length > 0 ? visibilityHeuristics : undefined,
     };
   });
 }
@@ -463,8 +477,15 @@ export function queryUiNodes(nodes: InspectUiNode[], query: QueryUiSelector): { 
     if (match.obscuredByHigherRanked) {
       return {
         ...match,
-        score: (match.score ?? 0) - 2,
-        scoreBreakdown: [...(match.scoreBreakdown ?? []), `obscured penalty (${String(match.overlapPercentWithHigherRanked)})`],
+        score: (match.score ?? 0) - ((match.node.clickable ? 1 : 2)),
+        scoreBreakdown: [...(match.scoreBreakdown ?? []), `obscured penalty (${String(match.overlapPercentWithHigherRanked)})`, ...(match.visibilityHeuristics ?? [])],
+      };
+    }
+    if ((match.viewportOverlapPercent ?? 1) < 0.25) {
+      return {
+        ...match,
+        score: (match.score ?? 0) - 1,
+        scoreBreakdown: [...(match.scoreBreakdown ?? []), ...(match.visibilityHeuristics ?? [])],
       };
     }
     return match;

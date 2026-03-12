@@ -985,6 +985,18 @@ test("queryUiNodes penalizes candidates obscured by a higher-ranked overlapping 
   assert.equal(result.totalMatches, 2);
   assert.equal(result.matches[1]?.obscuredByHigherRanked, true);
   assert.equal((result.matches[1]?.overlapPercentWithHigherRanked ?? 0) >= 0.8, true);
+  assert.equal(result.matches[1]?.visibilityHeuristics?.some((item) => item.startsWith("heavy_overlap:")), true);
+});
+
+test("queryUiNodes records low viewport visibility heuristics for barely visible targets", () => {
+  const query = normalizeQueryUiSelector({ text: "Continue" });
+  const result = queryUiNodes([
+    { resourceId: "viewport", clickable: false, enabled: true, scrollable: true, bounds: "[0,0][1080,1920]" },
+    { text: "Continue", resourceId: "barely_visible", clickable: true, enabled: true, scrollable: false, bounds: "[0,1900][200,2060]" },
+  ], query);
+
+  assert.equal(result.matches[0]?.viewportOverlapPercent !== undefined, true);
+  assert.equal(result.matches[0]?.visibilityHeuristics?.some((item) => item.startsWith("low_viewport_visibility:")), true);
 });
 
 test("queryUiNodes prefers deeper leaf nodes when other signals tie", () => {

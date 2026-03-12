@@ -337,6 +337,7 @@ export interface InspectUiMatch {
   distanceToViewportCenter?: number;
   obscuredByHigherRanked?: boolean;
   overlapPercentWithHigherRanked?: number;
+  visibilityHeuristics?: string[];
 }
 export type UiTargetResolutionStatus = "resolved" | "no_match" | "ambiguous" | "missing_bounds" | "disabled_match" | "off_screen" | "unsupported" | "not_executed";
 export interface AmbiguityDiff {
