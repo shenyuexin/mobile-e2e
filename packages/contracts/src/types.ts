@@ -217,6 +217,7 @@ export type AutoRemediationStopReason =
   | "missing_evidence_window"
   | "selector_missing"
   | "selector_ambiguous"
+  | "target_obscured"
   | "blocked_by_state"
   | "low_target_quality"
   | "weak_attribution"

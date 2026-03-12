@@ -622,7 +622,7 @@ function buildActionabilityReview(params: {
   latestKnownState?: StateSummary;
   lowLevelStatus: ToolResult["status"];
   lowLevelReasonCode: ReasonCode;
-  targetResolution?: { status?: string; matchCount?: number };
+  targetResolution?: { status?: string; matchCount?: number; obscuredByHigherRanked?: boolean };
   stateChanged: boolean;
 }): string[] {
   return uniqueNonEmpty([
@@ -630,6 +630,7 @@ function buildActionabilityReview(params: {
     params.preStateSummary.readiness !== "ready" ? `pre_state_not_ready:${params.preStateSummary.readiness}` : undefined,
     params.preStateSummary.blockingSignals.length > 0 ? `blocking:${params.preStateSummary.blockingSignals.join(",")}` : undefined,
     params.targetResolution?.status ? `target_resolution:${params.targetResolution.status}` : undefined,
+    params.targetResolution?.obscuredByHigherRanked ? "target_obscured_by_higher_ranked_candidate" : undefined,
     typeof params.targetResolution?.matchCount === "number" ? `target_match_count:${String(params.targetResolution.matchCount)}` : undefined,
     !params.stateChanged ? "post_state_unchanged" : undefined,
     params.lowLevelStatus !== "success" ? `low_level_status:${params.lowLevelStatus}` : undefined,
@@ -645,7 +646,7 @@ function classifyActionFailureCategory(params: {
   postStateSummary: StateSummary;
   lowLevelResult: ToolResult<unknown>;
   stateChanged: boolean;
-  targetResolution?: { status?: string };
+  targetResolution?: { status?: string; obscuredByHigherRanked?: boolean };
 }): ActionOutcomeSummary["failureCategory"] {
   if (params.finalStatus === "success" && params.stateChanged) {
     return undefined;
@@ -661,6 +662,9 @@ function classifyActionFailureCategory(params: {
   }
   if (params.targetResolution?.status === "off_screen") {
     return "selector_missing";
+  }
+  if (params.targetResolution?.obscuredByHigherRanked) {
+    return "blocked";
   }
   if (params.targetResolution?.status === "disabled_match") {
     return "blocked";
@@ -699,6 +703,19 @@ function shouldAttemptPostActionRefresh(params: {
     return false;
   }
   return params.failureCategory === "no_state_change" || params.failureCategory === "transport" || params.failureCategory === undefined;
+}
+
+function readResolutionSignal(data: unknown): { status?: string; matchCount?: number; obscuredByHigherRanked?: boolean } | undefined {
+  if (!isRecord(data) || !isRecord(data.resolution)) {
+    return undefined;
+  }
+  const resolution = data.resolution;
+  const bestCandidate = isRecord(resolution.bestCandidate) ? resolution.bestCandidate : undefined;
+  return {
+    status: typeof resolution.status === "string" ? resolution.status : undefined,
+    matchCount: typeof resolution.matchCount === "number" ? resolution.matchCount : undefined,
+    obscuredByHigherRanked: bestCandidate?.obscuredByHigherRanked === true,
+  };
 }
 
 interface OcrFallbackExecutionResult {
@@ -1721,12 +1738,7 @@ export async function performActionWithEvidenceWithMaestro(
   let postStateSummary = postStateResult.data.screenSummary;
   let stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
   const actionId = `action-${randomUUID()}`;
-  const targetResolution = isRecord(lowLevelResult.data) && isRecord(lowLevelResult.data.resolution)
-    ? {
-      status: typeof lowLevelResult.data.resolution.status === "string" ? lowLevelResult.data.resolution.status : undefined,
-      matchCount: typeof lowLevelResult.data.resolution.matchCount === "number" ? lowLevelResult.data.resolution.matchCount : undefined,
-    }
-    : undefined;
+  const targetResolution = readResolutionSignal(lowLevelResult.data);
   let evidenceDelta = buildActionEvidenceDelta({
     preState: preStateSummary,
     postState: postStateSummary,

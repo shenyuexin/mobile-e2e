@@ -809,6 +809,21 @@ test("performActionWithEvidenceWithMaestro records dry-run action outcome", asyn
   assert.equal(result.data.actionabilityReview?.some((item) => item.startsWith("post_action_refresh_")), false);
 });
 
+test("performActionWithEvidenceWithMaestro includes target-obscured hints in actionability review when available", async () => {
+  const result = await performActionWithEvidenceWithMaestro({
+    sessionId: "perform-action-review-dry-run",
+    platform: "android",
+    dryRun: true,
+    action: {
+      actionType: "tap_element",
+      text: "Continue",
+    },
+  });
+
+  assert.equal(Array.isArray(result.data.actionabilityReview), true);
+  assert.equal(result.data.actionabilityReview?.some((item) => item.startsWith("target_resolution:")), true);
+});
+
 test("queryUiNodes prefers clickable candidates over static label matches", () => {
   const query = normalizeQueryUiSelector({ text: "Login" });
   const result = queryUiNodes([
