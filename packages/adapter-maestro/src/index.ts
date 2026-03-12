@@ -763,6 +763,35 @@ function buildRetryRecommendations(params: {
   ];
 }
 
+function classifyRetryRecommendationTier(params: {
+  finalStatus: ToolResult["status"];
+  stateChanged: boolean;
+  postActionRefreshAttempted: boolean;
+  actionabilityReview: string[];
+  failureCategory?: ActionOutcomeSummary["failureCategory"];
+  ocrFallbackSuggestions?: string[];
+}): PerformActionWithEvidenceData["retryRecommendationTier"] {
+  if (params.ocrFallbackSuggestions && params.ocrFallbackSuggestions.length > 0) {
+    return "inspect_only";
+  }
+  if (params.finalStatus === "success" && params.stateChanged) {
+    return "none";
+  }
+  if (params.failureCategory === "selector_missing" || params.failureCategory === "selector_ambiguous") {
+    return "refine_selector";
+  }
+  if (params.failureCategory === "blocked") {
+    return "recover_first";
+  }
+  if (params.postActionRefreshAttempted && !params.stateChanged) {
+    return params.actionabilityReview.some((item) => item.startsWith("stale_state_candidate:")) ? "refresh_context" : "wait_then_retry";
+  }
+  if (params.finalStatus === "success" && !params.stateChanged) {
+    return "inspect_only";
+  }
+  return "inspect_only";
+}
+
 function readResolutionSignal(data: unknown): { status?: string; matchCount?: number; obscuredByHigherRanked?: boolean } | undefined {
   if (!isRecord(data) || !isRecord(data.resolution)) {
     return undefined;
@@ -1939,6 +1968,14 @@ export async function performActionWithEvidenceWithMaestro(
         : "post_action_refresh_no_additional_change",
     );
   }
+  const retryRecommendationTier = classifyRetryRecommendationTier({
+    finalStatus,
+    stateChanged,
+    postActionRefreshAttempted,
+    actionabilityReview,
+    failureCategory,
+    ocrFallbackSuggestions: ocrFallbackResult?.nextSuggestions,
+  });
 
   return {
     status: finalStatus,
@@ -1954,6 +1991,7 @@ export async function performActionWithEvidenceWithMaestro(
       preStateSummary,
       postStateSummary,
       postActionRefreshAttempted: postActionRefreshAttempted || undefined,
+      retryRecommendationTier,
       actionabilityReview,
       lowLevelStatus: finalStatus,
       lowLevelReasonCode: finalReasonCode,

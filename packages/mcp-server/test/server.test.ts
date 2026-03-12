@@ -149,6 +149,7 @@ test("server invoke supports perform_action_with_evidence Android dry-run", asyn
   assert.equal(typeof result.data.outcome.actionId, "string");
   assert.equal(result.data.outcome.failureCategory, "unsupported");
   assert.equal(Array.isArray(result.data.actionabilityReview), true);
+  assert.equal(result.data.retryRecommendationTier, "inspect_only");
   assert.equal(result.nextSuggestions[0]?.includes("Inspect the returned pre/post state summaries"), true);
 });
 
