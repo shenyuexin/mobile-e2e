@@ -928,9 +928,30 @@ test("diffAmbiguousCandidates returns selector-friendly field differences", () =
 });
 
 test("buildResolutionNextSuggestions explains off-screen scroll guidance", () => {
-  const suggestions = buildResolutionNextSuggestions("off_screen", "scroll_and_resolve_ui_target");
+  const suggestions = buildResolutionNextSuggestions("off_screen", "scroll_and_resolve_ui_target", {
+    bestCandidate: {
+      node: { resourceId: "bottom_cta", clickable: true, enabled: true, scrollable: false, bounds: "[0,2200][100,2400]" },
+      matchedBy: ["resourceId"],
+    },
+  });
 
   assert.equal(suggestions[0]?.includes("outside the visible viewport"), true);
+  assert.equal(suggestions[1]?.includes("bottom_cta"), true);
+});
+
+test("buildResolutionNextSuggestions includes score-aware narrowing hint for ambiguous matches", () => {
+  const suggestions = buildResolutionNextSuggestions("ambiguous", "resolve_ui_target", {
+    ambiguityDiff: {
+      differingFields: [
+        { field: "resourceId", left: "primary_cta", right: "secondary_cta" },
+        { field: "clickable", left: "true", right: "false" },
+      ],
+      suggestedSelectors: [{ resourceId: "primary_cta" }],
+    },
+  });
+
+  assert.equal(suggestions[0]?.includes("resourceId, clickable"), true);
+  assert.equal(suggestions[1]?.includes("primary_cta"), true);
 });
 
 test("queryUiNodes penalizes candidates obscured by a higher-ranked overlapping node", () => {

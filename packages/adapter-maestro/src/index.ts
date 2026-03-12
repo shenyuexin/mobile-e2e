@@ -645,6 +645,7 @@ function classifyActionFailureCategory(params: {
   postStateSummary: StateSummary;
   lowLevelResult: ToolResult<unknown>;
   stateChanged: boolean;
+  targetResolution?: { status?: string };
 }): ActionOutcomeSummary["failureCategory"] {
   if (params.finalStatus === "success" && params.stateChanged) {
     return undefined;
@@ -657,6 +658,12 @@ function classifyActionFailureCategory(params: {
   }
   if (params.finalReasonCode === REASON_CODES.ambiguousMatch) {
     return "selector_ambiguous";
+  }
+  if (params.targetResolution?.status === "off_screen") {
+    return "selector_missing";
+  }
+  if (params.targetResolution?.status === "disabled_match") {
+    return "blocked";
   }
   if (params.preStateSummary.readiness === "interrupted" || params.preStateSummary.blockingSignals.length > 0) {
     return "blocked";
@@ -1721,6 +1728,7 @@ export async function performActionWithEvidenceWithMaestro(
     postStateSummary,
     lowLevelResult,
     stateChanged,
+    targetResolution,
   });
   const outcome: ActionOutcomeSummary = {
     actionId,
@@ -4166,7 +4174,7 @@ export async function scrollAndResolveUiTargetWithMaestro(input: ScrollAndResolv
             content: lastSnapshot.execution.stdout,
             summary: lastSnapshot.summary,
           },
-          nextSuggestions: resolution.status === "resolved" ? [] : buildResolutionNextSuggestions(resolution.status, "scroll_and_resolve_ui_target"),
+          nextSuggestions: resolution.status === "resolved" ? [] : buildResolutionNextSuggestions(resolution.status, "scroll_and_resolve_ui_target", resolution),
         };
       }
 
@@ -4359,7 +4367,7 @@ export async function scrollAndResolveUiTargetWithMaestro(input: ScrollAndResolv
           content: lastSnapshot.readExecution.stdout,
           summary: lastSnapshot.summary,
         },
-        nextSuggestions: resolution.status === "resolved" ? [] : buildResolutionNextSuggestions(resolution.status, "scroll_and_resolve_ui_target"),
+        nextSuggestions: resolution.status === "resolved" ? [] : buildResolutionNextSuggestions(resolution.status, "scroll_and_resolve_ui_target", resolution),
       };
     }
 
