@@ -316,6 +316,21 @@
 
 ---
 
+## 后续已完成（Iteration 13 - Retry Tier Transport Surface）
+
+- `PerformActionWithEvidenceData` 的 `retryRecommendationTier` 现在已在 transport 层可见：
+  - `server`
+  - `CLI`
+  - `stdio`
+- 上层消费方不再需要仅靠自然语言 `nextSuggestions` 猜测“下一步建议”类别
+
+### Iteration 13 验证
+
+- `pnpm --filter @mobile-e2e-mcp/mcp-server test` 通过（138 tests）
+- `pnpm test:ci` 通过
+
+---
+
 ## 下一轮最值得继续做的任务（更新）
 
 - 为 overlap / obscured 增加更接近真实界面的结构化可见性启发式
