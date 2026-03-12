@@ -283,11 +283,31 @@
 
 ---
 
+## 后续已完成（Iteration 11 - Retry Recommendation Tiers）
+
+- `perform_action_with_evidence` 现在会按场景给出更分层的 retry recommendation：
+  - selector refinement
+  - wait / stabilize first
+  - stale-state refresh candidate
+  - do not retry blindly
+- retry guidance 现在会更直接参考：
+  - `failureCategory`
+  - `actionabilityReview`
+  - `postActionRefreshAttempted`
+
+### Iteration 11 验证
+
+- `pnpm --filter @mobile-e2e-mcp/adapter-maestro test` 通过（109 tests）
+- `pnpm --filter @mobile-e2e-mcp/mcp-server test` 通过（138 tests）
+- `pnpm test:ci` 通过
+
+---
+
 ## 下一轮最值得继续做的任务（更新）
 
 - 为 overlap / obscured 增加更接近真实界面的结构化可见性启发式
-- 给 no-op / stale-state refresh 增加更明确的 retry recommendation 层级
 - 把 score-aware selector suggestion 扩展到更多 transport 输出（CLI / stdio / action review narrative）
+- 为 no-op / stale-state refresh 增加更结构化的 retry tier code / taxonomy
 
 ---
 
