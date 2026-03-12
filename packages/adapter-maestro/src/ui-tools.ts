@@ -10,8 +10,9 @@ export function buildResolutionNextSuggestions(status: "resolved" | "no_match" |
   if (status === "ambiguous") {
     const diffHint = resolution?.ambiguityDiff?.differingFields?.slice(0, 2).map((field) => field.field).join(", ");
     const selectorHint = resolution?.ambiguityDiff?.suggestedSelectors?.[0];
+    const scoreDelta = resolution?.ambiguityDiff?.scoreDelta;
     return [
-      `Multiple UI nodes matched the selector for ${toolName}. Narrow the selector before performing an element action${diffHint ? `; top differing fields: ${diffHint}` : ""}.`,
+      `Multiple UI nodes matched the selector for ${toolName}. Narrow the selector before performing an element action${diffHint ? `; top differing fields: ${diffHint}` : ""}${typeof scoreDelta === "number" ? `; top score delta: ${scoreDelta}` : ""}.`,
       selectorHint ? `Suggested narrowing selector: ${JSON.stringify(selectorHint)}` : "Inspect the top candidates and add a more specific resourceId/contentDesc/text filter.",
     ];
   }

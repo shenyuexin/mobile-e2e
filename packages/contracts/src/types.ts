@@ -340,6 +340,7 @@ export interface InspectUiMatch {
 }
 export type UiTargetResolutionStatus = "resolved" | "no_match" | "ambiguous" | "missing_bounds" | "disabled_match" | "off_screen" | "unsupported" | "not_executed";
 export interface AmbiguityDiff {
+  scoreDelta?: number;
   differingFields: Array<{
     field: "resourceId" | "contentDesc" | "text" | "className" | "clickable" | "enabled" | "bounds";
     left?: string;

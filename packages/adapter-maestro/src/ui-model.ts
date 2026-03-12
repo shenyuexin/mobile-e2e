@@ -325,6 +325,7 @@ export function diffAmbiguousCandidates(matches: InspectUiMatch[]): AmbiguityDif
   ].filter((value): value is NonNullable<typeof value> => value !== undefined).slice(0, 3);
 
   return {
+    scoreDelta: left.score !== undefined && right.score !== undefined ? Number(((left.score ?? 0) - (right.score ?? 0)).toFixed(2)) : undefined,
     differingFields,
     suggestedSelectors,
   };

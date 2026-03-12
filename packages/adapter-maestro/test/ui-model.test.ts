@@ -940,6 +940,7 @@ test("diffAmbiguousCandidates returns selector-friendly field differences", () =
   ]);
 
   assert.ok(diff);
+  assert.equal(typeof diff?.scoreDelta, "number");
   assert.equal(diff?.differingFields.some((field) => field.field === "resourceId"), true);
   assert.equal((diff?.suggestedSelectors.length ?? 0) > 0, true);
 });
@@ -963,11 +964,13 @@ test("buildResolutionNextSuggestions includes score-aware narrowing hint for amb
         { field: "resourceId", left: "primary_cta", right: "secondary_cta" },
         { field: "clickable", left: "true", right: "false" },
       ],
+      scoreDelta: 2,
       suggestedSelectors: [{ resourceId: "primary_cta" }],
     },
   });
 
   assert.equal(suggestions[0]?.includes("resourceId, clickable"), true);
+  assert.equal(suggestions[0]?.includes("top score delta: 2"), true);
   assert.equal(suggestions[1]?.includes("primary_cta"), true);
 });
 
