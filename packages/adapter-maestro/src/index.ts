@@ -539,9 +539,28 @@ interface OcrFallbackExecutionResult {
   reasonCode: ReasonCode;
   artifacts: string[];
   attempts: number;
+  retryCount: number;
   nextSuggestions: string[];
   ocrEvidence?: OcrEvidence;
   postStateResult?: ToolResult<GetScreenSummaryData>;
+}
+
+interface OcrFallbackTestHooks {
+  createProvider?: () => Pick<MacVisionOcrProvider, "extractTextRegions">;
+  takeScreenshot?: typeof takeScreenshotWithMaestro;
+  tap?: typeof tapWithMaestro;
+  getScreenSummary?: typeof getScreenSummaryWithMaestro;
+  now?: () => string;
+}
+
+let ocrFallbackTestHooks: OcrFallbackTestHooks | undefined;
+
+export function setOcrFallbackTestHooksForTesting(hooks: OcrFallbackTestHooks | undefined): void {
+  ocrFallbackTestHooks = hooks;
+}
+
+export function resetOcrFallbackTestHooksForTesting(): void {
+  ocrFallbackTestHooks = undefined;
 }
 
 function mapIntentToOcrActionKind(action: ActionIntent): OcrFallbackActionType | undefined {
@@ -576,6 +595,19 @@ async function executeOcrFallback(params: {
   appId?: string;
   preStateSummary: StateSummary;
 }): Promise<OcrFallbackExecutionResult> {
+  if (params.input.dryRun && !ocrFallbackTestHooks?.createProvider) {
+    return {
+      attempted: false,
+      used: false,
+      status: "failed",
+      reasonCode: REASON_CODES.noMatch,
+      artifacts: [],
+      attempts: 0,
+      retryCount: 0,
+      nextSuggestions: [],
+    };
+  }
+
   const actionKind = mapIntentToOcrActionKind(params.input.action);
   const targetText = buildOcrTargetText(params.input.action);
   if (!actionKind || !targetText) {
@@ -586,6 +618,7 @@ async function executeOcrFallback(params: {
       reasonCode: REASON_CODES.noMatch,
       artifacts: [],
       attempts: 0,
+      retryCount: 0,
       nextSuggestions: [],
     };
   }
@@ -604,6 +637,7 @@ async function executeOcrFallback(params: {
       reasonCode: REASON_CODES.noMatch,
       artifacts: [],
       attempts: 0,
+      retryCount: 0,
       nextSuggestions: policyDecision.reasons.length > 0 ? [`OCR fallback blocked: ${policyDecision.reasons.join(", ")}.`] : [],
     };
   }
@@ -617,7 +651,8 @@ async function executeOcrFallback(params: {
     outputPath: path.posix.join("artifacts", "screenshots", params.input.sessionId, `${params.platform}-${params.runnerProfile}-ocr.png`),
     dryRun: params.input.dryRun,
   };
-  const screenshotResult = await takeScreenshotWithMaestro(screenshotInput);
+  const screenshotExecutor = ocrFallbackTestHooks?.takeScreenshot ?? takeScreenshotWithMaestro;
+  const screenshotResult = await screenshotExecutor(screenshotInput);
   if (screenshotResult.status === "failed") {
     return {
       attempted: true,
@@ -626,17 +661,19 @@ async function executeOcrFallback(params: {
       reasonCode: screenshotResult.reasonCode,
       artifacts: screenshotResult.artifacts,
       attempts: screenshotResult.attempts,
+      retryCount: 0,
       nextSuggestions: screenshotResult.nextSuggestions,
     };
   }
 
   const screenshotPath = path.resolve(resolveRepoPath(), screenshotResult.data.outputPath);
+  const nowIsoString = ocrFallbackTestHooks?.now?.() ?? new Date().toISOString();
   const screenshotFreshDecision = shouldUseOcrFallback({
     action: actionKind,
     deterministicFailed: true,
     semanticFailed: true,
     state: params.preStateSummary,
-    screenshotCapturedAt: new Date().toISOString(),
+    screenshotCapturedAt: nowIsoString,
   }, DEFAULT_OCR_FALLBACK_POLICY);
   if (!screenshotFreshDecision.allowed) {
     return {
@@ -646,11 +683,12 @@ async function executeOcrFallback(params: {
       reasonCode: REASON_CODES.ocrProviderError,
       artifacts: screenshotResult.artifacts,
       attempts: screenshotResult.attempts,
+      retryCount: 0,
       nextSuggestions: screenshotFreshDecision.reasons.length > 0 ? [`OCR fallback blocked: ${screenshotFreshDecision.reasons.join(", ")}.`] : [],
     };
   }
 
-  const ocrProvider = new MacVisionOcrProvider();
+  const ocrProvider = ocrFallbackTestHooks?.createProvider?.() ?? new MacVisionOcrProvider();
   let ocrOutput: Awaited<ReturnType<MacVisionOcrProvider["extractTextRegions"]>>;
   try {
     ocrOutput = await ocrProvider.extractTextRegions({
@@ -666,6 +704,7 @@ async function executeOcrFallback(params: {
       reasonCode: REASON_CODES.ocrProviderError,
       artifacts: screenshotResult.artifacts,
       attempts: screenshotResult.attempts + 1,
+      retryCount: 0,
       nextSuggestions: [error instanceof Error ? error.message : "OCR provider execution failed."],
     };
   }
@@ -683,6 +722,7 @@ async function executeOcrFallback(params: {
       reasonCode: resolverResult.candidates.length > 1 ? REASON_CODES.ocrAmbiguousTarget : REASON_CODES.ocrNoMatch,
       artifacts: screenshotResult.artifacts,
       attempts: screenshotResult.attempts + 1,
+      retryCount: 0,
       nextSuggestions: ["OCR fallback could not resolve a unique text target from the screenshot."],
       ocrEvidence: {
         provider: ocrOutput.provider,
@@ -698,7 +738,8 @@ async function executeOcrFallback(params: {
   }
 
   const threshold = minimumConfidenceForOcrAction(actionKind, DEFAULT_OCR_FALLBACK_POLICY);
-  if (resolverResult.confidence < threshold) {
+  const selectedConfidence = resolverResult.bestCandidate?.confidence ?? resolverResult.confidence;
+  if (selectedConfidence < threshold) {
     return {
       attempted: true,
       used: false,
@@ -706,6 +747,7 @@ async function executeOcrFallback(params: {
       reasonCode: REASON_CODES.ocrLowConfidence,
       artifacts: screenshotResult.artifacts,
       attempts: screenshotResult.attempts + 1,
+      retryCount: 0,
       nextSuggestions: ["OCR fallback found the target text but confidence did not pass the policy threshold."],
       ocrEvidence: {
         provider: ocrOutput.provider,
@@ -715,7 +757,7 @@ async function executeOcrFallback(params: {
         matchedText: resolverResult.bestCandidate?.text,
         candidateCount: resolverResult.candidates.length,
         matchType: resolverResult.matchType,
-        ocrConfidence: resolverResult.confidence,
+        ocrConfidence: selectedConfidence,
         screenshotPath: screenshotResult.data.outputPath,
         selectedBounds: resolverResult.bestCandidate?.bounds,
         fallbackReason: REASON_CODES.ocrLowConfidence,
@@ -732,6 +774,7 @@ async function executeOcrFallback(params: {
       reasonCode: REASON_CODES.ok,
       artifacts: screenshotResult.artifacts,
       attempts: screenshotResult.attempts + 1,
+      retryCount: 0,
       nextSuggestions: [],
       ocrEvidence: {
         provider: ocrOutput.provider,
@@ -741,7 +784,7 @@ async function executeOcrFallback(params: {
         matchedText: resolverResult.bestCandidate?.text,
         candidateCount: resolverResult.candidates.length,
         matchType: resolverResult.matchType,
-        ocrConfidence: resolverResult.confidence,
+        ocrConfidence: selectedConfidence,
         screenshotPath: screenshotResult.data.outputPath,
         selectedBounds: resolverResult.bestCandidate?.bounds,
         postVerificationResult: "not_run",
@@ -750,11 +793,14 @@ async function executeOcrFallback(params: {
   }
 
   let tapAttempts = 0;
+  let performedTapAttempts = 0;
   let postStateResult: ToolResult<GetScreenSummaryData> | undefined;
   let verificationResult: ReturnType<typeof verifyOcrAction> | undefined;
 
   while (tapAttempts <= DEFAULT_OCR_FALLBACK_POLICY.maxRetryCount && resolverResult.bestCandidate) {
-    const tapResult = await tapWithMaestro({
+    performedTapAttempts += 1;
+    const tapExecutor = ocrFallbackTestHooks?.tap ?? tapWithMaestro;
+    const tapResult = await tapExecutor({
       sessionId: params.input.sessionId,
       platform: params.platform,
       runnerProfile: params.runnerProfile,
@@ -772,11 +818,13 @@ async function executeOcrFallback(params: {
         reasonCode: tapResult.reasonCode,
         artifacts: screenshotResult.artifacts,
         attempts: screenshotResult.attempts + tapResult.attempts,
+        retryCount: Math.max(0, performedTapAttempts - 1),
         nextSuggestions: tapResult.nextSuggestions,
       };
     }
 
-    postStateResult = await getScreenSummaryWithMaestro({
+    const screenSummaryExecutor = ocrFallbackTestHooks?.getScreenSummary ?? getScreenSummaryWithMaestro;
+    postStateResult = await screenSummaryExecutor({
       sessionId: params.input.sessionId,
       platform: params.platform,
       runnerProfile: params.runnerProfile,
@@ -799,6 +847,7 @@ async function executeOcrFallback(params: {
         reasonCode: REASON_CODES.ok,
         artifacts: Array.from(new Set([...screenshotResult.artifacts, ...postStateResult.artifacts])),
         attempts: screenshotResult.attempts + tapResult.attempts + postStateResult.attempts,
+        retryCount: Math.max(0, performedTapAttempts - 1),
         nextSuggestions: [],
         postStateResult,
         ocrEvidence: {
@@ -809,7 +858,7 @@ async function executeOcrFallback(params: {
           matchedText: resolverResult.bestCandidate.text,
           candidateCount: resolverResult.candidates.length,
           matchType: resolverResult.matchType,
-          ocrConfidence: resolverResult.confidence,
+          ocrConfidence: selectedConfidence,
           screenshotPath: screenshotResult.data.outputPath,
           selectedBounds: resolverResult.bestCandidate.bounds,
           postVerificationResult: "passed",
@@ -834,6 +883,7 @@ async function executeOcrFallback(params: {
     reasonCode: REASON_CODES.ocrPostVerifyFailed,
     artifacts: Array.from(new Set([...screenshotResult.artifacts, ...(postStateResult?.artifacts ?? [])])),
     attempts: screenshotResult.attempts + (postStateResult?.attempts ?? 0) + 1,
+    retryCount: Math.max(0, performedTapAttempts - 1),
     nextSuggestions: [verificationResult?.summary ?? "OCR fallback tap did not produce the expected post-action state."],
     postStateResult,
     ocrEvidence: {
@@ -844,7 +894,7 @@ async function executeOcrFallback(params: {
       matchedText: resolverResult.bestCandidate?.text,
       candidateCount: resolverResult.candidates.length,
       matchType: resolverResult.matchType,
-      ocrConfidence: resolverResult.confidence,
+      ocrConfidence: selectedConfidence,
       screenshotPath: screenshotResult.data.outputPath,
       selectedBounds: resolverResult.bestCandidate?.bounds,
       fallbackReason: REASON_CODES.ocrPostVerifyFailed,
@@ -1484,8 +1534,8 @@ export async function performActionWithEvidenceWithMaestro(
       preStateSummary,
     })
     : undefined;
-  const finalStatus = ocrFallbackResult?.used ? ocrFallbackResult.status : lowLevelResult.status;
-  const finalReasonCode = ocrFallbackResult?.used ? ocrFallbackResult.reasonCode : lowLevelResult.reasonCode;
+  const finalStatus = ocrFallbackResult?.attempted ? ocrFallbackResult.status : lowLevelResult.status;
+  const finalReasonCode = ocrFallbackResult?.attempted ? ocrFallbackResult.reasonCode : lowLevelResult.reasonCode;
   const fallbackUsed = Boolean(ocrFallbackResult?.used);
   const postStateResult = ocrFallbackResult?.postStateResult ?? await getScreenSummaryWithMaestro({
     sessionId: input.sessionId,
@@ -1516,7 +1566,7 @@ export async function performActionWithEvidenceWithMaestro(
     postState: postStateSummary,
     stateChanged,
     fallbackUsed,
-    retryCount: fallbackUsed ? DEFAULT_OCR_FALLBACK_POLICY.maxRetryCount : 0,
+    retryCount: ocrFallbackResult?.retryCount ?? 0,
     confidence: ocrFallbackResult?.ocrEvidence?.ocrConfidence ?? buildActionOutcomeConfidence(finalStatus, stateChanged),
     ocrEvidence: ocrFallbackResult?.ocrEvidence,
     outcome: finalStatus === "success" ? "success" : finalStatus === "partial" ? "partial" : "failed",

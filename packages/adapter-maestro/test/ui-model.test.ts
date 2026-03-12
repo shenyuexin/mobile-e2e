@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import test from "node:test";
+import { REASON_CODES, type GetScreenSummaryData, type StateSummary, type ToolResult } from "@mobile-e2e-mcp/contracts";
+import { MacVisionOcrProvider, type MacVisionExecutionResult } from "@mobile-e2e-mcp/adapter-vision";
 import {
   buildNonExecutedUiTargetResolution,
   buildScrollSwipeCoordinates,
@@ -20,13 +22,65 @@ import {
   resolveFirstTapTarget,
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
-import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, performActionWithEvidenceWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, performActionWithEvidenceWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const ocrFixtureRoot = path.join(repoRoot, "tests", "fixtures", "ocr");
 
 async function readFixture(relativePath: string): Promise<string> {
   return readFile(path.join(repoRoot, relativePath), "utf8");
 }
+
+async function readJsonFixture<T>(relativePath: string): Promise<T> {
+  return JSON.parse(await readFile(path.join(repoRoot, relativePath), "utf8")) as T;
+}
+
+function ocrFixtureRelativePath(name: string): string {
+  return path.posix.join("tests", "fixtures", "ocr", `${name}.png`);
+}
+
+function ocrFixtureAbsolutePath(name: string): string {
+  return path.join(ocrFixtureRoot, `${name}.png`);
+}
+
+function buildFixtureScreenSummary(summary: Partial<StateSummary>): StateSummary {
+  return {
+    appPhase: "ready",
+    readiness: "ready",
+    blockingSignals: [],
+    candidateActions: [],
+    recentFailures: [],
+    topVisibleTexts: [],
+    ...summary,
+  };
+}
+
+function buildScreenSummaryResult(sessionId: string, screenSummary: StateSummary): ToolResult<GetScreenSummaryData> {
+  return {
+    status: "success",
+    reasonCode: REASON_CODES.ok,
+    sessionId,
+    durationMs: 1,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      dryRun: false,
+      runnerProfile: "phase1",
+      outputPath: "tests/fixtures/ocr/post-state.json",
+      command: ["fixture", "get_screen_summary"],
+      exitCode: 0,
+      supportLevel: "full",
+      summarySource: "ui_and_debug_signals",
+      screenSummary,
+      evidence: [],
+    },
+    nextSuggestions: [],
+  };
+}
+
+test.afterEach(() => {
+  resetOcrFallbackTestHooksForTesting();
+});
 
 test("parseAndroidUiHierarchyNodes builds stable nodes and summary from fixture", async () => {
   const xml = await readFixture("tests/fixtures/ui/android-cart.xml");
@@ -651,6 +705,169 @@ test("performActionWithEvidenceWithMaestro records dry-run action outcome", asyn
   assert.equal(result.data.outcome.outcome, "partial");
   assert.equal(typeof result.data.outcome.actionId, "string");
   assert.equal(typeof result.data.evidenceDelta.uiDiffSummary, "string");
+});
+
+test("performActionWithEvidenceWithMaestro uses screenshot fixture for OCR assert fallback success", async () => {
+  const fixture = await readJsonFixture<MacVisionExecutionResult>("tests/fixtures/ocr/signin-success.observations.json");
+  setOcrFallbackTestHooksForTesting({
+    now: () => new Date().toISOString(),
+    createProvider: () => new MacVisionOcrProvider({
+      execute: async (input) => {
+        assert.equal(input.screenshotPath, ocrFixtureAbsolutePath("signin-success"));
+        return fixture;
+      },
+    }),
+    takeScreenshot: async (input) => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: 1,
+      attempts: 1,
+      artifacts: [ocrFixtureRelativePath("signin-success")],
+      data: {
+        dryRun: false,
+        runnerProfile: input.runnerProfile ?? "phase1",
+        outputPath: ocrFixtureRelativePath("signin-success"),
+        command: ["fixture", "take_screenshot"],
+        exitCode: 0,
+        evidence: [],
+      },
+      nextSuggestions: [],
+    }),
+  });
+
+  const result = await performActionWithEvidenceWithMaestro({
+    sessionId: "ocr-assert-success",
+    platform: "ios",
+    dryRun: true,
+    action: { actionType: "wait_for_ui", text: "Sign In" },
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, REASON_CODES.ok);
+  assert.equal(result.data.outcome.resolutionStrategy, "ocr");
+  assert.equal(result.data.outcome.fallbackUsed, true);
+  assert.equal(result.data.outcome.retryCount, 0);
+  assert.equal(result.data.outcome.ocrEvidence?.matchedText, "Sign In");
+});
+
+test("performActionWithEvidenceWithMaestro uses screenshot fixture for OCR tap success", async () => {
+  const fixture = await readJsonFixture<MacVisionExecutionResult>("tests/fixtures/ocr/continue-success.observations.json");
+  setOcrFallbackTestHooksForTesting({
+    now: () => new Date().toISOString(),
+    createProvider: () => new MacVisionOcrProvider({ execute: async () => fixture }),
+    takeScreenshot: async (input) => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: 1,
+      attempts: 1,
+      artifacts: [ocrFixtureRelativePath("continue-success")],
+      data: {
+        dryRun: false,
+        runnerProfile: input.runnerProfile ?? "phase1",
+        outputPath: ocrFixtureRelativePath("continue-success"),
+        command: ["fixture", "take_screenshot"],
+        exitCode: 0,
+        evidence: [],
+      },
+      nextSuggestions: [],
+    }),
+    getScreenSummary: async (input) => buildScreenSummaryResult(input.sessionId, buildFixtureScreenSummary({
+      screenTitle: "Confirmation",
+      topVisibleTexts: ["Thanks"],
+    })),
+  });
+
+  const result = await performActionWithEvidenceWithMaestro({
+    sessionId: "ocr-tap-success",
+    platform: "ios",
+    dryRun: true,
+    action: { actionType: "tap_element", text: "Continue" },
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, REASON_CODES.ok);
+  assert.equal(result.data.outcome.resolutionStrategy, "ocr");
+  assert.equal(result.data.outcome.fallbackUsed, true);
+  assert.equal(result.data.outcome.retryCount, 0);
+  assert.equal(result.data.outcome.ocrEvidence?.postVerificationResult, "passed");
+});
+
+test("performActionWithEvidenceWithMaestro fails safely on low-confidence screenshot fixtures", async () => {
+  const fixture = await readJsonFixture<MacVisionExecutionResult>("tests/fixtures/ocr/continue-low-confidence.observations.json");
+  setOcrFallbackTestHooksForTesting({
+    now: () => new Date().toISOString(),
+    createProvider: () => new MacVisionOcrProvider({ execute: async () => fixture }),
+    takeScreenshot: async (input) => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: 1,
+      attempts: 1,
+      artifacts: [ocrFixtureRelativePath("continue-low-confidence")],
+      data: {
+        dryRun: false,
+        runnerProfile: input.runnerProfile ?? "phase1",
+        outputPath: ocrFixtureRelativePath("continue-low-confidence"),
+        command: ["fixture", "take_screenshot"],
+        exitCode: 0,
+        evidence: [],
+      },
+      nextSuggestions: [],
+    }),
+  });
+
+  const result = await performActionWithEvidenceWithMaestro({
+    sessionId: "ocr-low-confidence",
+    platform: "ios",
+    dryRun: true,
+    action: { actionType: "tap_element", text: "Continue" },
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, REASON_CODES.ocrLowConfidence);
+  assert.equal(result.data.outcome.fallbackUsed, false);
+  assert.equal(result.data.outcome.retryCount, 0);
+  assert.equal(result.data.outcome.ocrEvidence?.fallbackReason, REASON_CODES.ocrLowConfidence);
+});
+
+test("performActionWithEvidenceWithMaestro fails safely on ambiguous screenshot fixtures", async () => {
+  const fixture = await readJsonFixture<MacVisionExecutionResult>("tests/fixtures/ocr/continue-ambiguous.observations.json");
+  setOcrFallbackTestHooksForTesting({
+    now: () => new Date().toISOString(),
+    createProvider: () => new MacVisionOcrProvider({ execute: async () => fixture }),
+    takeScreenshot: async (input) => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: 1,
+      attempts: 1,
+      artifacts: [ocrFixtureRelativePath("continue-ambiguous")],
+      data: {
+        dryRun: false,
+        runnerProfile: input.runnerProfile ?? "phase1",
+        outputPath: ocrFixtureRelativePath("continue-ambiguous"),
+        command: ["fixture", "take_screenshot"],
+        exitCode: 0,
+        evidence: [],
+      },
+      nextSuggestions: [],
+    }),
+  });
+
+  const result = await performActionWithEvidenceWithMaestro({
+    sessionId: "ocr-ambiguous",
+    platform: "ios",
+    dryRun: true,
+    action: { actionType: "tap_element", text: "Continue" },
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, REASON_CODES.ocrAmbiguousTarget);
+  assert.equal(result.data.outcome.fallbackUsed, false);
+  assert.equal(result.data.outcome.retryCount, 0);
+  assert.equal(result.data.outcome.ocrEvidence?.fallbackReason, REASON_CODES.ocrAmbiguousTarget);
 });
 
 test("getActionOutcomeWithMaestro loads persisted dry-run action record", async () => {
