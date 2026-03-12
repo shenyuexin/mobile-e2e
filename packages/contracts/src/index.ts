@@ -7,6 +7,7 @@ export type {
   ActionOutcomeStatus,
   ActionOutcomeSummary,
   ActionResolutionStrategy,
+  AmbiguityDiff,
   CapabilityGroup,
   CapabilityProfile,
   CapabilitySupportLevel,

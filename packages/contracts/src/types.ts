@@ -330,8 +330,19 @@ export interface InspectUiMatch {
   score?: number;
   matchQuality?: "exact" | "prefix" | "substring" | "boolean";
   scoreBreakdown?: string[];
+  isOffScreen?: boolean;
+  viewportOverlapPercent?: number;
+  distanceToViewportCenter?: number;
 }
-export type UiTargetResolutionStatus = "resolved" | "no_match" | "ambiguous" | "missing_bounds" | "disabled_match" | "unsupported" | "not_executed";
+export type UiTargetResolutionStatus = "resolved" | "no_match" | "ambiguous" | "missing_bounds" | "disabled_match" | "off_screen" | "unsupported" | "not_executed";
+export interface AmbiguityDiff {
+  differingFields: Array<{
+    field: "resourceId" | "contentDesc" | "text" | "className" | "clickable" | "enabled" | "bounds";
+    left?: string;
+    right?: string;
+  }>;
+  suggestedSelectors: InspectUiQuery[];
+}
 export interface UiTargetResolution {
   status: UiTargetResolutionStatus;
   matchCount: number;
@@ -339,6 +350,7 @@ export interface UiTargetResolution {
   matches: InspectUiMatch[];
   bestCandidate?: InspectUiMatch;
   ambiguityReason?: string;
+  ambiguityDiff?: AmbiguityDiff;
   matchedNode?: InspectUiNode;
   resolvedBounds?: UiBounds;
   resolvedPoint?: UiPoint;
@@ -786,6 +798,7 @@ export interface GetSessionStateData {
   sessionRecordFound: boolean;
   state: StateSummary;
   latestKnownState?: StateSummary;
+  latestKnownStateDelta?: string[];
   capabilities: CapabilityProfile;
   screenSummary: StateSummary;
   logSummary?: LogSummary;
