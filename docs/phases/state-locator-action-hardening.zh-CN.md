@@ -349,10 +349,26 @@
 
 ---
 
+## 后续已完成（Iteration 15 - Narrative / Explanation Wiring）
+
+- `get_action_outcome` 现在开始暴露 `retryRecommendationTier`
+- `explain_last_failure` 现在开始暴露 `retryRecommendationTier`
+- `buildDiagnosisBriefing` 现在开始输出 `Recommended next-action tier`
+- 这使得 explanation / narrative 层不再只靠自然语言猜测下一步策略
+
+### Iteration 15 验证
+
+- `pnpm --filter @mobile-e2e-mcp/adapter-maestro test` 通过（110 tests）
+- `pnpm --filter @mobile-e2e-mcp/mcp-server test` 通过（138 tests）
+- `pnpm test:ci` 通过
+
+---
+
 ## 下一轮最值得继续做的任务（更新）
 
 - 把 score-aware selector suggestion 扩展到更多 transport 输出（CLI / stdio / action review narrative）
 - 给 no-op / stale-state refresh 增加结构化 retry tier code / taxonomy
+- 让 explain/rank/remediation 三者的建议去重并按优先级分层
 - 让 action review narrative / explain flows 直接吸收 score-aware selector guidance
 - 为 no-op / stale-state refresh 增加更结构化的 retry tier code / taxonomy
 
