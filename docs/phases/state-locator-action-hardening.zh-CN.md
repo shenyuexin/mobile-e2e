@@ -113,6 +113,21 @@
 - `perform_action_with_evidence` 的 `actionabilityReview` 现在会纳入：
   - `stale_state_candidate:*`
 
+## 后续已完成（Iteration 4 - Scroll-aware Locator）
+
+- `scroll_and_resolve_ui_target` 现在开始真正消费 `off_screen` 状态：
+  - 不再把 off-screen 直接当作终态 partial 返回
+  - 会继续滚动，直到目标进入视口或触达 `maxSwipes`
+- 当 `maxSwipes` 用尽且目标始终在视口外时，会返回更明确的 off-screen 定向建议
+- 新增测试覆盖：
+  - `buildResolutionNextSuggestions("off_screen")`
+
+### Iteration 4 验证
+
+- `pnpm --filter @mobile-e2e-mcp/adapter-maestro test` 通过（105 tests）
+- `pnpm --filter @mobile-e2e-mcp/mcp-server test` 通过（138 tests）
+- `pnpm test:ci` 通过
+
 ### Iteration 3 验证
 
 - `pnpm --filter @mobile-e2e-mcp/adapter-maestro test` 通过（104 tests）
@@ -145,7 +160,6 @@
 
 ### 4. Locator（下一轮补充）
 
-- 把 off-screen 检测真正接到 scroll 决策里，而不是只停在 resolution 输出
 - 在 ambiguity diff 上增加更结构化的 score / selector建议输出
 - 引入 overlap / obscured / leaf-node bias
 

@@ -47,6 +47,7 @@
 - 第一轮已完成：状态分类增强、locator 排序增强、action failure taxonomy 增强
 - 第二轮已完成：auto-remediation 开始直接复用 `failureCategory / targetQuality / actionabilityReview`
 - 第三轮已完成：viewport-aware locator 排序、off-screen/ambiguity diff、latestKnownStateDelta 与 stale-state 候选提示
+- 第四轮已完成：scroll 决策开始真正消费 off-screen locator 信号
 - 详见：`docs/phases/state-locator-action-hardening.zh-CN.md`
 
 ---
