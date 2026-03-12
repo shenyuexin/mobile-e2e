@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import test from "node:test";
 import { REASON_CODES, type GetScreenSummaryData, type StateSummary, type ToolResult } from "@mobile-e2e-mcp/contracts";
-import { MacVisionOcrProvider, type MacVisionExecutionResult } from "@mobile-e2e-mcp/adapter-vision";
+import { MacVisionOcrProvider, OcrService, type MacVisionExecutionResult } from "@mobile-e2e-mcp/adapter-vision";
 import {
   buildNonExecutedUiTargetResolution,
   buildScrollSwipeCoordinates,
@@ -76,6 +76,69 @@ function buildScreenSummaryResult(sessionId: string, screenSummary: StateSummary
     },
     nextSuggestions: [],
   };
+}
+
+async function runAdapterFixtureFallback(params: {
+  sessionId: string;
+  fixtureName: string;
+  targetText: string;
+}): Promise<Awaited<ReturnType<typeof performActionWithEvidenceWithMaestro>>> {
+  const fixture = await readJsonFixture<MacVisionExecutionResult>(`tests/fixtures/ocr/${params.fixtureName}.observations.json`);
+  setOcrFallbackTestHooksForTesting({
+    now: () => new Date().toISOString(),
+    createProvider: () => new MacVisionOcrProvider({ execute: async () => fixture }),
+    takeScreenshot: async (input) => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: 1,
+      attempts: 1,
+      artifacts: [ocrFixtureRelativePath(params.fixtureName)],
+      data: {
+        dryRun: false,
+        runnerProfile: input.runnerProfile ?? "phase1",
+        outputPath: ocrFixtureRelativePath(params.fixtureName),
+        command: ["fixture", "take_screenshot"],
+        exitCode: 0,
+        evidence: [],
+      },
+      nextSuggestions: [],
+    }),
+  });
+
+  return performActionWithEvidenceWithMaestro({
+    sessionId: params.sessionId,
+    platform: "ios",
+    dryRun: true,
+    action: { actionType: "tap_element", text: params.targetText },
+  });
+}
+
+async function runServiceFixtureFallback(params: {
+  fixtureName: string;
+  targetText: string;
+  expectedText?: string;
+  buildVerificationInput?: Parameters<OcrService["executeTextAction"]>[0]["buildVerificationInput"];
+  executeAction?: Parameters<OcrService["executeTextAction"]>[0]["executeAction"];
+}) {
+  const service = new OcrService({
+    provider: new MacVisionOcrProvider({
+      execute: async () => readJsonFixture<MacVisionExecutionResult>(`tests/fixtures/ocr/${params.fixtureName}.observations.json`),
+    }),
+  });
+
+  return service.executeTextAction({
+    action: "tap",
+    targetText: params.targetText,
+    expectedText: params.expectedText,
+    screenshotPath: ocrFixtureAbsolutePath(params.fixtureName),
+    platform: "ios",
+    deterministicFailed: true,
+    semanticFailed: true,
+    screenshotCapturedAt: new Date().toISOString(),
+    executeAction: params.executeAction,
+    buildVerificationInput: params.buildVerificationInput,
+  });
 }
 
 test.afterEach(() => {
@@ -868,6 +931,117 @@ test("performActionWithEvidenceWithMaestro fails safely on ambiguous screenshot 
   assert.equal(result.data.outcome.fallbackUsed, false);
   assert.equal(result.data.outcome.retryCount, 0);
   assert.equal(result.data.outcome.ocrEvidence?.fallbackReason, REASON_CODES.ocrAmbiguousTarget);
+});
+
+test("adapter-maestro and OcrService agree on low-confidence fixture outcome", async () => {
+  const [adapterResult, serviceResult] = await Promise.all([
+    runAdapterFixtureFallback({
+      sessionId: "ocr-low-confidence-parity",
+      fixtureName: "continue-low-confidence",
+      targetText: "Continue",
+    }),
+    runServiceFixtureFallback({
+      fixtureName: "continue-low-confidence",
+      targetText: "Continue",
+    }),
+  ]);
+
+  assert.equal(adapterResult.reasonCode, REASON_CODES.ocrLowConfidence);
+  assert.equal(serviceResult.status, "low_confidence");
+  assert.equal(adapterResult.data.outcome.ocrEvidence?.candidateCount, serviceResult.evidence?.candidateCount);
+  assert.equal(adapterResult.data.outcome.ocrEvidence?.ocrConfidence, serviceResult.evidence?.ocrConfidence);
+  assert.equal(adapterResult.data.outcome.ocrEvidence?.fallbackReason, REASON_CODES.ocrLowConfidence);
+});
+
+test("adapter-maestro and OcrService agree on ambiguous fixture outcome", async () => {
+  const [adapterResult, serviceResult] = await Promise.all([
+    runAdapterFixtureFallback({
+      sessionId: "ocr-ambiguous-parity",
+      fixtureName: "continue-ambiguous",
+      targetText: "Continue",
+    }),
+    runServiceFixtureFallback({
+      fixtureName: "continue-ambiguous",
+      targetText: "Continue",
+    }),
+  ]);
+
+  assert.equal(adapterResult.reasonCode, REASON_CODES.ocrAmbiguousTarget);
+  assert.equal(serviceResult.status, "ambiguous");
+  assert.equal(adapterResult.data.outcome.ocrEvidence?.candidateCount, serviceResult.evidence?.candidateCount);
+  assert.equal(serviceResult.resolution?.rejectionReason, "ambiguous");
+  assert.equal(adapterResult.data.outcome.ocrEvidence?.fallbackReason, REASON_CODES.ocrAmbiguousTarget);
+});
+
+test("adapter-maestro and OcrService agree on successful fixture outcome", async () => {
+  const fixture = await readJsonFixture<MacVisionExecutionResult>("tests/fixtures/ocr/continue-success.observations.json");
+  const [adapterResult, serviceResult] = await Promise.all([
+    (async () => {
+      setOcrFallbackTestHooksForTesting({
+        now: () => new Date().toISOString(),
+        createProvider: () => new MacVisionOcrProvider({ execute: async () => fixture }),
+        takeScreenshot: async (input) => ({
+          status: "success",
+          reasonCode: REASON_CODES.ok,
+          sessionId: input.sessionId,
+          durationMs: 1,
+          attempts: 1,
+          artifacts: [ocrFixtureRelativePath("continue-success")],
+          data: {
+            dryRun: false,
+            runnerProfile: input.runnerProfile ?? "phase1",
+            outputPath: ocrFixtureRelativePath("continue-success"),
+            command: ["fixture", "take_screenshot"],
+            exitCode: 0,
+            evidence: [],
+          },
+          nextSuggestions: [],
+        }),
+        getScreenSummary: async (input) => buildScreenSummaryResult(input.sessionId, buildFixtureScreenSummary({
+          screenTitle: "Confirmation",
+          topVisibleTexts: ["Thanks"],
+        })),
+      });
+
+      return performActionWithEvidenceWithMaestro({
+        sessionId: "ocr-success-parity",
+        platform: "ios",
+        dryRun: true,
+        action: { actionType: "tap_element", text: "Continue" },
+      });
+    })(),
+    runServiceFixtureFallback({
+      fixtureName: "continue-success",
+      targetText: "Continue",
+      expectedText: "Thanks",
+      executeAction: async ({ target }) => ({ tappedCenter: target.bounds.center }),
+      buildVerificationInput: async ({ ocr }) => ({
+        beforeOcr: ocr,
+        afterOcr: {
+          ...ocr,
+          blocks: [
+            ocr.blocks[0]!,
+            {
+              text: "Thanks",
+              confidence: 0.99,
+              bounds: { left: 126, top: 620, right: 249, bottom: 648, width: 123, height: 28, center: { x: 187.5, y: 634 } },
+            },
+          ],
+        },
+        targetText: "Continue",
+        expectedText: "Thanks",
+        preState: { appPhase: "ready", readiness: "ready", blockingSignals: [], screenTitle: "Shipping" },
+        postState: { appPhase: "ready", readiness: "ready", blockingSignals: [], screenTitle: "Confirmation" },
+      }),
+    }),
+  ]);
+
+  assert.equal(adapterResult.status, "success");
+  assert.equal(serviceResult.status, "executed");
+  assert.equal(adapterResult.data.outcome.ocrEvidence?.matchedText, serviceResult.evidence?.matchedText);
+  assert.equal(adapterResult.data.outcome.ocrEvidence?.matchType, serviceResult.evidence?.matchType);
+  assert.equal(adapterResult.data.outcome.ocrEvidence?.postVerificationResult, "passed");
+  assert.equal(serviceResult.verification?.status, "verified");
 });
 
 test("getActionOutcomeWithMaestro loads persisted dry-run action record", async () => {
