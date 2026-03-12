@@ -10,6 +10,8 @@ Current committed fixtures:
 
 - `tests/fixtures/ui/android-cart.xml` - stable Android hierarchy sample for parsing/query/action tests
 - `tests/fixtures/ui/ios-sample.json` - stable iOS hierarchy sample for partial-support summary tests
+- `tests/fixtures/ocr/*.png` - screenshot-style OCR fixtures for semi-real fallback regression tests
+- `tests/fixtures/ocr/*.observations.json` - normalized MacVision-style OCR observation fixtures paired with the screenshot assets
 
 Current no-device regression layers:
 
@@ -34,6 +36,11 @@ Current evidence-model coverage includes:
 
 - adapter-level dry-run evidence emission checks for screenshot, UI dump, logs, crash signals, diagnostics, and aggregated debug evidence
 - compatibility guarantee that structured `evidence[]` is additive and does not replace the legacy top-level `artifacts[]`
+
+Current screenshot-driven OCR fallback coverage includes:
+
+- adapter-vision fixture-based OCR service scenarios for assert success, tap verification success, low-confidence rejection, and ambiguity rejection
+- adapter-maestro semi-real fallback path tests that use real screenshot fixtures plus mocked screenshot/tap/post-state seams
 
 Current regression layers are now explicitly named:
 
