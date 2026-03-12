@@ -284,6 +284,7 @@ export interface DoctorCheck { name: string; status: "pass" | "warn" | "fail"; d
 export interface DoctorInput { includeUnavailable?: boolean; }
 export interface InspectUiNode {
   index?: number;
+  depth?: number;
   text?: string;
   resourceId?: string;
   className?: string;
@@ -333,6 +334,8 @@ export interface InspectUiMatch {
   isOffScreen?: boolean;
   viewportOverlapPercent?: number;
   distanceToViewportCenter?: number;
+  obscuredByHigherRanked?: boolean;
+  overlapPercentWithHigherRanked?: number;
 }
 export type UiTargetResolutionStatus = "resolved" | "no_match" | "ambiguous" | "missing_bounds" | "disabled_match" | "off_screen" | "unsupported" | "not_executed";
 export interface AmbiguityDiff {

@@ -133,7 +133,7 @@ export function parseInspectUiSummary(xml: string): InspectUiSummary {
   return buildInspectUiSummary(parseAndroidUiHierarchyNodes(xml));
 }
 
-function toIosInspectNode(node: Record<string, unknown>): InspectUiNode {
+function toIosInspectNode(node: Record<string, unknown>, depth: number): InspectUiNode {
   const frame = isRecord(node.frame) ? node.frame : undefined;
   const frameX = typeof frame?.x === "number" ? frame.x : 0;
   const frameY = typeof frame?.y === "number" ? frame.y : 0;
@@ -143,6 +143,7 @@ function toIosInspectNode(node: Record<string, unknown>): InspectUiNode {
   const type = readNonEmptyString(node, "type") ?? undefined;
 
   return {
+    depth,
     text: readNonEmptyString(node, "title") ?? undefined,
     resourceId: readNonEmptyString(node, "AXUniqueId") ?? undefined,
     className: type,
@@ -155,7 +156,7 @@ function toIosInspectNode(node: Record<string, unknown>): InspectUiNode {
   };
 }
 
-function flattenIosInspectNodes(input: unknown, output: InspectUiNode[]): void {
+function flattenIosInspectNodes(input: unknown, output: InspectUiNode[], depth = 0): void {
   if (!Array.isArray(input)) {
     return;
   }
@@ -164,9 +165,43 @@ function flattenIosInspectNodes(input: unknown, output: InspectUiNode[]): void {
     if (!isRecord(item)) {
       continue;
     }
-    output.push(toIosInspectNode(item));
-    flattenIosInspectNodes(item.children, output);
+    output.push(toIosInspectNode(item, depth));
+    flattenIosInspectNodes(item.children, output, depth + 1);
   }
+}
+
+function calculateBoundsOverlapRatio(left: UiBounds, right: UiBounds): number {
+  const overlapX = Math.max(0, Math.min(left.right, right.right) - Math.max(left.left, right.left));
+  const overlapY = Math.max(0, Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top));
+  const overlapArea = overlapX * overlapY;
+  const leftArea = left.width * left.height;
+  if (leftArea <= 0) {
+    return 0;
+  }
+  return Number((overlapArea / leftArea).toFixed(2));
+}
+
+function annotateOverlap(matches: InspectUiMatch[]): InspectUiMatch[] {
+  return matches.map((match, index) => {
+    const matchBounds = parseUiBounds(match.node.bounds);
+    if (!matchBounds) {
+      return match;
+    }
+    let maxOverlap = 0;
+    for (let candidateIndex = 0; candidateIndex < index; candidateIndex += 1) {
+      const higherRanked = matches[candidateIndex];
+      const higherBounds = parseUiBounds(higherRanked?.node.bounds);
+      if (!higherBounds) {
+        continue;
+      }
+      maxOverlap = Math.max(maxOverlap, calculateBoundsOverlapRatio(matchBounds, higherBounds));
+    }
+    return {
+      ...match,
+      overlapPercentWithHigherRanked: maxOverlap > 0 ? maxOverlap : undefined,
+      obscuredByHigherRanked: maxOverlap >= 0.8 ? true : undefined,
+    };
+  });
 }
 
 export function parseIosInspectNodes(jsonText: string): InspectUiNode[] {
@@ -380,6 +415,11 @@ export function queryUiNodes(nodes: InspectUiNode[], query: QueryUiSelector): { 
       score += 1;
       scoreBreakdown.push("clickable node bonus");
     }
+    if (typeof node.depth === "number") {
+      const depthBonus = Math.min(3, node.depth);
+      score += depthBonus;
+      scoreBreakdown.push(`leaf-depth bonus (${String(depthBonus)})`);
+    }
     if (node.contentDesc || node.text) {
       score += 1;
       scoreBreakdown.push("human-readable node bonus");
@@ -395,7 +435,7 @@ export function queryUiNodes(nodes: InspectUiNode[], query: QueryUiSelector): { 
     return [{ node, matchedBy, score, matchQuality, scoreBreakdown, isOffScreen, viewportOverlapPercent, distanceToViewportCenter }];
   });
 
-  const sortedMatches = allMatches.sort((left, right) => {
+  const sortedMatches = annotateOverlap(allMatches.sort((left, right) => {
     const scoreDelta = (right.score ?? 0) - (left.score ?? 0);
     if (scoreDelta !== 0) {
       return scoreDelta;
@@ -418,7 +458,16 @@ export function queryUiNodes(nodes: InspectUiNode[], query: QueryUiSelector): { 
     const leftDistance = left.distanceToViewportCenter ?? Number.MAX_SAFE_INTEGER;
     const rightDistance = right.distanceToViewportCenter ?? Number.MAX_SAFE_INTEGER;
     return leftDistance - rightDistance;
-  });
+  })).map((match) => {
+    if (match.obscuredByHigherRanked) {
+      return {
+        ...match,
+        score: (match.score ?? 0) - 2,
+        scoreBreakdown: [...(match.scoreBreakdown ?? []), `obscured penalty (${String(match.overlapPercentWithHigherRanked)})`],
+      };
+    }
+    return match;
+  }).sort((left, right) => (right.score ?? 0) - (left.score ?? 0));
 
   return {
     totalMatches: sortedMatches.length,

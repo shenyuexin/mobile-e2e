@@ -933,6 +933,28 @@ test("buildResolutionNextSuggestions explains off-screen scroll guidance", () =>
   assert.equal(suggestions[0]?.includes("outside the visible viewport"), true);
 });
 
+test("queryUiNodes penalizes candidates obscured by a higher-ranked overlapping node", () => {
+  const query = normalizeQueryUiSelector({ text: "Continue" });
+  const result = queryUiNodes([
+    { text: "Continue", resourceId: "front_cta", clickable: true, enabled: true, scrollable: false, bounds: "[0,100][200,300]" },
+    { text: "Continue", resourceId: "back_cta", clickable: true, enabled: true, scrollable: false, bounds: "[0,100][200,300]" },
+  ], query);
+
+  assert.equal(result.totalMatches, 2);
+  assert.equal(result.matches[1]?.obscuredByHigherRanked, true);
+  assert.equal((result.matches[1]?.overlapPercentWithHigherRanked ?? 0) >= 0.8, true);
+});
+
+test("queryUiNodes prefers deeper leaf nodes when other signals tie", () => {
+  const query = normalizeQueryUiSelector({ text: "Continue" });
+  const result = queryUiNodes([
+    { text: "Continue", resourceId: "container_cta", clickable: true, enabled: true, scrollable: false, bounds: "[0,100][200,300]", depth: 0 },
+    { text: "Continue", resourceId: "leaf_cta", clickable: true, enabled: true, scrollable: false, bounds: "[0,100][200,300]", depth: 2 },
+  ], query);
+
+  assert.equal(result.matches[0]?.node.resourceId, "leaf_cta");
+});
+
 test("performActionWithEvidenceWithMaestro uses screenshot fixture for OCR assert fallback success", async () => {
   const fixture = await readJsonFixture<MacVisionExecutionResult>("tests/fixtures/ocr/signin-success.observations.json");
   setOcrFallbackTestHooksForTesting({
