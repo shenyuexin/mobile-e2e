@@ -57,6 +57,7 @@
 - 第十一轮已完成：perform_action_with_evidence 开始输出更分层的 retry recommendation
 - 第十二轮已完成：score-aware selector suggestion 开始在更多 transport 输出中保持一致
 - 第十三轮已完成：retryRecommendationTier 开始在 transport 层保持一致
+- 第十四轮已完成：locator 排序开始引入更细的 visibility heuristics
 - 详见：`docs/phases/state-locator-action-hardening.zh-CN.md`
 
 ---

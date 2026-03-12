@@ -331,11 +331,29 @@
 
 ---
 
+## 后续已完成（Iteration 14 - Visibility Heuristics）
+
+- locator ranking 现在开始记录更细的 `visibilityHeuristics`
+- 已加入：
+  - heavy overlap
+  - low viewport visibility
+  - occluder score delta
+  - occluded by clickable candidate
+- 这让 overlap / obscured 信号更接近真实界面可见性，而不是只看单一重叠比例
+
+### Iteration 14 验证
+
+- `pnpm --filter @mobile-e2e-mcp/adapter-maestro test` 通过（110 tests）
+- `pnpm --filter @mobile-e2e-mcp/mcp-server test` 通过（138 tests）
+- `pnpm test:ci` 通过
+
+---
+
 ## 下一轮最值得继续做的任务（更新）
 
-- 为 overlap / obscured 增加更接近真实界面的结构化可见性启发式
 - 把 score-aware selector suggestion 扩展到更多 transport 输出（CLI / stdio / action review narrative）
 - 给 no-op / stale-state refresh 增加结构化 retry tier code / taxonomy
+- 让 action review narrative / explain flows 直接吸收 score-aware selector guidance
 - 为 no-op / stale-state refresh 增加更结构化的 retry tier code / taxonomy
 
 ---
