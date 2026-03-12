@@ -14,6 +14,11 @@ Current committed fixtures:
 - `tests/fixtures/ocr/*.observations.json` - normalized MacVision-style OCR observation fixtures paired with the screenshot assets
 - `tests/fixtures/ocr/manifest.json` - expected OCR fixture triads and text inventory used to catch fixture drift in unit tests
 
+OCR fixture maintenance commands:
+
+- `pnpm validate:ocr-fixtures` - cross-platform integrity check for OCR triads, text inventory, hashes, and dimensions
+- `pnpm fixtures:ocr:sync [fixture-name...]` - macOS-only regeneration path that renders SVG -> PNG and refreshes observations plus hash metadata using the real Vision bridge
+
 Current no-device regression layers:
 
 - `packages/adapter-maestro/test/ui-model.test.ts` - fixture-driven parsing/query/bounds checks plus adapter-level envelope coverage for the new UI tools
