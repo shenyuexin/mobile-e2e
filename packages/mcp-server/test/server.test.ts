@@ -108,6 +108,8 @@ test("server invoke supports get_screen_summary Android dry-run", async () => {
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.summarySource, "ui_and_debug_signals");
   assert.equal(result.data.screenSummary.appPhase, "unknown");
+  assert.equal(typeof result.data.screenSummary.stateConfidence, "number");
+  assert.equal(Array.isArray(result.data.screenSummary.derivedSignals), true);
   assert.equal(result.data.supportLevel, "full");
 });
 
@@ -124,6 +126,7 @@ test("server invoke supports get_session_state Android dry-run without persisted
   assert.equal(result.data.sessionRecordFound, false);
   assert.equal(result.data.platform, "android");
   assert.equal(result.data.state.appPhase, "unknown");
+  assert.equal(typeof result.data.state.stateConfidence, "number");
 });
 
 test("server invoke supports perform_action_with_evidence Android dry-run", async () => {
@@ -142,6 +145,8 @@ test("server invoke supports perform_action_with_evidence Android dry-run", asyn
   assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
   assert.equal(result.data.outcome.actionType, "tap_element");
   assert.equal(typeof result.data.outcome.actionId, "string");
+  assert.equal(result.data.outcome.failureCategory, "unsupported");
+  assert.equal(Array.isArray(result.data.actionabilityReview), true);
 });
 
 test("server invoke returns bounded auto-remediation stop details for allowlist misses", async () => {

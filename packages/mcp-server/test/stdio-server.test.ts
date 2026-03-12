@@ -202,13 +202,15 @@ test("handleRequest supports tools/call alias for perform_action_with_evidence",
   const typedResult = result as {
     status: string;
     reasonCode: string;
-    data: { outcome: { actionType: string; actionId: string }; autoRemediation?: { stopReason: string } };
+    data: { outcome: { actionType: string; actionId: string; failureCategory?: string }; actionabilityReview?: string[]; autoRemediation?: { stopReason: string } };
   };
 
   assert.equal(typedResult.status, "partial");
   assert.equal(typedResult.reasonCode, "UNSUPPORTED_OPERATION");
   assert.equal(typedResult.data.outcome.actionType, "tap_element");
   assert.equal(typeof typedResult.data.outcome.actionId, "string");
+  assert.equal(typedResult.data.outcome.failureCategory, "unsupported");
+  assert.equal(Array.isArray(typedResult.data.actionabilityReview), true);
   assert.equal(typeof typedResult.data.autoRemediation?.stopReason, "string");
 });
 

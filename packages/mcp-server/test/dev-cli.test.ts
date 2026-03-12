@@ -626,13 +626,15 @@ test("main dispatches perform_action_with_evidence Android dry-run through the C
     "--content-desc", "View products",
     "--dry-run",
   ]) as {
-    performActionWithEvidenceResult: { status: string; reasonCode: string; data: { outcome: { actionType: string; actionId: string }; autoRemediation?: { stopReason: string } } };
+    performActionWithEvidenceResult: { status: string; reasonCode: string; data: { outcome: { actionType: string; actionId: string; failureCategory?: string }; actionabilityReview?: string[]; autoRemediation?: { stopReason: string } } };
   };
 
   assert.equal(output.performActionWithEvidenceResult.status, "partial");
   assert.equal(output.performActionWithEvidenceResult.reasonCode, "UNSUPPORTED_OPERATION");
   assert.equal(output.performActionWithEvidenceResult.data.outcome.actionType, "tap_element");
   assert.equal(typeof output.performActionWithEvidenceResult.data.outcome.actionId, "string");
+  assert.equal(output.performActionWithEvidenceResult.data.outcome.failureCategory, "unsupported");
+  assert.equal(Array.isArray(output.performActionWithEvidenceResult.data.actionabilityReview), true);
   assert.equal(typeof output.performActionWithEvidenceResult.data.autoRemediation?.stopReason, "string");
 });
 
