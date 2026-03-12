@@ -596,7 +596,16 @@ test("main dispatches describe_capabilities through the CLI", async () => {
     describeCapabilitiesResult: {
       status: string;
       reasonCode: string;
-      data: { capabilities: { platform: string; toolCapabilities: Array<{ toolName: string; supportLevel: string }> } };
+      data: {
+        capabilities: {
+          platform: string;
+          toolCapabilities: Array<{ toolName: string; supportLevel: string }>;
+          ocrFallback?: {
+            hostRequirement: string;
+            configuredProviders: string[];
+          };
+        };
+      };
     };
   };
 
@@ -604,6 +613,8 @@ test("main dispatches describe_capabilities through the CLI", async () => {
   assert.equal(output.describeCapabilitiesResult.reasonCode, "OK");
   assert.equal(output.describeCapabilitiesResult.data.capabilities.platform, "ios");
   assert.equal(output.describeCapabilitiesResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "full");
+  assert.equal(output.describeCapabilitiesResult.data.capabilities.ocrFallback?.hostRequirement, "darwin");
+  assert.equal(Array.isArray(output.describeCapabilitiesResult.data.capabilities.ocrFallback?.configuredProviders), true);
 });
 
 test("main dispatches perform_action_with_evidence Android dry-run through the CLI", async () => {
