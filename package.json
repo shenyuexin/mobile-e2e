@@ -23,6 +23,7 @@
     "validate:phase3-real-run": "bash scripts/dev/run-sample-phase-matrix.sh \"${PHASE1_IOS_RUNS:-1}\" \"${PHASE1_ANDROID_RUNS:-1}\" \"${PHASE3_FLUTTER_RUNS:-1}\" \"${PHASE3_NATIVE_ANDROID_RUNS:-1}\" \"${PHASE3_NATIVE_IOS_RUNS:-1}\"",
     "validate:bounded-auto-remediation-real-run": "pnpm build && tsx scripts/validate-bounded-auto-remediation-real-run.ts",
     "fixtures:ocr:sync": "tsx scripts/sync-ocr-fixtures.ts",
+    "fixtures:ocr:check": "tsx scripts/sync-ocr-fixtures.ts --check",
     "mcp:dev": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server dev",
     "mcp:stdio": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server stdio"
   },
