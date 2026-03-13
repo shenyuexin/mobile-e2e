@@ -17,7 +17,8 @@ Current committed fixtures:
 OCR fixture maintenance commands:
 
 - `pnpm validate:ocr-fixtures` - cross-platform integrity check for OCR triads, text inventory, hashes, and dimensions
-- `pnpm fixtures:ocr:sync [fixture-name...]` - macOS-only regeneration path that renders SVG -> PNG and refreshes observations plus hash metadata using the real Vision bridge
+- `pnpm fixtures:ocr:sync [--dry-run] [fixture-name...]` - macOS-only regeneration path that renders SVG -> PNG and refreshes observations plus hash metadata using the real Vision bridge
+- `pnpm fixtures:ocr:check` - macOS-only strict check that fails when OCR triads would change
 
 Current no-device regression layers:
 

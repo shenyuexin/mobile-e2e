@@ -16,8 +16,9 @@ Current mappings:
 When updating a fixture, use this maintenance loop:
 
 1. Edit the source `.svg`
-2. Run `pnpm fixtures:ocr:sync [fixture-name...]` on macOS to regenerate `.png` and `.observations.json`
-3. Run `pnpm validate:ocr-fixtures` on any platform to verify hashes, dimensions, and expected text inventory
+2. Run `pnpm fixtures:ocr:sync --dry-run [fixture-name...]` on macOS to preview whether the triad would change
+3. Run `pnpm fixtures:ocr:sync [fixture-name...]` on macOS to regenerate `.png` and `.observations.json`
+4. Run `pnpm validate:ocr-fixtures` on any platform, or `pnpm fixtures:ocr:check` on macOS, to verify the triad is in sync
 
 Smoke coverage:
 
