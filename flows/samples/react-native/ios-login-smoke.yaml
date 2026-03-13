@@ -12,9 +12,19 @@ appId: host.exp.Exponent
 - runFlow: "../../shared/handle-interruptions-ios.yaml"
 - runFlow:
     when:
-      visible: "登录"
+      visible:
+        id: "login-screen"
     commands:
+      - tapOn:
+          id: "phone-input"
+      - eraseText
+      - inputText: "13800138000"
+      - tapOn:
+          id: "password-input"
+      - eraseText
+      - inputText: "123456"
       - tapOn:
           id: "login-button"
       - runFlow: "../../shared/handle-interruptions-ios.yaml"
-- assertVisible: "欢迎进入首页"
+- assertVisible:
+    id: "welcome-home"
