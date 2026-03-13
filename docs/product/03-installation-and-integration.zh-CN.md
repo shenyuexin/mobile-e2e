@@ -188,6 +188,121 @@ pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
 - 需要彻底清理安装态冲突：使用 `uninstall_reinstall`。
 - iOS 登录凭据干扰明显时：先尝试 `keychain_reset`。
 
+## 5.2 故障排查示例（`record_screen` / `reset_app_state`）
+
+### A) `record_screen` 常见问题
+
+#### 1) Android 录屏失败，提示设备不可用 / 未连接
+
+现象：返回 `DEVICE_UNAVAILABLE` 或 stderr 包含 `adb: device ... not found`。
+
+排查：
+
+```bash
+adb devices
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --doctor --include-unavailable
+```
+
+处理建议：
+
+- 确认目标设备是 `device` 状态（不是 `offline` / `unauthorized`）。
+- 若是 CI，优先在任务开始时执行一次设备就绪检查，再跑录屏。
+
+#### 2) Android 返回成功但没有视频文件
+
+现象：record 步骤通过，但 artifact 未落地。
+
+排查：
+
+```bash
+# 先用 dry-run 看 outputPath 和 command
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
+  --record-screen --platform android --duration-ms 10000 --dry-run
+```
+
+处理建议：
+
+- 确认 `output-path` 所在目录有写权限。
+- 保持录制时长在合理范围（建议 10s~30s）。
+- Android 单次上限 180s，超长录制请分段。
+
+#### 3) iOS simulator 录屏失败，提示 simctl 相关错误
+
+现象：stderr 包含 `simctl` / `recordVideo` 错误。
+
+排查：
+
+```bash
+xcrun simctl list devices
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --doctor --include-unavailable
+```
+
+处理建议：
+
+- 先确认目标 simulator 已 boot。
+- 优先使用 `--platform ios --dry-run` 检查命令拼装与输出路径。
+
+### B) `reset_app_state` 常见问题
+
+#### 1) `clear_data` 失败，提示 appId 缺失
+
+现象：返回 `CONFIGURATION_ERROR`，提示需要 appId。
+
+处理建议：
+
+- 显式传入 `--app-id`，或在 harness 配置中补 `app_id`。
+
+示例：
+
+```bash
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
+  --reset-app-state --platform android --app-id com.example.demo \
+  --reset-strategy clear_data --dry-run
+```
+
+#### 2) `uninstall_reinstall` 失败，提示 artifactPath 无效
+
+现象：返回 `CONFIGURATION_ERROR`，提示找不到安装包。
+
+处理建议：
+
+- 传入存在的 `--artifact-path`。
+- 路径建议使用绝对路径，减少 CI 工作目录差异问题。
+
+示例：
+
+```bash
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
+  --reset-app-state --platform android --app-id com.example.demo \
+  --reset-strategy uninstall_reinstall \
+  --artifact-path /abs/path/app.apk --dry-run
+```
+
+#### 3) Android 使用 `keychain_reset` 返回 unsupported
+
+现象：返回 `UNSUPPORTED_OPERATION`。
+
+说明与建议：
+
+- 这是预期行为：`keychain_reset` 当前仅针对 iOS simulator。
+- Android 建议使用 `clear_data` 或 `uninstall_reinstall`。
+
+#### 4) iOS `keychain_reset` 失败
+
+排查：
+
+```bash
+xcrun simctl list devices
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
+  --reset-app-state --platform ios --app-id com.example.demo \
+  --reset-strategy keychain_reset --dry-run
+```
+
+处理建议：
+
+- 确认目标 simulator 可用且已 boot。
+- 若仍失败，先退回 `uninstall_reinstall` 路径保障流程可继续。
+
 ## 6. 环境校验
 
 建议在首版提供 `doctor` 命令，用于检查：
