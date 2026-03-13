@@ -443,6 +443,18 @@ test("buildDiagnosisBriefing prioritizes suspects and packet status", () => {
   assert.match(briefing[briefing.length - 1] ?? "", /DEVICE_UNAVAILABLE/);
 });
 
+test("buildDiagnosisBriefing surfaces retry tier when available", () => {
+  const briefing = buildDiagnosisBriefing({
+    status: "partial",
+    reasonCode: "OK",
+    appId: "com.example.demo",
+    suspectAreas: [],
+    retryRecommendationTier: "refine_selector",
+  });
+
+  assert.equal(briefing.some((line) => line.includes("refine_selector")), true);
+});
+
 test("tapElementWithMaestro reports configuration errors without a selector", async () => {
   const result = await tapElementWithMaestro({
     sessionId: "test-tap-config",
@@ -1362,4 +1374,5 @@ test("suggestKnownRemediationWithMaestro returns remediation hints", async () =>
 
   assert.equal(result.reasonCode, "OK");
   assert.equal(Array.isArray(result.data.remediation), true);
+  assert.equal(new Set(result.nextSuggestions).size, result.nextSuggestions.length);
 });

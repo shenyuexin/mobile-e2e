@@ -1427,6 +1427,22 @@ export function buildDiagnosisBriefing(params: {
   return briefing.slice(0, 5);
 }
 
+function prioritizeSuggestionBuckets(...buckets: string[][]): string[] {
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  for (const bucket of buckets) {
+    for (const item of bucket) {
+      const normalized = item.trim();
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      ordered.push(normalized);
+    }
+  }
+  return ordered.slice(0, 5);
+}
+
 function buildDebugNextSuggestions(params: {
   reasonCode: ReasonCode;
   suspectAreas: string[];
@@ -2186,11 +2202,11 @@ export async function explainLastFailureWithMaestro(
     },
     nextSuggestions: status === "success"
       ? []
-      : [
-        `Retry tier suggests: ${record.retryRecommendationTier ?? "inspect_only"}.`,
-        attribution.recommendedRecovery,
-        attribution.recommendedNextProbe,
-      ].filter((value): value is string => Boolean(value)),
+      : prioritizeSuggestionBuckets(
+        [`Retry tier suggests: ${record.retryRecommendationTier ?? "inspect_only"}.`],
+        attribution.recommendedRecovery ? [attribution.recommendedRecovery] : [],
+        attribution.recommendedNextProbe ? [attribution.recommendedNextProbe] : [],
+      ),
   };
 }
 
@@ -2235,7 +2251,11 @@ export async function rankFailureCandidatesWithMaestro(
       actionId: explained.data.actionId,
       candidates,
     },
-    nextSuggestions: explained.nextSuggestions,
+    nextSuggestions: prioritizeSuggestionBuckets(
+      explained.nextSuggestions,
+      primary?.recommendedRecovery ? [primary.recommendedRecovery] : [],
+      primary?.recommendedNextProbe ? [primary.recommendedNextProbe] : [],
+    ),
   };
 }
 
@@ -2626,7 +2646,9 @@ export async function suggestKnownRemediationWithMaestro(
       actionId,
       remediation,
     },
-    nextSuggestions: remediation.length > 0 ? [] : ["No known remediation was indexed yet; explain the failure first to seed local memory."],
+    nextSuggestions: remediation.length > 0
+      ? prioritizeSuggestionBuckets(remediation)
+      : ["No known remediation was indexed yet; explain the failure first to seed local memory."],
   };
 }
 
