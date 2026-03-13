@@ -35,4 +35,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm validate:ocr-fixtures
-      - run: pnpm test:ocr-smoke
+      - name: Run OCR smoke test
+        run: pnpm test:ocr-smoke 2>&1 | tee ocr-smoke.log
+      - name: Collect OCR smoke diagnostics
+        if: failure()
+        run: |
+          mkdir -p ocr-smoke-artifacts
+          if [ -f ocr-smoke.log ]; then cp ocr-smoke.log ocr-smoke-artifacts/ocr-smoke.log; fi
+          if [ -f tests/fixtures/ocr/signin-success.png ]; then cp tests/fixtures/ocr/signin-success.png ocr-smoke-artifacts/signin-success.png; fi
+          if [ -f tests/fixtures/ocr/signin-success.observations.json ]; then cp tests/fixtures/ocr/signin-success.observations.json ocr-smoke-artifacts/signin-success.observations.json; fi
+          if [ -f tests/fixtures/ocr/manifest.json ]; then cp tests/fixtures/ocr/manifest.json ocr-smoke-artifacts/manifest.json; fi
+      - name: Upload OCR smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocr-smoke-diagnostics
+          path: ocr-smoke-artifacts
+          if-no-files-found: error
