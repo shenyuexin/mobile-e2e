@@ -109,11 +109,13 @@
 
 ### P1（近期应推进）
 
-4. **设备/应用重置能力不完整**
-   - 建议补齐标准动作：clear app data / keychain reset / uninstall-reinstall 组合策略。
+4. **设备/应用重置能力（已完成第一版）**
+   - 当前已落地 `reset_app_state`：支持 `clear_data` / `uninstall_reinstall` / `keychain_reset`。
+   - 后续建议：补齐更细粒度重置矩阵（权限状态、通知授权、系统弹窗状态等）。
 
-5. **录屏与可视化回放证据不足**
-   - 目前以截图为主，建议加 screen recording（失败自动截取窗口）。
+5. **录屏与可视化回放证据（已完成第一版）**
+   - 当前已落地 `record_screen`：Android 走 `adb screenrecord`，iOS Simulator 走 `simctl io recordVideo`。
+   - 后续建议：失败自动录屏窗口化触发、录屏与 action timeline 自动关联。
 
 6. **网络/地理/系统态模拟能力不足**
    - 建议新增 network profile（offline/slow/packet-loss）、location mock、时区/语言切换标准接口。
@@ -143,8 +145,8 @@
 ### 5.2 60 天（扩展规模）
 
 - [ ] 引入并行 session 调度（最小版：同机多设备并发）
-- [ ] 增加 screen recording 证据能力
-- [ ] 增加 app reset/clear-data 策略矩阵
+- [x] 增加 screen recording 证据能力（第一版）
+- [x] 增加 app reset/clear-data 策略矩阵（第一版）
 - [ ] phase3-real-run 在 self-hosted runner 留痕常态化
 
 ### 5.3 90 天（形成开源竞争力）

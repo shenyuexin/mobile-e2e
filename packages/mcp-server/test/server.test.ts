@@ -32,8 +32,10 @@ test("createServer lists newly added UI tools", () => {
   assert.ok(tools.includes("measure_ios_performance"));
   assert.ok(tools.includes("perform_action_with_evidence"));
   assert.ok(tools.includes("rank_failure_candidates"));
+  assert.ok(tools.includes("record_screen"));
   assert.ok(tools.includes("recover_to_known_state"));
   assert.ok(tools.includes("replay_last_stable_path"));
+  assert.ok(tools.includes("reset_app_state"));
   assert.ok(tools.includes("suggest_known_remediation"));
   assert.ok(tools.includes("get_screen_summary"));
   assert.ok(tools.includes("get_session_state"));
@@ -530,6 +532,43 @@ test("server invoke supports terminate_app iOS dry-run", async () => {
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.dryRun, true);
   assert.equal(result.data.command[0], "xcrun");
+});
+
+test("server invoke supports record_screen Android dry-run", async () => {
+  const server = createServer();
+  const result = await server.invoke("record_screen", {
+    sessionId: "server-record-screen-dry-run",
+    platform: "android",
+    durationMs: 5000,
+    bitrateMbps: 4,
+    dryRun: true,
+  }) as { status: string; reasonCode: string; data: { dryRun: boolean; outputPath: string; durationMs: number; commands: string[][]; supportLevel: string } };
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.dryRun, true);
+  assert.equal(result.data.outputPath.endsWith(".mp4"), true);
+  assert.equal(result.data.durationMs, 5000);
+  assert.equal(result.data.commands[0]?.includes("screenrecord"), true);
+  assert.equal(result.data.supportLevel, "full");
+});
+
+test("server invoke supports reset_app_state Android clear_data dry-run", async () => {
+  const server = createServer();
+  const result = await server.invoke("reset_app_state", {
+    sessionId: "server-reset-app-state-dry-run",
+    platform: "android",
+    appId: "com.example.demo",
+    strategy: "clear_data",
+    dryRun: true,
+  }) as { status: string; reasonCode: string; data: { dryRun: boolean; strategy: string; commands: string[][] } };
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.dryRun, true);
+  assert.equal(result.data.strategy, "clear_data");
+  assert.equal(result.data.commands[0]?.includes("pm"), true);
+  assert.equal(result.data.commands[0]?.includes("clear"), true);
 });
 
 test("server invoke supports iOS tap dry-run through idb", async () => {

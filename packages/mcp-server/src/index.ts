@@ -24,9 +24,11 @@ import { listDevices } from "./tools/list-devices.js";
 import { measureAndroidPerformance } from "./tools/measure-android-performance.js";
 import { measureIosPerformance } from "./tools/measure-ios-performance.js";
 import { queryUi } from "./tools/query-ui.js";
+import { recordScreen } from "./tools/record-screen.js";
 import { recoverToKnownState } from "./tools/recover-to-known-state.js";
 import { performActionWithEvidence } from "./tools/perform-action-with-evidence.js";
 import { performActionWithAutoRemediation } from "./tools/perform-action-with-auto-remediation.js";
+import { resetAppState } from "./tools/reset-app-state.js";
 import { resolveUiTarget } from "./tools/resolve-ui-target.js";
 import { rankFailureCandidates } from "./tools/rank-failure-candidates.js";
 import { replayLastStablePath } from "./tools/replay-last-stable-path.js";
@@ -94,7 +96,9 @@ export function createServer(): MobileE2EMcpServer {
   const measureAndroidPerformanceHandler = withPolicyAndAudit("measure_android_performance", measureAndroidPerformance);
   const measureIosPerformanceHandler = withPolicyAndAudit("measure_ios_performance", measureIosPerformance);
   const rankFailureCandidatesHandler = withPolicy("rank_failure_candidates", rankFailureCandidates);
+  const recordScreenHandler = withPolicyAndAudit("record_screen", recordScreen);
   const runFlowHandler = withPolicy("run_flow", runFlow);
+  const resetAppStateHandler = withPolicy("reset_app_state", resetAppState);
   const takeScreenshotHandler = withPolicy("take_screenshot", takeScreenshot);
   const tapHandler = withPolicy("tap", tap);
   const tapElementHandler = withPolicy("tap_element", tapElement);
@@ -145,7 +149,9 @@ export function createServer(): MobileE2EMcpServer {
     measure_ios_performance: measureIosPerformanceHandler,
     perform_action_with_evidence: performActionWithEvidenceHandler,
     rank_failure_candidates: rankFailureCandidatesHandler,
+    record_screen: recordScreenHandler,
     start_session: async (input) => startSession(input),
+    reset_app_state: resetAppStateHandler,
     run_flow: runFlowHandler,
     take_screenshot: takeScreenshotHandler,
     tap: tapHandler,

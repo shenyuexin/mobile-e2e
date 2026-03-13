@@ -70,6 +70,11 @@ import {
   type RankFailureCandidatesInput,
   type RecoverToKnownStateData,
   type RecoverToKnownStateInput,
+  type RecordScreenData,
+  type RecordScreenInput,
+  type ResetAppStateData,
+  type ResetAppStateInput,
+  type ResetAppStateStrategy,
   type RecoverySummary,
   type ReplayLastStablePathData,
   type ReplayLastStablePathInput,
@@ -264,6 +269,8 @@ function shouldContinueScrollResolution(status: string): boolean {
   return status === "no_match" || status === "off_screen";
 }
 const DEFAULT_WAIT_MAX_CONSECUTIVE_CAPTURE_FAILURES = 2;
+const DEFAULT_RECORD_SCREEN_DURATION_MS = 15_000;
+const MAX_ANDROID_SCREENRECORD_DURATION_MS = 180_000;
 
 interface TypeTextData {
   dryRun: boolean;
@@ -314,6 +321,26 @@ interface InstallAppData {
   artifactPath?: string;
   installCommand: string[];
   exitCode: number | null;
+}
+
+function sanitizeArtifactSegment(value: string): string {
+  const normalized = value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+  return normalized.length > 0 ? normalized : "session";
+}
+
+function normalizeRecordDurationMs(value: number | undefined, platform: Platform): number {
+  const normalized = normalizePositiveInteger(value, DEFAULT_RECORD_SCREEN_DURATION_MS);
+  if (platform === "android") {
+    return Math.min(MAX_ANDROID_SCREENRECORD_DURATION_MS, normalized);
+  }
+  return normalized;
+}
+
+function normalizeRecordBitrateMbps(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return Number(value.toFixed(2));
 }
 
 interface BasicRunData {
@@ -5290,6 +5317,341 @@ export async function takeScreenshotWithMaestro(input: ScreenshotInput): Promise
     artifacts: execution.exitCode === 0 ? [toRelativePath(repoRoot, absoluteOutputPath)] : [],
     data: { dryRun: false, runnerProfile, outputPath: relativeOutputPath, command, exitCode: execution.exitCode, evidence: execution.exitCode === 0 ? [buildExecutionEvidence("screenshot", relativeOutputPath, "full", "Captured iOS screenshot artifact.")] : undefined },
     nextSuggestions: execution.exitCode === 0 ? [] : ["Check simulator boot state before retrying take_screenshot."],
+  };
+}
+
+export async function recordScreenWithMaestro(input: RecordScreenInput): Promise<ToolResult<RecordScreenData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? (input.platform === "android" ? "emulator-5554" : "ADA078B9-3C6B-4875-8B85-A7789F368816");
+  const durationMs = normalizeRecordDurationMs(input.durationMs, input.platform);
+  const durationSeconds = Math.max(1, Math.ceil(durationMs / 1000));
+  const bitrateMbps = normalizeRecordBitrateMbps(input.bitrateMbps);
+  const relativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "screen-recordings", input.sessionId, `${input.platform}-${runnerProfile}.mp4`);
+  const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
+  await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
+
+  if (input.platform === "android") {
+    const remoteOutputPath = `/sdcard/${sanitizeArtifactSegment(input.sessionId)}-${Date.now()}.mp4`;
+    const recordCommand = [
+      "adb", "-s", deviceId, "shell", "screenrecord",
+      "--time-limit", String(Math.min(180, durationSeconds)),
+      ...(bitrateMbps ? ["--bit-rate", String(Math.floor(bitrateMbps * 1_000_000))] : []),
+      remoteOutputPath,
+    ];
+    const pullCommand = ["adb", "-s", deviceId, "pull", remoteOutputPath, absoluteOutputPath];
+    const cleanupCommand = ["adb", "-s", deviceId, "shell", "rm", "-f", remoteOutputPath];
+    const commandLabels = ["record", "pull", "cleanup"];
+    const commands = [recordCommand, pullCommand, cleanupCommand];
+
+    if (input.dryRun) {
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: true,
+          runnerProfile,
+          outputPath: relativeOutputPath,
+          durationMs,
+          bitrateMbps,
+          commandLabels,
+          commands,
+          exitCode: 0,
+          supportLevel: "full",
+          evidence: [buildExecutionEvidence("screen_recording", relativeOutputPath, "full", "Planned Android screen recording artifact path.")],
+        },
+        nextSuggestions: ["Run record_screen without dryRun to capture an actual Android screen recording artifact."],
+      };
+    }
+
+    const recordExecution = await executeRunner(recordCommand, repoRoot, process.env);
+    if (recordExecution.exitCode !== 0) {
+      await executeRunner(cleanupCommand, repoRoot, process.env).catch(() => undefined);
+      return {
+        status: "failed",
+        reasonCode: buildFailureReason(recordExecution.stderr, recordExecution.exitCode),
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          outputPath: relativeOutputPath,
+          durationMs,
+          bitrateMbps,
+          commandLabels,
+          commands,
+          exitCode: recordExecution.exitCode,
+          supportLevel: "full",
+        },
+        nextSuggestions: ["Check Android device state and ensure adb shell screenrecord is available before retrying record_screen."],
+      };
+    }
+
+    const pullExecution = await executeRunner(pullCommand, repoRoot, process.env);
+    await executeRunner(cleanupCommand, repoRoot, process.env).catch(() => undefined);
+    return {
+      status: pullExecution.exitCode === 0 ? "success" : "failed",
+      reasonCode: pullExecution.exitCode === 0 ? REASON_CODES.ok : buildFailureReason(pullExecution.stderr, pullExecution.exitCode),
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: pullExecution.exitCode === 0 ? [relativeOutputPath] : [],
+      data: {
+        dryRun: false,
+        runnerProfile,
+        outputPath: relativeOutputPath,
+        durationMs,
+        bitrateMbps,
+        commandLabels,
+        commands,
+        exitCode: pullExecution.exitCode,
+        supportLevel: "full",
+        evidence: pullExecution.exitCode === 0 ? [buildExecutionEvidence("screen_recording", relativeOutputPath, "full", "Captured Android screen recording artifact.")] : undefined,
+      },
+      nextSuggestions: pullExecution.exitCode === 0 ? [] : ["Android recording completed but artifact pull failed. Check adb device connectivity and storage path."],
+    };
+  }
+
+  const iosScript = [
+    `xcrun simctl io ${shellEscape(deviceId)} recordVideo --codec=h264 --force ${shellEscape(absoluteOutputPath)} >/dev/null 2>&1 &`,
+    "pid=$!",
+    `sleep ${String(durationSeconds)}`,
+    "kill -INT \"$pid\" >/dev/null 2>&1 || true",
+    "wait \"$pid\" >/dev/null 2>&1 || true",
+  ].join("; ");
+  const recordCommand = ["sh", "-lc", iosScript];
+  const commandLabels = ["record"]; 
+  const commands = [recordCommand];
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        runnerProfile,
+        outputPath: relativeOutputPath,
+        durationMs,
+        bitrateMbps,
+        commandLabels,
+        commands,
+        exitCode: 0,
+        supportLevel: "partial",
+        evidence: [buildExecutionEvidence("screen_recording", relativeOutputPath, "partial", "Planned iOS simulator screen recording artifact path.")],
+      },
+      nextSuggestions: ["Run record_screen without dryRun to capture an iOS simulator recording via simctl."],
+    };
+  }
+
+  const execution = await executeRunner(recordCommand, repoRoot, process.env);
+  return {
+    status: execution.exitCode === 0 ? "success" : "failed",
+    reasonCode: execution.exitCode === 0 ? REASON_CODES.ok : buildFailureReason(execution.stderr, execution.exitCode),
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: execution.exitCode === 0 ? [relativeOutputPath] : [],
+    data: {
+      dryRun: false,
+      runnerProfile,
+      outputPath: relativeOutputPath,
+      durationMs,
+      bitrateMbps,
+      commandLabels,
+      commands,
+      exitCode: execution.exitCode,
+      supportLevel: "partial",
+      evidence: execution.exitCode === 0 ? [buildExecutionEvidence("screen_recording", relativeOutputPath, "partial", "Captured iOS simulator screen recording artifact.")] : undefined,
+    },
+    nextSuggestions: execution.exitCode === 0 ? [] : ["Check simulator boot state and xcrun simctl io recordVideo availability before retrying record_screen."],
+  };
+}
+
+export async function resetAppStateWithMaestro(input: ResetAppStateInput): Promise<ToolResult<ResetAppStateData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
+  const deviceId = input.deviceId ?? selection.deviceId ?? (input.platform === "android" ? "emulator-5554" : "ADA078B9-3C6B-4875-8B85-A7789F368816");
+  const appId = input.appId ?? selection.appId;
+  const strategy: ResetAppStateStrategy = input.strategy ?? "clear_data";
+  const artifactPath = resolveInstallArtifactPath(repoRoot, runnerProfile, input.artifactPath);
+  const commandLabels: string[] = [];
+  const commands: string[][] = [];
+
+  if (strategy === "keychain_reset" && input.platform === "android") {
+    return {
+      status: "partial",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        strategy,
+        appId,
+        artifactPath,
+        commandLabels,
+        commands,
+        exitCode: null,
+        supportLevel: "partial",
+      },
+      nextSuggestions: ["keychain_reset is only available for iOS simulators in this baseline implementation."],
+    };
+  }
+
+  if (!appId && strategy !== "keychain_reset") {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        strategy,
+        appId,
+        artifactPath,
+        commandLabels,
+        commands,
+        exitCode: null,
+        supportLevel: "full",
+      },
+      nextSuggestions: ["Provide appId or configure app_id in harness config before calling reset_app_state."],
+    };
+  }
+  const targetAppId = appId ?? "";
+
+  if (strategy === "clear_data") {
+    if (input.platform === "android") {
+      commandLabels.push("clear_data");
+      commands.push(["adb", "-s", deviceId, "shell", "pm", "clear", targetAppId]);
+    } else {
+      commandLabels.push("clear_data");
+      commands.push(["xcrun", "simctl", "uninstall", deviceId, targetAppId]);
+    }
+  } else if (strategy === "uninstall_reinstall") {
+    if (!artifactPath || !existsSync(artifactPath)) {
+      return {
+        status: "failed",
+        reasonCode: REASON_CODES.configurationError,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: Boolean(input.dryRun),
+          runnerProfile,
+          strategy,
+          appId,
+          artifactPath,
+          commandLabels,
+          commands,
+          exitCode: null,
+          supportLevel: "full",
+        },
+        nextSuggestions: ["Provide a valid artifactPath or set runner-specific artifact environment variable before uninstall_reinstall."],
+      };
+    }
+    commandLabels.push("uninstall", "install");
+    if (input.platform === "android") {
+      commands.push(["adb", "-s", deviceId, "uninstall", targetAppId]);
+      commands.push(["adb", "-s", deviceId, "install", "-r", artifactPath]);
+    } else {
+      commands.push(["xcrun", "simctl", "uninstall", deviceId, targetAppId]);
+      commands.push(["xcrun", "simctl", "install", deviceId, artifactPath]);
+    }
+  } else {
+    commandLabels.push("keychain_reset");
+    commands.push(["xcrun", "simctl", "keychain", deviceId, "reset"]);
+  }
+
+  const supportLevel: "full" | "partial" = input.platform === "ios" && strategy === "keychain_reset" ? "partial" : "full";
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        runnerProfile,
+        strategy,
+        appId,
+        artifactPath,
+        commandLabels,
+        commands,
+        exitCode: 0,
+        supportLevel,
+      },
+      nextSuggestions: ["Run reset_app_state without dryRun to execute the reset strategy on the target device/simulator."],
+    };
+  }
+
+  for (const command of commands) {
+    const execution = await executeRunner(command, repoRoot, process.env);
+    if (execution.exitCode !== 0) {
+      return {
+        status: "failed",
+        reasonCode: buildFailureReason(execution.stderr, execution.exitCode),
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile,
+          strategy,
+          appId,
+          artifactPath,
+          commandLabels,
+          commands,
+          exitCode: execution.exitCode,
+          supportLevel,
+        },
+        nextSuggestions: ["Reset command failed. Verify device availability, appId/artifactPath, and simulator/device state before retrying reset_app_state."],
+      };
+    }
+  }
+
+  return {
+    status: "success",
+    reasonCode: REASON_CODES.ok,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      dryRun: false,
+      runnerProfile,
+      strategy,
+      appId,
+      artifactPath,
+      commandLabels,
+      commands,
+      exitCode: 0,
+      supportLevel,
+    },
+    nextSuggestions: [],
   };
 }
 

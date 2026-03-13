@@ -45,8 +45,12 @@ import type {
   QueryUiInput,
   RankFailureCandidatesData,
   RankFailureCandidatesInput,
+  RecordScreenData,
+  RecordScreenInput,
   RecoverToKnownStateData,
   RecoverToKnownStateInput,
+  ResetAppStateData,
+  ResetAppStateInput,
   ReplayLastStablePathData,
   ReplayLastStablePathInput,
   ResolveUiTargetData,
@@ -103,6 +107,8 @@ export interface MobileE2EMcpToolRegistry {
   measure_ios_performance: (input: MeasureIosPerformanceInput) => Promise<ToolResult<MeasureIosPerformanceData>>;
   perform_action_with_evidence: (input: PerformActionWithEvidenceInput) => Promise<ToolResult<PerformActionWithEvidenceData>>;
   rank_failure_candidates: (input: RankFailureCandidatesInput) => Promise<ToolResult<RankFailureCandidatesData>>;
+  record_screen: (input: RecordScreenInput) => Promise<ToolResult<RecordScreenData>>;
+  reset_app_state: (input: ResetAppStateInput) => Promise<ToolResult<ResetAppStateData>>;
   start_session: (input: StartSessionInput) => Promise<ToolResult<Session>>;
   run_flow: (input: RunFlowInput) => Promise<ToolResult>;
   take_screenshot: (input: ScreenshotInput) => Promise<ToolResult>;
@@ -120,7 +126,7 @@ export class MobileE2EMcpServer {
   constructor(private readonly tools: MobileE2EMcpToolRegistry) {}
 
   listTools(): Array<keyof MobileE2EMcpToolRegistry> {
-    return ["capture_js_console_logs", "capture_js_network_events", "compare_against_baseline", "collect_debug_evidence", "collect_diagnostics", "describe_capabilities", "doctor", "explain_last_failure", "find_similar_failures", "get_action_outcome", "get_crash_signals", "get_logs", "get_screen_summary", "get_session_state", "inspect_ui", "query_ui", "rank_failure_candidates", "recover_to_known_state", "replay_last_stable_path", "resolve_ui_target", "scroll_and_resolve_ui_target", "scroll_and_tap_element", "install_app", "list_js_debug_targets", "launch_app", "list_devices", "measure_android_performance", "measure_ios_performance", "perform_action_with_evidence", "start_session", "run_flow", "suggest_known_remediation", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
+    return ["capture_js_console_logs", "capture_js_network_events", "compare_against_baseline", "collect_debug_evidence", "collect_diagnostics", "describe_capabilities", "doctor", "explain_last_failure", "find_similar_failures", "get_action_outcome", "get_crash_signals", "get_logs", "get_screen_summary", "get_session_state", "inspect_ui", "query_ui", "rank_failure_candidates", "record_screen", "recover_to_known_state", "replay_last_stable_path", "reset_app_state", "resolve_ui_target", "scroll_and_resolve_ui_target", "scroll_and_tap_element", "install_app", "list_js_debug_targets", "launch_app", "list_devices", "measure_android_performance", "measure_ios_performance", "perform_action_with_evidence", "start_session", "run_flow", "suggest_known_remediation", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
   }
 
   async invoke(toolName: "capture_js_console_logs", input: CaptureJsConsoleLogsInput): Promise<ToolResult<CaptureJsConsoleLogsData>>;
@@ -152,7 +158,9 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "measure_ios_performance", input: MeasureIosPerformanceInput): Promise<ToolResult<MeasureIosPerformanceData>>;
   async invoke(toolName: "perform_action_with_evidence", input: PerformActionWithEvidenceInput): Promise<ToolResult<PerformActionWithEvidenceData>>;
   async invoke(toolName: "rank_failure_candidates", input: RankFailureCandidatesInput): Promise<ToolResult<RankFailureCandidatesData>>;
+  async invoke(toolName: "record_screen", input: RecordScreenInput): Promise<ToolResult<RecordScreenData>>;
   async invoke(toolName: "start_session", input: StartSessionInput): Promise<ToolResult<Session>>;
+  async invoke(toolName: "reset_app_state", input: ResetAppStateInput): Promise<ToolResult<ResetAppStateData>>;
   async invoke(toolName: "run_flow", input: RunFlowInput): Promise<ToolResult>;
   async invoke(toolName: "suggest_known_remediation", input: SuggestKnownRemediationInput): Promise<ToolResult<SuggestKnownRemediationData>>;
   async invoke(toolName: "take_screenshot", input: ScreenshotInput): Promise<ToolResult>;
@@ -165,7 +173,7 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "end_session", input: EndSessionInput): Promise<ToolResult<{ closed: boolean; endedAt: string }>>;
   async invoke(
     toolName: keyof MobileE2EMcpToolRegistry,
-    input: CaptureJsConsoleLogsInput | CaptureJsNetworkEventsInput | CompareAgainstBaselineInput | CollectDebugEvidenceInput | CollectDiagnosticsInput | DescribeCapabilitiesInput | DoctorInput | ExplainLastFailureInput | FindSimilarFailuresInput | GetActionOutcomeInput | GetCrashSignalsInput | GetLogsInput | GetScreenSummaryInput | GetSessionStateInput | InspectUiInput | QueryUiInput | RankFailureCandidatesInput | RecoverToKnownStateInput | ReplayLastStablePathInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | ScrollAndTapElementInput | InstallAppInput | ListJsDebugTargetsInput | LaunchAppInput | ListDevicesInput | MeasureAndroidPerformanceInput | MeasureIosPerformanceInput | PerformActionWithEvidenceInput | StartSessionInput | RunFlowInput | ScreenshotInput | SuggestKnownRemediationInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
+    input: CaptureJsConsoleLogsInput | CaptureJsNetworkEventsInput | CompareAgainstBaselineInput | CollectDebugEvidenceInput | CollectDiagnosticsInput | DescribeCapabilitiesInput | DoctorInput | ExplainLastFailureInput | FindSimilarFailuresInput | GetActionOutcomeInput | GetCrashSignalsInput | GetLogsInput | GetScreenSummaryInput | GetSessionStateInput | InspectUiInput | QueryUiInput | RankFailureCandidatesInput | RecordScreenInput | RecoverToKnownStateInput | ReplayLastStablePathInput | ResetAppStateInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | ScrollAndTapElementInput | InstallAppInput | ListJsDebugTargetsInput | LaunchAppInput | ListDevicesInput | MeasureAndroidPerformanceInput | MeasureIosPerformanceInput | PerformActionWithEvidenceInput | StartSessionInput | RunFlowInput | ScreenshotInput | SuggestKnownRemediationInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
   ): Promise<
       | ToolResult<CaptureJsConsoleLogsData>
       | ToolResult<CaptureJsNetworkEventsData>
@@ -187,8 +195,10 @@ export class MobileE2EMcpServer {
       | ToolResult<MeasureIosPerformanceData>
       | ToolResult<PerformActionWithEvidenceData>
       | ToolResult<RankFailureCandidatesData>
+      | ToolResult<RecordScreenData>
       | ToolResult<RecoverToKnownStateData>
       | ToolResult<ReplayLastStablePathData>
+      | ToolResult<ResetAppStateData>
       | ToolResult<Session>
       | ToolResult<SuggestKnownRemediationData>
       | ToolResult<QueryUiData>
@@ -230,7 +240,9 @@ export class MobileE2EMcpServer {
     if (toolName === "measure_ios_performance") return this.tools.measure_ios_performance(input as MeasureIosPerformanceInput);
     if (toolName === "perform_action_with_evidence") return this.tools.perform_action_with_evidence(input as PerformActionWithEvidenceInput);
     if (toolName === "rank_failure_candidates") return this.tools.rank_failure_candidates(input as RankFailureCandidatesInput);
+    if (toolName === "record_screen") return this.tools.record_screen(input as RecordScreenInput);
     if (toolName === "start_session") return this.tools.start_session(input as StartSessionInput);
+    if (toolName === "reset_app_state") return this.tools.reset_app_state(input as ResetAppStateInput);
     if (toolName === "run_flow") return this.tools.run_flow(input as RunFlowInput);
     if (toolName === "suggest_known_remediation") return this.tools.suggest_known_remediation(input as SuggestKnownRemediationInput);
     if (toolName === "take_screenshot") return this.tools.take_screenshot(input as ScreenshotInput);

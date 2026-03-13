@@ -62,6 +62,9 @@ export function requiredPolicyScopesForTool(toolName: string): string[] {
   if (toolName === "take_screenshot") {
     return ["screenshot"];
   }
+  if (toolName === "record_screen") {
+    return ["screenshot"];
+  }
   if (["get_logs", "get_crash_signals", "collect_diagnostics", "collect_debug_evidence", "capture_js_console_logs", "capture_js_network_events", "list_js_debug_targets"].includes(toolName)) {
     return ["logs"];
   }
@@ -79,6 +82,9 @@ export function requiredPolicyScopesForTool(toolName: string): string[] {
   }
   if (toolName === "install_app") {
     return ["install"];
+  }
+  if (toolName === "reset_app_state") {
+    return ["clear-data", "install", "uninstall"];
   }
   if (toolName === "run_flow") {
     return ["tap", "type", "swipe"];

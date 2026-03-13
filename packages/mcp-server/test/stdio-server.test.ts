@@ -44,8 +44,10 @@ test("buildToolList includes the new UI tools", () => {
   assert.ok(toolNames.includes("terminate_app"));
   assert.ok(toolNames.includes("perform_action_with_evidence"));
   assert.ok(toolNames.includes("rank_failure_candidates"));
+  assert.ok(toolNames.includes("record_screen"));
   assert.ok(toolNames.includes("recover_to_known_state"));
   assert.ok(toolNames.includes("replay_last_stable_path"));
+  assert.ok(toolNames.includes("reset_app_state"));
   assert.ok(toolNames.includes("suggest_known_remediation"));
 });
 
@@ -71,8 +73,10 @@ test("handleRequest returns stdio initialize payload", async () => {
   assert.ok(typedResult.tools.some((tool) => tool.name === "measure_ios_performance"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "perform_action_with_evidence"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "rank_failure_candidates"));
+  assert.ok(typedResult.tools.some((tool) => tool.name === "record_screen"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "recover_to_known_state"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "replay_last_stable_path"));
+  assert.ok(typedResult.tools.some((tool) => tool.name === "reset_app_state"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "suggest_known_remediation"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "wait_for_ui"));
 });
@@ -365,6 +369,53 @@ test("handleRequest supports tools/call alias for recover_to_known_state", async
 
   assert.equal(typedResult.reasonCode, "OK");
   assert.equal(typeof typedResult.data.summary.strategy, "string");
+});
+
+test("handleRequest supports tools/call alias for record_screen", async () => {
+  const result = await handleRequest({
+    id: 52,
+    method: "tools/call",
+    params: {
+      name: "record_screen",
+      arguments: {
+        sessionId: "stdio-record-screen-dry-run",
+        platform: "android",
+        durationMs: 4000,
+        dryRun: true,
+      },
+    },
+  });
+  const typedResult = result as { status: string; reasonCode: string; data: { dryRun: boolean; commands: string[][]; outputPath: string } };
+
+  assert.equal(typedResult.status, "success");
+  assert.equal(typedResult.reasonCode, "OK");
+  assert.equal(typedResult.data.dryRun, true);
+  assert.equal(typedResult.data.commands[0]?.includes("screenrecord"), true);
+  assert.equal(typedResult.data.outputPath.endsWith(".mp4"), true);
+});
+
+test("handleRequest supports tools/call alias for reset_app_state", async () => {
+  const result = await handleRequest({
+    id: 53,
+    method: "tools/call",
+    params: {
+      name: "reset_app_state",
+      arguments: {
+        sessionId: "stdio-reset-app-state-dry-run",
+        platform: "android",
+        appId: "com.example.demo",
+        strategy: "clear_data",
+        dryRun: true,
+      },
+    },
+  });
+  const typedResult = result as { status: string; reasonCode: string; data: { strategy: string; commands: string[][] } };
+
+  assert.equal(typedResult.status, "success");
+  assert.equal(typedResult.reasonCode, "OK");
+  assert.equal(typedResult.data.strategy, "clear_data");
+  assert.equal(typedResult.data.commands[0]?.includes("pm"), true);
+  assert.equal(typedResult.data.commands[0]?.includes("clear"), true);
 });
 
 test("handleRequest supports tools/call alias for replay_last_stable_path", async () => {

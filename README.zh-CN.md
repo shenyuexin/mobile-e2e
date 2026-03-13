@@ -27,6 +27,7 @@
 - `docs/product/03-installation-and-integration.zh-CN.md`：安装与接入指南
 - `docs/product/04-open-source-scope-and-release-plan.zh-CN.md`：开源范围与发布计划
 - `docs/product/05-post-migration-implementation-brief.zh-CN.md`：迁移后实施说明
+- `docs/product/06-harness-tech-gap-and-optimization.zh-CN.md`：harness 技术缺口分析与优化建议（含已落地项）
 
 ## 这个 MCP 会实现哪些能力？
 

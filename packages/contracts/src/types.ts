@@ -4,7 +4,7 @@ export type Platform = "android" | "ios";
 export type ToolStatus = "success" | "failed" | "partial";
 export type RunnerProfile = "phase1" | "native_android" | "native_ios" | "flutter_android";
 export type CapabilitySupportLevel = "full" | "partial" | "unsupported";
-export type ExecutionEvidenceKind = "ui_dump" | "screenshot" | "log" | "crash_signal" | "diagnostics_bundle" | "debug_summary" | "performance_trace" | "performance_summary" | "performance_export";
+export type ExecutionEvidenceKind = "ui_dump" | "screenshot" | "screen_recording" | "log" | "crash_signal" | "diagnostics_bundle" | "debug_summary" | "performance_trace" | "performance_summary" | "performance_export";
 export type AppPhase = "launching" | "ready" | "loading" | "blocked" | "backgrounded" | "crashed" | "authentication" | "detail" | "catalog" | "empty" | "unknown";
 export type StateReadiness = "ready" | "waiting_network" | "waiting_ui" | "interrupted" | "unknown";
 export type TimelineEventLayer = "session" | "ui" | "state" | "action" | "log" | "crash" | "network" | "runtime" | "performance" | "environment" | "unknown";
@@ -939,6 +939,52 @@ export interface InstallAppInput { sessionId: string; platform: Platform; runner
 export interface LaunchAppInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; appId?: string; launchUrl?: string; dryRun?: boolean; }
 export interface ListDevicesInput { includeUnavailable?: boolean; }
 export interface ScreenshotInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; outputPath?: string; dryRun?: boolean; }
+export type ResetAppStateStrategy = "clear_data" | "uninstall_reinstall" | "keychain_reset";
+export interface ResetAppStateInput {
+  sessionId: string;
+  platform: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  appId?: string;
+  artifactPath?: string;
+  strategy?: ResetAppStateStrategy;
+  dryRun?: boolean;
+}
+export interface ResetAppStateData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  strategy: ResetAppStateStrategy;
+  appId?: string;
+  artifactPath?: string;
+  commandLabels: string[];
+  commands: string[][];
+  exitCode: number | null;
+  supportLevel: "full" | "partial";
+}
+export interface RecordScreenInput {
+  sessionId: string;
+  platform: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  outputPath?: string;
+  durationMs?: number;
+  bitrateMbps?: number;
+  dryRun?: boolean;
+}
+export interface RecordScreenData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  outputPath: string;
+  durationMs: number;
+  bitrateMbps?: number;
+  commandLabels: string[];
+  commands: string[][];
+  exitCode: number | null;
+  supportLevel: "full" | "partial";
+  evidence?: ExecutionEvidence[];
+}
 export interface TapInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; x: number; y: number; dryRun?: boolean; }
 export interface TerminateAppInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; appId?: string; dryRun?: boolean; }
 export interface TypeTextInput { sessionId: string; platform: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; text: string; dryRun?: boolean; }

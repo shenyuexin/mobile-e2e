@@ -115,6 +115,38 @@ test("parseCliArgs captures rank_failure_candidates flags", () => {
   assert.equal(options.sessionId, "failure-session");
 });
 
+test("parseCliArgs captures record_screen flags", () => {
+  const options = parseCliArgs([
+    "--record-screen",
+    "--platform", "android",
+    "--duration-ms", "5000",
+    "--bitrate-mbps", "6",
+    "--dry-run",
+  ]);
+
+  assert.equal(options.recordScreen, true);
+  assert.equal(options.platform, "android");
+  assert.equal(options.durationMs, 5000);
+  assert.equal(options.bitrateMbps, 6);
+  assert.equal(options.dryRun, true);
+});
+
+test("parseCliArgs captures reset_app_state flags", () => {
+  const options = parseCliArgs([
+    "--reset-app-state",
+    "--platform", "android",
+    "--app-id", "com.example.demo",
+    "--reset-strategy", "clear_data",
+    "--dry-run",
+  ]);
+
+  assert.equal(options.resetAppState, true);
+  assert.equal(options.platform, "android");
+  assert.equal(options.appId, "com.example.demo");
+  assert.equal(options.resetStrategy, "clear_data");
+  assert.equal(options.dryRun, true);
+});
+
 test("parseCliArgs captures recover_to_known_state flags", () => {
   const options = parseCliArgs([
     "--recover-to-known-state",
@@ -704,6 +736,51 @@ test("main dispatches rank_failure_candidates through the CLI", async () => {
   assert.equal(output.rankFailureCandidatesResult.reasonCode, "OK");
   assert.equal(output.rankFailureCandidatesResult.data.found, true);
   assert.equal(output.rankFailureCandidatesResult.data.candidates.length >= 1, true);
+});
+
+test("main dispatches record_screen Android dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--record-screen",
+    "--platform", "android",
+    "--duration-ms", "5000",
+    "--bitrate-mbps", "4",
+    "--dry-run",
+  ]) as {
+    recordScreenResult: {
+      status: string;
+      reasonCode: string;
+      data: { dryRun: boolean; outputPath: string; durationMs: number; commands: string[][] };
+    };
+  };
+
+  assert.equal(output.recordScreenResult.status, "success");
+  assert.equal(output.recordScreenResult.reasonCode, "OK");
+  assert.equal(output.recordScreenResult.data.dryRun, true);
+  assert.equal(output.recordScreenResult.data.outputPath.endsWith(".mp4"), true);
+  assert.equal(output.recordScreenResult.data.durationMs, 5000);
+  assert.equal(output.recordScreenResult.data.commands[0]?.includes("screenrecord"), true);
+});
+
+test("main dispatches reset_app_state Android clear_data dry-run through the CLI", async () => {
+  const output = await runCli([
+    "--reset-app-state",
+    "--platform", "android",
+    "--app-id", "com.example.demo",
+    "--reset-strategy", "clear_data",
+    "--dry-run",
+  ]) as {
+    resetAppStateResult: {
+      status: string;
+      reasonCode: string;
+      data: { strategy: string; commands: string[][] };
+    };
+  };
+
+  assert.equal(output.resetAppStateResult.status, "success");
+  assert.equal(output.resetAppStateResult.reasonCode, "OK");
+  assert.equal(output.resetAppStateResult.data.strategy, "clear_data");
+  assert.equal(output.resetAppStateResult.data.commands[0]?.includes("pm"), true);
+  assert.equal(output.resetAppStateResult.data.commands[0]?.includes("clear"), true);
 });
 
 test("main dispatches recover_to_known_state through the CLI", async () => {

@@ -26,7 +26,7 @@ import {
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
 import { buildResolutionNextSuggestions } from "../src/ui-tools.ts";
-import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, performActionWithEvidenceWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, performActionWithEvidenceWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const ocrFixtureRoot = path.join(repoRoot, "tests", "fixtures", "ocr");
@@ -604,6 +604,8 @@ test("buildCapabilityProfile stays honest across Android and iOS UI action suppo
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "type_into_element")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "scroll_and_resolve_ui_target")?.supportLevel, "full");
+  assert.equal(androidProfile.toolCapabilities.find((tool) => tool.toolName === "record_screen")?.supportLevel, "full");
+  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "reset_app_state")?.supportLevel, "partial");
   assert.equal(iosProfile.groups.find((group) => group.groupName === "ui_actions")?.supportLevel, "full");
 });
 
@@ -700,6 +702,39 @@ test("artifact-heavy dry-run tools emit structured evidence", async () => {
   assert.equal(logsResult.data.evidence?.[0]?.path, logsResult.data.outputPath);
   assert.equal(crashResult.data.evidence?.[0]?.kind, "crash_signal");
   assert.equal(diagnosticsResult.data.evidence?.[0]?.kind, "diagnostics_bundle");
+});
+
+test("recordScreenWithMaestro returns dry-run Android plan with recording evidence", async () => {
+  const result = await recordScreenWithMaestro({
+    sessionId: "record-screen-dry-run",
+    platform: "android",
+    durationMs: 5000,
+    bitrateMbps: 4,
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.outputPath.endsWith(".mp4"), true);
+  assert.equal(result.data.durationMs, 5000);
+  assert.equal(result.data.commands[0]?.includes("screenrecord"), true);
+  assert.equal(result.data.evidence?.[0]?.kind, "screen_recording");
+});
+
+test("resetAppStateWithMaestro returns dry-run Android clear_data plan", async () => {
+  const result = await resetAppStateWithMaestro({
+    sessionId: "reset-app-state-dry-run",
+    platform: "android",
+    appId: "com.example.demo",
+    strategy: "clear_data",
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.strategy, "clear_data");
+  assert.equal(result.data.commands[0]?.includes("pm"), true);
+  assert.equal(result.data.commands[0]?.includes("clear"), true);
 });
 
 test("collectDebugEvidenceWithMaestro aggregates structured evidence in dry-run mode", async () => {
@@ -1277,7 +1312,11 @@ test("adapter-maestro and OcrService agree on successful fixture outcome", async
         afterOcr: {
           ...ocr,
           blocks: [
-            ocr.blocks[0]!,
+            ocr.blocks[0] ?? ocr.blocks[ocr.blocks.length - 1] ?? {
+              text: "Continue",
+              confidence: 0.95,
+              bounds: { left: 112, top: 513, right: 263, bottom: 551, width: 151, height: 38, center: { x: 187.5, y: 532 } },
+            },
             {
               text: "Thanks",
               confidence: 0.99,

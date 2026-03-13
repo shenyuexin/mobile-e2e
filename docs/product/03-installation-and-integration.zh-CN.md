@@ -103,6 +103,10 @@ pnpm install
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --tap-element --platform android --runner-profile phase1 --content-desc "Back" --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --measure-android-performance --platform android --runner-profile phase1 --duration-ms 15000 --preset interaction --dry-run`
 - `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --measure-ios-performance --platform ios --runner-profile phase1 --duration-ms 15000 --template time-profiler --dry-run`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --record-screen --platform android --runner-profile phase1 --duration-ms 15000 --bitrate-mbps 4 --dry-run`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --record-screen --platform ios --runner-profile phase1 --duration-ms 15000 --dry-run`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --reset-app-state --platform android --app-id com.example.demo --reset-strategy clear_data --dry-run`
+- `pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts --reset-app-state --platform ios --app-id com.example.demo --reset-strategy keychain_reset --dry-run`
 
 未来建议补齐：
 
@@ -114,6 +118,75 @@ pnpm install
 - `mobile-e2e-mcp report generate`
 
 如果首版 CLI 尚未完成，可先用等价脚本替代，但对外文档要说明这是过渡状态。
+
+## 5.1 新增工具：`record_screen` 与 `reset_app_state`
+
+### A) `record_screen`（录屏）
+
+用途：生成可回放证据，补齐“截图只能看瞬时”的问题。
+
+- Android 基础方案：`adb shell screenrecord`（录制后自动拉取）
+- iOS simulator 基础方案：`xcrun simctl io <UDID> recordVideo`
+
+CLI 示例：
+
+```bash
+# Android: 录制 15s，4Mbps
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
+  --record-screen --platform android --runner-profile phase1 \
+  --duration-ms 15000 --bitrate-mbps 4 --dry-run
+
+# iOS Simulator: 录制 15s
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
+  --record-screen --platform ios --runner-profile phase1 \
+  --duration-ms 15000 --dry-run
+```
+
+参数建议：
+
+- `duration-ms`：建议 10s~30s，足够覆盖失败窗口，避免 artifact 过大。
+- `bitrate-mbps`（Android）：建议 4~8；默认 4 更稳，CI 体积更可控。
+- `output-path`：建议按 `artifacts/screen-recordings/<sessionId>/...` 归档。
+
+注意事项：
+
+- Android `screenrecord` 单次硬上限 180s；如需更长录制，建议分段。
+- iOS 当前基线针对 Simulator；真机录屏是后续增强项。
+
+### B) `reset_app_state`（应用状态重置）
+
+用途：在关键 flow 前恢复“干净状态”，降低登录态、缓存、权限残留导致的 flake。
+
+支持策略：
+
+- `clear_data`
+- `uninstall_reinstall`
+- `keychain_reset`（iOS simulator）
+
+CLI 示例：
+
+```bash
+# Android: 清理应用数据
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
+  --reset-app-state --platform android --app-id com.example.demo \
+  --reset-strategy clear_data --dry-run
+
+# Android: 卸载后重装（需提供 artifact）
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
+  --reset-app-state --platform android --app-id com.example.demo \
+  --reset-strategy uninstall_reinstall --artifact-path /abs/path/app.apk --dry-run
+
+# iOS Simulator: Keychain reset
+pnpm --filter @mobile-e2e-mcp/mcp-server exec tsx src/dev-cli.ts \
+  --reset-app-state --platform ios --app-id com.example.demo \
+  --reset-strategy keychain_reset --dry-run
+```
+
+参数建议：
+
+- 高频 smoke：优先 `clear_data`（成本低、速度快）。
+- 需要彻底清理安装态冲突：使用 `uninstall_reinstall`。
+- iOS 登录凭据干扰明显时：先尝试 `keychain_reset`。
 
 ## 6. 环境校验
 

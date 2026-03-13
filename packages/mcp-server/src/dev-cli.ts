@@ -1,4 +1,4 @@
-import type { ActionIntent, AndroidPerformancePreset, CaptureJsConsoleLogsInput, CaptureJsNetworkEventsInput, CollectDebugEvidenceInput, CollectDiagnosticsInput, CompareAgainstBaselineInput, DescribeCapabilitiesInput, DoctorInput, ExplainLastFailureInput, FindSimilarFailuresInput, GetActionOutcomeInput, GetCrashSignalsInput, GetLogsInput, GetScreenSummaryInput, GetSessionStateInput, InspectUiInput, InstallAppInput, IosPerformanceTemplate, LaunchAppInput, ListDevicesInput, ListJsDebugTargetsInput, MeasureAndroidPerformanceInput, MeasureIosPerformanceInput, PerformActionWithEvidenceInput, Platform, QueryUiInput, RankFailureCandidatesInput, RecoverToKnownStateInput, ReplayLastStablePathInput, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, ScrollAndTapElementInput, StartSessionInput, SuggestKnownRemediationInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
+import type { ActionIntent, AndroidPerformancePreset, CaptureJsConsoleLogsInput, CaptureJsNetworkEventsInput, CollectDebugEvidenceInput, CollectDiagnosticsInput, CompareAgainstBaselineInput, DescribeCapabilitiesInput, DoctorInput, ExplainLastFailureInput, FindSimilarFailuresInput, GetActionOutcomeInput, GetCrashSignalsInput, GetLogsInput, GetScreenSummaryInput, GetSessionStateInput, InspectUiInput, InstallAppInput, IosPerformanceTemplate, LaunchAppInput, ListDevicesInput, ListJsDebugTargetsInput, MeasureAndroidPerformanceInput, MeasureIosPerformanceInput, PerformActionWithEvidenceInput, Platform, QueryUiInput, RankFailureCandidatesInput, RecordScreenInput, RecoverToKnownStateInput, ReplayLastStablePathInput, ResetAppStateInput, ResetAppStateStrategy, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, ScrollAndTapElementInput, StartSessionInput, SuggestKnownRemediationInput, TapElementInput, TapInput, TerminateAppInput, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { createServer } from "./index.js";
@@ -31,8 +31,10 @@ interface CliOptions {
   performActionWithEvidence: boolean;
   autoRemediate: boolean;
   rankFailureCandidates: boolean;
+  recordScreen: boolean;
   recoverToKnownState: boolean;
   replayLastStablePath: boolean;
+  resetAppState: boolean;
   queryUi: boolean;
   resolveUiTarget: boolean;
   scrollAndResolveUiTarget: boolean;
@@ -43,6 +45,8 @@ interface CliOptions {
   tapElement: boolean;
   terminateApp: boolean;
   durationMs?: number;
+  resetStrategy?: ResetAppStateStrategy;
+  bitrateMbps?: number;
   performancePreset?: AndroidPerformancePreset;
   performanceTemplate?: IosPerformanceTemplate;
   typeText: boolean;
@@ -129,8 +133,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let performActionWithEvidence = false;
   let autoRemediate = false;
   let rankFailureCandidates = false;
+  let recordScreen = false;
   let recoverToKnownState = false;
   let replayLastStablePath = false;
+  let resetAppState = false;
   let queryUi = false;
   let resolveUiTarget = false;
   let scrollAndResolveUiTarget = false;
@@ -141,6 +147,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let tapElement = false;
   let terminateApp = false;
   let durationMs: number | undefined;
+  let resetStrategy: ResetAppStateStrategy | undefined;
+  let bitrateMbps: number | undefined;
   let performancePreset: AndroidPerformancePreset | undefined;
   let performanceTemplate: IosPerformanceTemplate | undefined;
   let typeText = false;
@@ -216,9 +224,13 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--perform-action-with-evidence") { performActionWithEvidence = true; }
     else if (arg === "--auto-remediate") { autoRemediate = true; }
     else if (arg === "--rank-failure-candidates") { rankFailureCandidates = true; }
+    else if (arg === "--record-screen") { recordScreen = true; }
     else if (arg === "--recover-to-known-state") { recoverToKnownState = true; }
     else if (arg === "--replay-last-stable-path") { replayLastStablePath = true; }
+    else if (arg === "--reset-app-state") { resetAppState = true; }
     else if (arg === "--duration-ms" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) durationMs = Math.floor(parsed); index += 1; }
+    else if (arg === "--reset-strategy" && nextValue && ["clear_data", "uninstall_reinstall", "keychain_reset"].includes(nextValue)) { resetStrategy = nextValue as ResetAppStateStrategy; index += 1; }
+    else if (arg === "--bitrate-mbps" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) bitrateMbps = parsed; index += 1; }
     else if (arg === "--preset" && nextValue && ["general", "startup", "interaction", "scroll"].includes(nextValue)) { performancePreset = nextValue as AndroidPerformancePreset; index += 1; }
     else if (arg === "--template" && nextValue && ["time-profiler", "animation-hitches", "memory"].includes(nextValue)) { performanceTemplate = nextValue as IosPerformanceTemplate; index += 1; }
     else if (arg === "--query-ui") { queryUi = true; }
@@ -302,8 +314,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
     performActionWithEvidence,
     autoRemediate,
     rankFailureCandidates,
+    recordScreen,
     recoverToKnownState,
     replayLastStablePath,
+    resetAppState,
     queryUi,
     resolveUiTarget,
     scrollAndResolveUiTarget,
@@ -314,6 +328,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
     tapElement,
     terminateApp,
     durationMs,
+    resetStrategy,
+    bitrateMbps,
     performancePreset,
     performanceTemplate,
     typeText,
@@ -631,6 +647,40 @@ export async function main(): Promise<void> {
     };
     const result = await server.invoke("rank_failure_candidates", rankFailureCandidatesInput);
     console.log(JSON.stringify({ tools: server.listTools(), rankFailureCandidatesResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.recordScreen) {
+    const recordScreenInput: RecordScreenInput = {
+      sessionId: cliOptions.sessionId ?? `record-screen-${Date.now()}`,
+      platform: cliOptions.platform,
+      runnerProfile: cliOptions.runnerProfile,
+      harnessConfigPath: cliOptions.harnessConfigPath,
+      deviceId: cliOptions.deviceId,
+      outputPath: cliOptions.outputPath,
+      durationMs: cliOptions.durationMs,
+      bitrateMbps: cliOptions.bitrateMbps,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("record_screen", recordScreenInput);
+    console.log(JSON.stringify({ tools: server.listTools(), recordScreenResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.resetAppState) {
+    const resetAppStateInput: ResetAppStateInput = {
+      sessionId: cliOptions.sessionId ?? `reset-app-state-${Date.now()}`,
+      platform: cliOptions.platform,
+      runnerProfile: cliOptions.runnerProfile,
+      harnessConfigPath: cliOptions.harnessConfigPath,
+      deviceId: cliOptions.deviceId,
+      appId: cliOptions.appId,
+      artifactPath: cliOptions.artifactPath,
+      strategy: cliOptions.resetStrategy,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("reset_app_state", resetAppStateInput);
+    console.log(JSON.stringify({ tools: server.listTools(), resetAppStateResult: result }, null, 2));
     if (result.status === "failed") process.exitCode = 1;
     return;
   }
