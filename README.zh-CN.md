@@ -2,6 +2,10 @@
 
 本项目用于设计并落地一个面向 AI Agent 的移动端端到端（E2E）MCP 平台，覆盖 Android、iOS、React Native、Flutter。
 
+## 代码导览
+
+- `repomix-output.xml`：包含整个项目源代码的整合 XML 文件，方便 AI 快速理解项目上下文与代码细节。
+
 ## 开源产品文档
 
 - `docs/product/README.zh-CN.md`：开源产品文档索引

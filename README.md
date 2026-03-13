@@ -2,6 +2,10 @@
 
 This repository contains a comprehensive technical blueprint for building a large-scale, extensible Mobile End-to-End (E2E) MCP platform for Android, iOS, React Native, and Flutter.
 
+## Codebase Navigation
+
+- `repomix-output.xml` — A consolidated XML file containing the entire codebase for AI analysis and context gathering.
+
 ## Documentation Index
 
 - `README.zh-CN.md` — 中文能力介绍与阶段说明
