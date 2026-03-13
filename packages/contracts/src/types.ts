@@ -831,6 +831,7 @@ export interface PerformActionWithEvidenceData {
   postStateSummary?: StateSummary;
   postActionRefreshAttempted?: boolean;
   retryRecommendationTier?: "none" | "inspect_only" | "refine_selector" | "wait_then_retry" | "refresh_context" | "recover_first";
+  retryRecommendation?: RetryRecommendation;
   actionabilityReview?: string[];
   lowLevelStatus: ToolStatus;
   lowLevelReasonCode: ReasonCode;
@@ -848,6 +849,7 @@ export interface GetActionOutcomeData {
   sessionId?: string;
   outcome?: ActionOutcomeSummary;
   retryRecommendationTier?: PerformActionWithEvidenceData["retryRecommendationTier"];
+  retryRecommendation?: RetryRecommendation;
   evidenceDelta?: EvidenceDeltaSummary;
   evidence?: ExecutionEvidence[];
   lowLevelStatus?: ToolStatus;
@@ -861,7 +863,13 @@ export interface ExplainLastFailureData {
   actionId?: string;
   outcome?: ActionOutcomeSummary;
   retryRecommendationTier?: PerformActionWithEvidenceData["retryRecommendationTier"];
+  retryRecommendation?: RetryRecommendation;
   attribution?: FailureAttribution;
+}
+export interface RetryRecommendation {
+  tier: NonNullable<PerformActionWithEvidenceData["retryRecommendationTier"]>;
+  reason: string;
+  suggestedAction: string;
 }
 export interface RankFailureCandidatesInput {
   sessionId: string;

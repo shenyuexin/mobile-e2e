@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ActionIntent, ActionOutcomeSummary, EvidenceDeltaSummary, ExecutionEvidence, FailureSignature, ReasonCode, Session, SessionTimelineEvent, StateSummary, ToolStatus } from "@mobile-e2e-mcp/contracts";
+import type { RetryRecommendation } from "@mobile-e2e-mcp/contracts";
 import { buildSessionAuditRecord, loadArtifactGovernanceConfig, loadSessionAuditSchemaConfig, type SessionAuditRecord } from "./governance.js";
 
 export interface PersistedSessionRecord {
@@ -32,6 +33,7 @@ export interface PersistedActionRecord {
   intent?: ActionIntent;
   outcome: ActionOutcomeSummary;
   retryRecommendationTier?: "none" | "inspect_only" | "refine_selector" | "wait_then_retry" | "refresh_context" | "recover_first";
+  retryRecommendation?: RetryRecommendation;
   evidenceDelta: EvidenceDeltaSummary;
   evidence: ExecutionEvidence[];
   lowLevelStatus: ToolStatus;

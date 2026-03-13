@@ -118,6 +118,7 @@ export type {
   ResolveTextTargetResult,
   ReplayLastStablePathData,
   ReplayLastStablePathInput,
+  RetryRecommendation,
   SimilarFailure,
   SuggestKnownRemediationData,
   SuggestKnownRemediationInput,

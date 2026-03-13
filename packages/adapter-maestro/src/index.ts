@@ -792,6 +792,57 @@ function classifyRetryRecommendationTier(params: {
   return "inspect_only";
 }
 
+function buildRetryRecommendation(params: {
+  tier: NonNullable<PerformActionWithEvidenceData["retryRecommendationTier"]>;
+  failureCategory?: ActionOutcomeSummary["failureCategory"];
+  actionabilityReview: string[];
+}): NonNullable<PerformActionWithEvidenceData["retryRecommendation"]> {
+  if (params.tier === "refine_selector") {
+    return {
+      tier: params.tier,
+      reason: params.failureCategory === "selector_ambiguous"
+        ? "Multiple candidates matched the selector with no clear winner."
+        : "The current selector is too weak or does not identify a stable target.",
+      suggestedAction: "Narrow the selector using resourceId/contentDesc or the top candidate diff before retrying.",
+    };
+  }
+  if (params.tier === "wait_then_retry") {
+    return {
+      tier: params.tier,
+      reason: "The action likely ran before the UI reached a stable ready state.",
+      suggestedAction: "Wait for UI stability, then retry the same action without changing the selector.",
+    };
+  }
+  if (params.tier === "refresh_context") {
+    return {
+      tier: params.tier,
+      reason: params.actionabilityReview.some((item) => item.startsWith("stale_state_candidate:"))
+        ? "The persisted and live UI state look stale or diverged."
+        : "The current UI context likely needs to be refreshed before another action.",
+      suggestedAction: "Refresh the UI context, reacquire the target, and then decide whether to retry.",
+    };
+  }
+  if (params.tier === "recover_first") {
+    return {
+      tier: params.tier,
+      reason: "The current screen is blocked or needs bounded recovery before the action can succeed.",
+      suggestedAction: "Recover the screen state or clear the blocking UI before retrying the action.",
+    };
+  }
+  if (params.tier === "none") {
+    return {
+      tier: params.tier,
+      reason: "No retry is recommended because the action already achieved a meaningful state change.",
+      suggestedAction: "No immediate follow-up action is required.",
+    };
+  }
+  return {
+    tier: "inspect_only",
+    reason: "The current evidence is insufficient for a confident retry.",
+    suggestedAction: "Inspect the action packet before retrying or escalating.",
+  };
+}
+
 function readResolutionSignal(data: unknown): { status?: string; matchCount?: number; obscuredByHigherRanked?: boolean } | undefined {
   if (!isRecord(data) || !isRecord(data.resolution)) {
     return undefined;
@@ -1397,6 +1448,7 @@ export function buildDiagnosisBriefing(params: {
   jsConsoleLogCount?: number;
   jsNetworkEventCount?: number;
   retryRecommendationTier?: PerformActionWithEvidenceData["retryRecommendationTier"];
+  retryRecommendation?: PerformActionWithEvidenceData["retryRecommendation"];
 }): string[] {
   const briefing: string[] = [];
 
@@ -1418,6 +1470,9 @@ export function buildDiagnosisBriefing(params: {
 
   if (params.retryRecommendationTier && params.retryRecommendationTier !== "none") {
     briefing.push(`Recommended next-action tier: ${params.retryRecommendationTier}.`);
+  }
+  if (params.retryRecommendation) {
+    briefing.push(`Recommended follow-up: ${params.retryRecommendation.suggestedAction}`);
   }
 
   if (params.status !== "success") {
@@ -1985,12 +2040,18 @@ export async function performActionWithEvidenceWithMaestro(
     failureCategory,
     ocrFallbackSuggestions: ocrFallbackResult?.nextSuggestions,
   });
+  const retryRecommendation = buildRetryRecommendation({
+    tier: retryRecommendationTier ?? "none",
+    failureCategory,
+    actionabilityReview,
+  });
   const persistedAction = await persistActionRecord(repoRoot, {
     actionId,
     sessionId: input.sessionId,
     intent: input.action,
     outcome,
     retryRecommendationTier,
+    retryRecommendation,
     evidenceDelta,
     evidence,
     lowLevelStatus: finalStatus,
@@ -2014,6 +2075,7 @@ export async function performActionWithEvidenceWithMaestro(
       postStateSummary,
       postActionRefreshAttempted: postActionRefreshAttempted || undefined,
       retryRecommendationTier,
+      retryRecommendation,
       actionabilityReview,
       lowLevelStatus: finalStatus,
       lowLevelReasonCode: finalReasonCode,
@@ -2053,6 +2115,7 @@ export async function getActionOutcomeWithMaestro(
         sessionId: record?.sessionId,
         outcome: record?.outcome,
         retryRecommendationTier: record?.retryRecommendationTier,
+        retryRecommendation: record?.retryRecommendation,
         evidenceDelta: record?.evidenceDelta,
         evidence: record?.evidence,
         lowLevelStatus: record?.lowLevelStatus,
@@ -2198,6 +2261,7 @@ export async function explainLastFailureWithMaestro(
       actionId: resolvedActionId,
       outcome: record.outcome,
       retryRecommendationTier: record.retryRecommendationTier,
+      retryRecommendation: record.retryRecommendation,
       attribution,
     },
     nextSuggestions: status === "success"

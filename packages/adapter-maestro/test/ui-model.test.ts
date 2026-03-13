@@ -450,9 +450,15 @@ test("buildDiagnosisBriefing surfaces retry tier when available", () => {
     appId: "com.example.demo",
     suspectAreas: [],
     retryRecommendationTier: "refine_selector",
+    retryRecommendation: {
+      tier: "refine_selector",
+      reason: "Selector is ambiguous.",
+      suggestedAction: "Refine the selector before retrying.",
+    },
   });
 
   assert.equal(briefing.some((line) => line.includes("refine_selector")), true);
+  assert.equal(briefing.some((line) => line.includes("Refine the selector before retrying")), true);
 });
 
 test("tapElementWithMaestro reports configuration errors without a selector", async () => {
@@ -1311,6 +1317,8 @@ test("getActionOutcomeWithMaestro loads persisted dry-run action record", async 
   assert.equal(loaded.status, "success");
   assert.equal(loaded.data.found, true);
   assert.equal(loaded.data.actionId, actionId);
+  assert.equal(typeof loaded.data.retryRecommendationTier, "string");
+  assert.equal(typeof loaded.data.retryRecommendation?.suggestedAction, "string");
   assert.equal(loaded.data.outcome?.actionType, "wait_for_ui");
 });
 
