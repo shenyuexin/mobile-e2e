@@ -14,6 +14,18 @@
 - Report entry:
 - Interruption events:
 
+## Action Packet (Optional but Recommended)
+
+- retryRecommendationTier:
+- retryRecommendation.reason:
+- retryRecommendation.suggestedAction:
+- actionabilityReview signals (examples):
+  - target_score_delta:
+  - target_suggested_selector:
+  - target_visibility:
+  - refresh_signal:
+  - retry_tier_code:
+
 ## Suspected Cause
 
 - Environment:

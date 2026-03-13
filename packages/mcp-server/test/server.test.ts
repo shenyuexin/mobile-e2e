@@ -226,6 +226,11 @@ test("server invoke supports explain_last_failure after perform_action_with_evid
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.found, true);
   assert.equal(typeof result.data.attribution?.affectedLayer, "string");
+  assert.equal(
+    result.nextSuggestions.some((item) => item.includes("Inspect the action packet"))
+      || result.data.retryRecommendation?.suggestedAction.includes("Inspect the action packet") === true,
+    true,
+  );
 });
 
 test("server invoke supports rank_failure_candidates after perform_action_with_evidence", async () => {

@@ -306,6 +306,14 @@ Suggested fields:
 - `retryCount`
 - `fallbackUsed`
 - `confidence`
+- `retryRecommendationTier`
+- `retryRecommendation`: `{ tier, reason, suggestedAction }`
+- `actionabilityReview`: structured signal codes, for example:
+  - `target_score_delta:<number>`
+  - `target_suggested_selector:<json>`
+  - `target_visibility:<heuristics>`
+  - `refresh_signal:noop`
+  - `retry_tier_code:refresh_context_noop | refresh_context_stale_state`
 
 ### 7.3 Failure Attribution
 

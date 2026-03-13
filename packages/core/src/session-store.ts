@@ -34,6 +34,7 @@ export interface PersistedActionRecord {
   outcome: ActionOutcomeSummary;
   retryRecommendationTier?: "none" | "inspect_only" | "refine_selector" | "wait_then_retry" | "refresh_context" | "recover_first";
   retryRecommendation?: RetryRecommendation;
+  actionabilityReview?: string[];
   evidenceDelta: EvidenceDeltaSummary;
   evidence: ExecutionEvidence[];
   lowLevelStatus: ToolStatus;

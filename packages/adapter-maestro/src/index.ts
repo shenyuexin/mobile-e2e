@@ -622,7 +622,14 @@ function buildActionabilityReview(params: {
   latestKnownState?: StateSummary;
   lowLevelStatus: ToolResult["status"];
   lowLevelReasonCode: ReasonCode;
-  targetResolution?: { status?: string; matchCount?: number; obscuredByHigherRanked?: boolean };
+  targetResolution?: {
+    status?: string;
+    matchCount?: number;
+    obscuredByHigherRanked?: boolean;
+    scoreDelta?: number;
+    suggestedSelector?: string;
+    visibilityHeuristics?: string[];
+  };
   stateChanged: boolean;
 }): string[] {
   return uniqueNonEmpty([
@@ -632,11 +639,14 @@ function buildActionabilityReview(params: {
     params.targetResolution?.status ? `target_resolution:${params.targetResolution.status}` : undefined,
     params.targetResolution?.obscuredByHigherRanked ? "target_obscured_by_higher_ranked_candidate" : undefined,
     typeof params.targetResolution?.matchCount === "number" ? `target_match_count:${String(params.targetResolution.matchCount)}` : undefined,
+    typeof params.targetResolution?.scoreDelta === "number" ? `target_score_delta:${String(params.targetResolution.scoreDelta)}` : undefined,
+    params.targetResolution?.suggestedSelector ? `target_suggested_selector:${params.targetResolution.suggestedSelector}` : undefined,
+    params.targetResolution?.visibilityHeuristics?.length ? `target_visibility:${params.targetResolution.visibilityHeuristics.slice(0, 3).join(",")}` : undefined,
     !params.stateChanged ? "post_state_unchanged" : undefined,
     params.lowLevelStatus !== "success" ? `low_level_status:${params.lowLevelStatus}` : undefined,
     params.lowLevelReasonCode !== REASON_CODES.ok ? `low_level_reason:${params.lowLevelReasonCode}` : undefined,
     params.postStateSummary.readiness !== "ready" ? `post_state_not_ready:${params.postStateSummary.readiness}` : undefined,
-  ], 8);
+  ], 12);
 }
 
 function classifyActionFailureCategory(params: {
@@ -718,8 +728,13 @@ function buildRetryRecommendations(params: {
   }
 
   const hasStaleSignal = params.actionabilityReview.some((item) => item.startsWith("stale_state_candidate:"));
+  const hasNoopRefreshSignal = params.actionabilityReview.includes("refresh_signal:noop")
+    || params.actionabilityReview.includes("post_action_refresh_no_additional_change");
   const hasBlockedSignal = params.actionabilityReview.some((item) => item.startsWith("blocking:")) || params.failureCategory === "blocked";
   const hasTargetResolution = params.actionabilityReview.find((item) => item.startsWith("target_resolution:"));
+  const targetSuggestedSelector = params.actionabilityReview.find((item) => item.startsWith("target_suggested_selector:"))?.replace("target_suggested_selector:", "");
+  const targetScoreDelta = params.actionabilityReview.find((item) => item.startsWith("target_score_delta:"))?.replace("target_score_delta:", "");
+  const targetVisibility = params.actionabilityReview.find((item) => item.startsWith("target_visibility:"))?.replace("target_visibility:", "");
 
   if (params.finalStatus === "success" && params.stateChanged) {
     return [];
@@ -728,7 +743,12 @@ function buildRetryRecommendations(params: {
   if (params.failureCategory === "selector_missing" || params.failureCategory === "selector_ambiguous") {
     return [
       "Retry only after refining the selector; prefer a resourceId/contentDesc-based target over broad text matching.",
-      hasTargetResolution ? `Current target signal: ${hasTargetResolution}.` : "Inspect the top candidate diff before retrying.",
+      [
+        hasTargetResolution ? `Current target signal: ${hasTargetResolution}.` : undefined,
+        targetSuggestedSelector ? `Suggested narrowing selector: ${targetSuggestedSelector}.` : "Inspect the top candidate diff before retrying.",
+        targetScoreDelta ? `Top candidate score delta: ${targetScoreDelta}.` : undefined,
+        targetVisibility ? `Visibility heuristics: ${targetVisibility}.` : undefined,
+      ].filter((item): item is string => Boolean(item)).join(" "),
     ];
   }
 
@@ -744,7 +764,9 @@ function buildRetryRecommendations(params: {
       "Action transport completed but the screen stayed unchanged even after a follow-up refresh; retry only after changing selector, timing, or screen state.",
       hasStaleSignal
         ? "A stale-state hint was detected; refresh UI context or reacquire the target before retrying."
-        : "Prefer waiting for a more stable screen or reacquiring the target before retrying.",
+        : hasNoopRefreshSignal
+          ? "Post-refresh remained a no-op; reacquire selector context and verify expected side effects before retrying."
+          : "Prefer waiting for a more stable screen or reacquiring the target before retrying.",
     ];
   }
 
@@ -784,7 +806,13 @@ function classifyRetryRecommendationTier(params: {
     return "recover_first";
   }
   if (params.postActionRefreshAttempted && !params.stateChanged) {
-    return params.actionabilityReview.some((item) => item.startsWith("stale_state_candidate:")) ? "refresh_context" : "wait_then_retry";
+    if (params.actionabilityReview.some((item) => item.startsWith("refresh_signal:stale_state"))
+      || params.actionabilityReview.some((item) => item.startsWith("stale_state_candidate:"))
+      || params.actionabilityReview.includes("refresh_signal:noop")
+      || params.actionabilityReview.includes("post_action_refresh_no_additional_change")) {
+      return "refresh_context";
+    }
+    return "wait_then_retry";
   }
   if (params.finalStatus === "success" && !params.stateChanged) {
     return "inspect_only";
@@ -798,12 +826,20 @@ function buildRetryRecommendation(params: {
   actionabilityReview: string[];
 }): NonNullable<PerformActionWithEvidenceData["retryRecommendation"]> {
   if (params.tier === "refine_selector") {
+    const suggestedSelector = params.actionabilityReview.find((item) => item.startsWith("target_suggested_selector:"))?.replace("target_suggested_selector:", "");
+    const scoreDelta = params.actionabilityReview.find((item) => item.startsWith("target_score_delta:"))?.replace("target_score_delta:", "");
+    const visibility = params.actionabilityReview.find((item) => item.startsWith("target_visibility:"))?.replace("target_visibility:", "");
     return {
       tier: params.tier,
       reason: params.failureCategory === "selector_ambiguous"
         ? "Multiple candidates matched the selector with no clear winner."
         : "The current selector is too weak or does not identify a stable target.",
-      suggestedAction: "Narrow the selector using resourceId/contentDesc or the top candidate diff before retrying.",
+      suggestedAction: [
+        "Narrow the selector using resourceId/contentDesc or the top candidate diff before retrying.",
+        suggestedSelector ? `Candidate selector: ${suggestedSelector}.` : undefined,
+        scoreDelta ? `Top score delta: ${scoreDelta}.` : undefined,
+        visibility ? `Visibility signals: ${visibility}.` : undefined,
+      ].filter((item): item is string => Boolean(item)).join(" "),
     };
   }
   if (params.tier === "wait_then_retry") {
@@ -816,10 +852,14 @@ function buildRetryRecommendation(params: {
   if (params.tier === "refresh_context") {
     return {
       tier: params.tier,
-      reason: params.actionabilityReview.some((item) => item.startsWith("stale_state_candidate:"))
+      reason: params.actionabilityReview.includes("retry_tier_code:refresh_context_noop")
+        ? "A follow-up refresh produced no additional state change, so blind retry is likely to repeat a no-op."
+        : params.actionabilityReview.some((item) => item.startsWith("stale_state_candidate:"))
         ? "The persisted and live UI state look stale or diverged."
         : "The current UI context likely needs to be refreshed before another action.",
-      suggestedAction: "Refresh the UI context, reacquire the target, and then decide whether to retry.",
+      suggestedAction: params.actionabilityReview.includes("retry_tier_code:refresh_context_noop")
+        ? "Reacquire selector context, verify expected side effect, then retry only with a stronger target signal."
+        : "Refresh the UI context, reacquire the target, and then decide whether to retry.",
     };
   }
   if (params.tier === "recover_first") {
@@ -843,16 +883,32 @@ function buildRetryRecommendation(params: {
   };
 }
 
-function readResolutionSignal(data: unknown): { status?: string; matchCount?: number; obscuredByHigherRanked?: boolean } | undefined {
+function readResolutionSignal(data: unknown): {
+  status?: string;
+  matchCount?: number;
+  obscuredByHigherRanked?: boolean;
+  scoreDelta?: number;
+  suggestedSelector?: string;
+  visibilityHeuristics?: string[];
+} | undefined {
   if (!isRecord(data) || !isRecord(data.resolution)) {
     return undefined;
   }
   const resolution = data.resolution;
   const bestCandidate = isRecord(resolution.bestCandidate) ? resolution.bestCandidate : undefined;
+  const ambiguityDiff = isRecord(resolution.ambiguityDiff) ? resolution.ambiguityDiff : undefined;
+  const suggestedSelectors = Array.isArray(ambiguityDiff?.suggestedSelectors) ? ambiguityDiff.suggestedSelectors : undefined;
+  const suggestedSelector = suggestedSelectors && isRecord(suggestedSelectors[0]) ? JSON.stringify(suggestedSelectors[0]) : undefined;
+  const visibilityHeuristics = Array.isArray(bestCandidate?.visibilityHeuristics)
+    ? bestCandidate.visibilityHeuristics.filter((item): item is string => typeof item === "string")
+    : undefined;
   return {
     status: typeof resolution.status === "string" ? resolution.status : undefined,
     matchCount: typeof resolution.matchCount === "number" ? resolution.matchCount : undefined,
     obscuredByHigherRanked: bestCandidate?.obscuredByHigherRanked === true,
+    scoreDelta: typeof ambiguityDiff?.scoreDelta === "number" ? ambiguityDiff.scoreDelta : undefined,
+    suggestedSelector,
+    visibilityHeuristics,
   };
 }
 
@@ -1498,6 +1554,23 @@ function prioritizeSuggestionBuckets(...buckets: string[][]): string[] {
   return ordered.slice(0, 5);
 }
 
+function buildActionPacketSignalSuggestions(actionabilityReview?: string[]): string[] {
+  if (!actionabilityReview || actionabilityReview.length === 0) {
+    return [];
+  }
+  const selector = actionabilityReview.find((item) => item.startsWith("target_suggested_selector:"))?.replace("target_suggested_selector:", "");
+  const scoreDelta = actionabilityReview.find((item) => item.startsWith("target_score_delta:"))?.replace("target_score_delta:", "");
+  const visibility = actionabilityReview.find((item) => item.startsWith("target_visibility:"))?.replace("target_visibility:", "");
+  const refreshCode = actionabilityReview.find((item) => item.startsWith("retry_tier_code:"))?.replace("retry_tier_code:", "");
+
+  return [
+    selector ? `Action packet selector candidate: ${selector}.` : undefined,
+    scoreDelta ? `Action packet selector score delta: ${scoreDelta}.` : undefined,
+    visibility ? `Action packet visibility signals: ${visibility}.` : undefined,
+    refreshCode ? `Action packet refresh retry code: ${refreshCode}.` : undefined,
+  ].filter((item): item is string => Boolean(item));
+}
+
 function buildDebugNextSuggestions(params: {
   reasonCode: ReasonCode;
   suspectAreas: string[];
@@ -2026,11 +2099,16 @@ export async function performActionWithEvidenceWithMaestro(
     stateChanged,
   });
   if (postActionRefreshAttempted) {
-    actionabilityReview.unshift(
-      refreshedPostStateSummary && JSON.stringify(postStateResult.data.screenSummary) !== JSON.stringify(refreshedPostStateSummary)
-        ? "post_action_refresh_detected_additional_state_change"
-        : "post_action_refresh_no_additional_change",
-    );
+    const refreshSignal = refreshedPostStateSummary && JSON.stringify(postStateResult.data.screenSummary) !== JSON.stringify(refreshedPostStateSummary)
+      ? "post_action_refresh_detected_additional_state_change"
+      : "post_action_refresh_no_additional_change";
+    actionabilityReview.unshift(refreshSignal);
+    if (refreshSignal === "post_action_refresh_no_additional_change") {
+      actionabilityReview.unshift("refresh_signal:noop");
+      actionabilityReview.unshift(actionabilityReview.some((item) => item.startsWith("stale_state_candidate:"))
+        ? "retry_tier_code:refresh_context_stale_state"
+        : "retry_tier_code:refresh_context_noop");
+    }
   }
   const retryRecommendationTier = classifyRetryRecommendationTier({
     finalStatus,
@@ -2052,6 +2130,7 @@ export async function performActionWithEvidenceWithMaestro(
     outcome,
     retryRecommendationTier,
     retryRecommendation,
+    actionabilityReview,
     evidenceDelta,
     evidence,
     lowLevelStatus: finalStatus,
@@ -2268,6 +2347,8 @@ export async function explainLastFailureWithMaestro(
       ? []
       : prioritizeSuggestionBuckets(
         [`Retry tier suggests: ${record.retryRecommendationTier ?? "inspect_only"}.`],
+        record.retryRecommendation?.suggestedAction ? [record.retryRecommendation.suggestedAction] : [],
+        buildActionPacketSignalSuggestions(record.actionabilityReview),
         attribution.recommendedRecovery ? [attribution.recommendedRecovery] : [],
         attribution.recommendedNextProbe ? [attribution.recommendedNextProbe] : [],
       ),

@@ -398,6 +398,101 @@
 
 ---
 
+## 后续已完成（Iteration 18 - Action Packet Signal Wiring）
+
+- `perform_action_with_evidence` 的 `actionabilityReview` 现在直接吸收更细粒度的 locator 信号：
+  - `target_score_delta:*`
+  - `target_suggested_selector:*`
+  - `target_visibility:*`
+- no-op / stale-state refresh 现在会写入更明确的 packet-level code：
+  - `refresh_signal:noop`
+  - `retry_tier_code:refresh_context_noop`
+  - `retry_tier_code:refresh_context_stale_state`
+- `explain_last_failure` 的 `nextSuggestions` 现在会同时消费：
+  - `retryRecommendation.suggestedAction`
+  - action packet 中的 selector/visibility/refresh code（用于 narrative/explanation）
+
+### Iteration 18 验证
+
+- `pnpm --filter @mobile-e2e-mcp/adapter-maestro test` 通过（111 tests）
+- `pnpm --filter @mobile-e2e-mcp/mcp-server test` 通过（138 tests）
+
+---
+
+## Action Packet 信号码（新增）
+
+以下信号码会进入 `actionabilityReview`，供 `perform_action_with_auto_remediation`、`explain_last_failure`、`rank_failure_candidates` 等上层消费：
+
+- Selector / ranking：
+  - `target_score_delta:<number>`
+  - `target_suggested_selector:<json>`
+- Visibility：
+  - `target_visibility:<heuristic1,heuristic2,...>`
+- Refresh taxonomy：
+  - `refresh_signal:noop`
+  - `retry_tier_code:refresh_context_noop`
+  - `retry_tier_code:refresh_context_stale_state`
+
+说明：`retryRecommendationTier` 仍保持兼容（`refresh_context`），新增 code 用于在 narrative/explanation 层表达更细分语义，而不破坏既有 transport contract。
+
+---
+
+## 示例（perform_action_with_evidence / explain_last_failure）
+
+### 示例 1：selector ambiguous + score-aware guidance
+
+```json
+{
+  "retryRecommendationTier": "refine_selector",
+  "actionabilityReview": [
+    "target_resolution:ambiguous",
+    "target_match_count:2",
+    "target_score_delta:2",
+    "target_suggested_selector:{\"resourceId\":\"primary_cta\"}",
+    "target_visibility:heavy_overlap:0.85,occluded_by_clickable_candidate"
+  ],
+  "retryRecommendation": {
+    "tier": "refine_selector",
+    "reason": "Multiple candidates matched the selector with no clear winner.",
+    "suggestedAction": "Narrow the selector using resourceId/contentDesc or the top candidate diff before retrying. Candidate selector: {\"resourceId\":\"primary_cta\"}. Top score delta: 2. Visibility signals: heavy_overlap:0.85,occluded_by_clickable_candidate."
+  }
+}
+```
+
+### 示例 2：post-refresh no-op + packet-level retry tier code
+
+```json
+{
+  "retryRecommendationTier": "refresh_context",
+  "actionabilityReview": [
+    "retry_tier_code:refresh_context_noop",
+    "refresh_signal:noop",
+    "post_action_refresh_no_additional_change",
+    "post_state_unchanged"
+  ],
+  "retryRecommendation": {
+    "tier": "refresh_context",
+    "reason": "A follow-up refresh produced no additional state change, so blind retry is likely to repeat a no-op.",
+    "suggestedAction": "Reacquire selector context, verify expected side effect, then retry only with a stronger target signal."
+  }
+}
+```
+
+### 示例 3：explain_last_failure 输出包含 packet 信号
+
+```json
+{
+  "nextSuggestions": [
+    "Retry tier suggests: refresh_context.",
+    "Reacquire selector context, verify expected side effect, then retry only with a stronger target signal.",
+    "Action packet refresh retry code: refresh_context_noop.",
+    "Action packet selector score delta: 2."
+  ]
+}
+```
+
+---
+
 ## 下一轮最值得继续做的任务（更新）
 
 - 把 score-aware selector suggestion 扩展到更多 transport 输出（CLI / stdio / action review narrative）
