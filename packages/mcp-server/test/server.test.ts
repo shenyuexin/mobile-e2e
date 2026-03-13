@@ -3,14 +3,19 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildSessionAuditRelativePath, buildSessionRecordRelativePath, persistActionRecord } from "@mobile-e2e-mcp/core";
+import { buildDeviceLeaseRecordRelativePath, buildSessionAuditRelativePath, buildSessionRecordRelativePath, persistActionRecord } from "@mobile-e2e-mcp/core";
 import { createServer } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
+function buildTestDeviceId(sessionId: string): string {
+  return `${sessionId}-device`;
+}
+
 async function cleanupSessionArtifact(sessionId: string): Promise<void> {
   await rm(path.resolve(repoRoot, buildSessionRecordRelativePath(sessionId)), { force: true });
   await rm(path.resolve(repoRoot, buildSessionAuditRelativePath(sessionId)), { force: true });
+  await rm(path.resolve(repoRoot, buildDeviceLeaseRecordRelativePath("android", buildTestDeviceId(sessionId))), { force: true });
 }
 
 test("createServer lists newly added UI tools", () => {
@@ -163,6 +168,7 @@ test("server invoke returns bounded auto-remediation stop details for allowlist 
     await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
     const result = await server.invoke("perform_action_with_evidence", {
@@ -210,6 +216,7 @@ test("server invoke supports explain_last_failure after perform_action_with_evid
   await server.invoke("start_session", {
     sessionId: "server-explain-failure-dry-run",
     platform: "android",
+    deviceId: buildTestDeviceId("server-explain-failure-dry-run"),
     profile: "phase1",
   });
   await server.invoke("perform_action_with_evidence", {
@@ -240,6 +247,7 @@ test("server invoke supports rank_failure_candidates after perform_action_with_e
   await server.invoke("start_session", {
     sessionId: "server-rank-failure-dry-run",
     platform: "android",
+    deviceId: buildTestDeviceId("server-rank-failure-dry-run"),
     profile: "phase1",
   });
   await server.invoke("perform_action_with_evidence", {
@@ -301,6 +309,7 @@ test("server invoke blocks replay_last_stable_path for high-risk persisted actio
     await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
     await persistActionRecord(repoRoot, {
@@ -618,6 +627,7 @@ test("server invoke denies tap under a read-only session policy", async () => {
     const startResult = await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
       policyProfile: "read-only",
     });

@@ -3,13 +3,19 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildSessionRecordRelativePath } from "@mobile-e2e-mcp/core";
+import { buildDeviceLeaseRecordRelativePath, buildSessionAuditRelativePath, buildSessionRecordRelativePath } from "@mobile-e2e-mcp/core";
 import { buildToolList, handleRequest } from "../src/stdio-server.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
+function buildTestDeviceId(sessionId: string): string {
+  return `${sessionId}-device`;
+}
+
 async function cleanupSessionArtifact(sessionId: string): Promise<void> {
   await rm(path.resolve(repoRoot, buildSessionRecordRelativePath(sessionId)), { force: true });
+  await rm(path.resolve(repoRoot, buildSessionAuditRelativePath(sessionId)), { force: true });
+  await rm(path.resolve(repoRoot, buildDeviceLeaseRecordRelativePath("android", buildTestDeviceId(sessionId))), { force: true });
 }
 
 test("buildToolList includes the new UI tools", () => {
@@ -780,68 +786,82 @@ test("handleRequest supports tools/call alias for iOS scroll_and_resolve_ui_targ
 });
 
 test("handleRequest supports tools/call alias for start_session", async () => {
-  const result = await handleRequest({
-    id: 14,
-    method: "tools/call",
-    params: {
-      name: "start_session",
-      arguments: {
-        sessionId: "stdio-start-session",
-        platform: "android",
-        profile: "phase1",
+  const sessionId = "stdio-start-session";
+  await cleanupSessionArtifact(sessionId);
+  try {
+    const result = await handleRequest({
+      id: 14,
+      method: "tools/call",
+      params: {
+        name: "start_session",
+        arguments: {
+          sessionId,
+          platform: "android",
+          deviceId: buildTestDeviceId(sessionId),
+          profile: "phase1",
+        },
       },
-    },
-  });
-  const typedResult = result as {
-    status: string;
-    reasonCode: string;
-    artifacts: string[];
-    data: { sessionId: string };
-  };
+    });
+    const typedResult = result as {
+      status: string;
+      reasonCode: string;
+      artifacts: string[];
+      data: { sessionId: string };
+    };
 
-  assert.equal(typedResult.status, "success");
-  assert.equal(typedResult.reasonCode, "OK");
-  assert.equal(typedResult.data.sessionId, "stdio-start-session");
-  assert.equal(typedResult.artifacts.some((item) => item.endsWith("stdio-start-session.json")), true);
+    assert.equal(typedResult.status, "success");
+    assert.equal(typedResult.reasonCode, "OK");
+    assert.equal(typedResult.data.sessionId, sessionId);
+    assert.equal(typedResult.artifacts.some((item) => item.endsWith(`${sessionId}.json`)), true);
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
 });
 
 test("handleRequest supports tools/call alias for end_session", async () => {
-  await handleRequest({
-    id: 15,
-    method: "tools/call",
-    params: {
-      name: "start_session",
-      arguments: {
-        sessionId: "stdio-end-session",
-        platform: "android",
-        profile: "phase1",
+  const sessionId = "stdio-end-session";
+  await cleanupSessionArtifact(sessionId);
+  try {
+    await handleRequest({
+      id: 15,
+      method: "tools/call",
+      params: {
+        name: "start_session",
+        arguments: {
+          sessionId,
+          platform: "android",
+          deviceId: buildTestDeviceId(sessionId),
+          profile: "phase1",
+        },
       },
-    },
-  });
+    });
 
-  const result = await handleRequest({
-    id: 16,
-    method: "tools/call",
-    params: {
-      name: "end_session",
-      arguments: {
-        sessionId: "stdio-end-session",
-        artifacts: ["artifacts/demo/output.txt"],
+    const result = await handleRequest({
+      id: 16,
+      method: "tools/call",
+      params: {
+        name: "end_session",
+        arguments: {
+          sessionId,
+          artifacts: ["artifacts/demo/output.txt"],
+        },
       },
-    },
-  });
-  const typedResult = result as {
-    status: string;
-    reasonCode: string;
-    artifacts: string[];
-    data: { closed: boolean; endedAt: string };
-  };
+    });
+    const typedResult = result as {
+      status: string;
+      reasonCode: string;
+      artifacts: string[];
+      data: { closed: boolean; endedAt: string };
+    };
 
-  assert.equal(typedResult.status, "success");
-  assert.equal(typedResult.reasonCode, "OK");
-  assert.equal(typedResult.data.closed, true);
-  assert.equal(typeof typedResult.data.endedAt, "string");
-  assert.equal(typedResult.artifacts.some((item) => item.endsWith("stdio-end-session.json")), true);
+    assert.equal(typedResult.status, "success");
+    assert.equal(typedResult.reasonCode, "OK");
+    assert.equal(typedResult.data.closed, true);
+    assert.equal(typeof typedResult.data.endedAt, "string");
+    assert.equal(typedResult.artifacts.some((item) => item.endsWith(`${sessionId}.json`)), true);
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
 });
 
 test("handleRequest denies tap under a read-only session policy", async () => {
@@ -857,6 +877,7 @@ test("handleRequest denies tap under a read-only session policy", async () => {
         arguments: {
           sessionId,
           platform: "android",
+          deviceId: buildTestDeviceId(sessionId),
           profile: "phase1",
           policyProfile: "read-only",
         },

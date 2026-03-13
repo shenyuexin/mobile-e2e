@@ -949,8 +949,20 @@ export async function main(): Promise<void> {
     return;
   }
 
-  const startInput: StartSessionInput = { platform: cliOptions.platform, profile: cliOptions.runnerProfile ?? null, policyProfile: cliOptions.policyProfile, harnessConfigPath: cliOptions.harnessConfigPath, sessionId: cliOptions.sessionId };
+  const startInput: StartSessionInput = {
+    platform: cliOptions.platform,
+    profile: cliOptions.runnerProfile ?? null,
+    policyProfile: cliOptions.policyProfile,
+    harnessConfigPath: cliOptions.harnessConfigPath,
+    sessionId: cliOptions.sessionId,
+    deviceId: cliOptions.deviceId,
+  };
   const startResult = await server.invoke("start_session", startInput);
+  if (startResult.status !== "success") {
+    console.log(JSON.stringify({ tools: server.listTools(), startResult }, null, 2));
+    process.exitCode = 1;
+    return;
+  }
   const runInput: RunFlowInput = { sessionId: startResult.data.sessionId, platform: cliOptions.platform, runnerProfile: cliOptions.runnerProfile, runCount: cliOptions.runCount, dryRun: cliOptions.dryRun, flowPath: cliOptions.flowPath, harnessConfigPath: cliOptions.harnessConfigPath };
   const runResult = await server.invoke("run_flow", runInput);
   const endResult = await server.invoke("end_session", { sessionId: startResult.data.sessionId, artifacts: runResult.artifacts });

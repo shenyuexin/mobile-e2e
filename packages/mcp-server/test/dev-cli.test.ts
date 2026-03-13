@@ -3,13 +3,20 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildSessionRecordRelativePath } from "@mobile-e2e-mcp/core";
+import { buildDeviceLeaseRecordRelativePath, buildSessionAuditRelativePath, buildSessionRecordRelativePath } from "@mobile-e2e-mcp/core";
+import { createServer } from "../src/index.ts";
 import { main, parseCliArgs } from "../src/dev-cli.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
+function buildTestDeviceId(sessionId: string): string {
+  return `${sessionId}-device`;
+}
+
 async function cleanupSessionArtifact(sessionId: string): Promise<void> {
   await rm(path.resolve(repoRoot, buildSessionRecordRelativePath(sessionId)), { force: true });
+  await rm(path.resolve(repoRoot, buildSessionAuditRelativePath(sessionId)), { force: true });
+  await rm(path.resolve(repoRoot, buildDeviceLeaseRecordRelativePath("android", buildTestDeviceId(sessionId))), { force: true });
 }
 
 async function runCli(argv: string[]): Promise<unknown> {
@@ -465,21 +472,30 @@ test("main dispatches tap_element iOS dry-run through the CLI", async () => {
 });
 
 test("main dispatches run_flow Android dry-run through the CLI default path", async () => {
-  const output = await runCli([
-    "--platform", "android",
-    "--dry-run",
-    "--run-count", "1",
-  ]) as {
-    startResult: { status: string };
-    runResult: { status: string; data: { dryRun: boolean; runnerProfile: string } };
-    endResult: { status: string };
-  };
+  const sessionId = `cli-run-flow-default-${Date.now()}`;
+  await cleanupSessionArtifact(sessionId);
 
-  assert.equal(output.startResult.status, "success");
-  assert.equal(output.runResult.status, "success");
-  assert.equal(output.runResult.data.dryRun, true);
-  assert.equal(output.runResult.data.runnerProfile, "phase1");
-  assert.equal(output.endResult.status, "success");
+  try {
+    const output = await runCli([
+      "--platform", "android",
+      "--dry-run",
+      "--run-count", "1",
+      "--session-id", sessionId,
+      "--device-id", buildTestDeviceId(sessionId),
+    ]) as {
+      startResult: { status: string };
+      runResult: { status: string; data: { dryRun: boolean; runnerProfile: string } };
+      endResult: { status: string };
+    };
+
+    assert.equal(output.startResult.status, "success");
+    assert.equal(output.runResult.status, "success");
+    assert.equal(output.runResult.data.dryRun, true);
+    assert.equal(output.runResult.data.runnerProfile, "phase1");
+    assert.equal(output.endResult.status, "success");
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
 });
 
 test("main dispatches read-only policy denial through the default CLI flow", async () => {
@@ -492,6 +508,7 @@ test("main dispatches read-only policy denial through the default CLI flow", asy
       "--dry-run",
       "--run-count", "1",
       "--session-id", sessionId,
+      "--device-id", buildTestDeviceId(sessionId),
       "--policy-profile", "read-only",
     ]) as {
       startResult: { status: string };
@@ -506,6 +523,47 @@ test("main dispatches read-only policy denial through the default CLI flow", asy
     assert.equal(output.endResult.status, "success");
   } finally {
     await cleanupSessionArtifact(sessionId);
+  }
+});
+
+test("main default flow exits after start_session failure without running run_flow", async () => {
+  const server = createServer();
+  const occupiedSessionId = `cli-occupied-${Date.now()}`;
+  const blockedSessionId = `cli-blocked-${Date.now()}`;
+  const deviceId = buildTestDeviceId(`cli-shared-${Date.now()}`);
+  await cleanupSessionArtifact(occupiedSessionId);
+  await cleanupSessionArtifact(blockedSessionId);
+
+  try {
+    const started = await server.invoke("start_session", {
+      sessionId: occupiedSessionId,
+      platform: "android",
+      deviceId,
+      profile: "phase1",
+    });
+    assert.equal(started.status, "success");
+
+    const output = await runCli([
+      "--platform", "android",
+      "--dry-run",
+      "--run-count", "1",
+      "--session-id", blockedSessionId,
+      "--device-id", deviceId,
+    ]) as {
+      startResult: { status: string; reasonCode: string };
+      runResult?: unknown;
+      endResult?: unknown;
+    };
+
+    assert.equal(output.startResult.status, "failed");
+    assert.equal(output.startResult.reasonCode, "DEVICE_UNAVAILABLE");
+    assert.equal(output.runResult, undefined);
+    assert.equal(output.endResult, undefined);
+  } finally {
+    await server.invoke("end_session", { sessionId: occupiedSessionId });
+    await cleanupSessionArtifact(occupiedSessionId);
+    await cleanupSessionArtifact(blockedSessionId);
+    await rm(path.resolve(repoRoot, buildDeviceLeaseRecordRelativePath("android", deviceId)), { force: true });
   }
 });
 

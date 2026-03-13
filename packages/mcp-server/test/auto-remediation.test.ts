@@ -3,16 +3,21 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildSessionAuditRelativePath, buildSessionRecordRelativePath, loadSessionRecord } from "@mobile-e2e-mcp/core";
+import { buildDeviceLeaseRecordRelativePath, buildSessionAuditRelativePath, buildSessionRecordRelativePath, loadSessionRecord } from "@mobile-e2e-mcp/core";
 import { REASON_CODES, type FailureAttribution, type PerformActionWithEvidenceData, type PerformActionWithEvidenceInput, type ToolResult } from "@mobile-e2e-mcp/contracts";
 import { createServer } from "../src/index.ts";
 import { performActionWithAutoRemediation } from "../src/tools/perform-action-with-auto-remediation.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
+function buildTestDeviceId(sessionId: string): string {
+  return `${sessionId}-device`;
+}
+
 async function cleanupSessionArtifacts(sessionId: string): Promise<void> {
   await rm(path.resolve(repoRoot, buildSessionRecordRelativePath(sessionId)), { force: true });
   await rm(path.resolve(repoRoot, buildSessionAuditRelativePath(sessionId)), { force: true });
+  await rm(path.resolve(repoRoot, buildDeviceLeaseRecordRelativePath("android", buildTestDeviceId(sessionId))), { force: true });
 }
 
 function buildBasePerformActionResult(params: {
@@ -96,7 +101,7 @@ test("performActionWithAutoRemediation short-circuits when the action already su
   const server = createServer();
 
   try {
-    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
     const result = await performActionWithAutoRemediation(
       {
         sessionId,
@@ -127,7 +132,7 @@ test("performActionWithAutoRemediation executes one bounded recovery attempt for
   const server = createServer();
 
   try {
-    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
     const result = await performActionWithAutoRemediation(
       {
         sessionId,
@@ -163,7 +168,7 @@ test("performActionWithAutoRemediation stops when the recovery tool is denied by
   const server = createServer();
 
   try {
-    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1", policyProfile: "read-only" });
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1", policyProfile: "read-only" });
     const result = await performActionWithAutoRemediation(
       {
         sessionId,
@@ -194,7 +199,7 @@ test("performActionWithAutoRemediation stops when the audit gate is unavailable"
   const server = createServer();
 
   try {
-    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
     await rm(path.resolve(repoRoot, buildSessionAuditRelativePath(sessionId)), { force: true });
     let recoverCalled = false;
     const result = await performActionWithAutoRemediation(
@@ -227,7 +232,7 @@ test("performActionWithAutoRemediation blocks high-risk replay suggestions", asy
   const server = createServer();
 
   try {
-    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
     const result = await performActionWithAutoRemediation(
       {
         sessionId,
@@ -257,7 +262,7 @@ test("performActionWithAutoRemediation short-circuits selector-missing failures 
   const server = createServer();
 
   try {
-    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
     const result = await performActionWithAutoRemediation(
       {
         sessionId,
@@ -288,7 +293,7 @@ test("performActionWithAutoRemediation short-circuits ambiguous selector failure
   const server = createServer();
 
   try {
-    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
     const result = await performActionWithAutoRemediation(
       {
         sessionId,
@@ -320,7 +325,7 @@ test("performActionWithAutoRemediation directly recovers waiting-state failures 
   let explainCalled = false;
 
   try {
-    await server.invoke("start_session", { sessionId, platform: "android", profile: "phase1" });
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
     const result = await performActionWithAutoRemediation(
       {
         sessionId,

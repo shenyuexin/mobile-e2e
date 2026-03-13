@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  buildDeviceLeaseRecordRelativePath,
   buildSessionAuditRelativePath,
   buildSessionRecordRelativePath,
   loadFailureIndex,
@@ -16,11 +17,19 @@ import { createServer } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
+function buildTestDeviceId(sessionId: string): string {
+  return `${sessionId}-device`;
+}
+
 async function cleanupSessionArtifact(sessionId: string): Promise<void> {
   const absolutePath = path.resolve(repoRoot, buildSessionRecordRelativePath(sessionId));
   const auditPath = path.resolve(repoRoot, buildSessionAuditRelativePath(sessionId));
+  const androidLeasePath = path.resolve(repoRoot, buildDeviceLeaseRecordRelativePath("android", buildTestDeviceId(sessionId)));
+  const iosLeasePath = path.resolve(repoRoot, buildDeviceLeaseRecordRelativePath("ios", `ios-${buildTestDeviceId(sessionId)}`));
   await rm(absolutePath, { force: true });
   await rm(auditPath, { force: true });
+  await rm(androidLeasePath, { force: true });
+  await rm(iosLeasePath, { force: true });
 }
 
 test("start_session persists a recoverable session record", async () => {
@@ -32,6 +41,7 @@ test("start_session persists a recoverable session record", async () => {
     const result = await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
 
@@ -62,6 +72,7 @@ test("end_session finalizes an existing persisted session record", async () => {
     await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
 
@@ -81,7 +92,8 @@ test("end_session finalizes an existing persisted session record", async () => {
     assert.equal(stored.closed, true);
     assert.equal(stored.endedAt !== undefined, true);
     assert.deepEqual(stored.artifacts, ["artifacts/demo/output.txt"]);
-    assert.equal(stored.session.timeline[stored.session.timeline.length - 1]?.type, "session_ended");
+    assert.equal(stored.session.timeline.some((event) => event.type === "session_ended"), true);
+    assert.equal(stored.session.timeline.some((event) => event.type === "lease_released"), true);
     assert.equal(audit?.result, "completed");
     assert.equal(audit?.artifact_paths[0]?.category, "debug-output");
     assert.equal(Array.isArray(audit?.schema_required_fields), true);
@@ -115,6 +127,7 @@ test("end_session returns the persisted endedAt timestamp and stays idempotent",
     await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
 
@@ -148,6 +161,7 @@ test("session audit redacts sensitive artifact paths and interruption details", 
     await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
     await persistSessionState(
@@ -193,6 +207,7 @@ test("get_session_state persists latest known state into the session record", as
     await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
 
@@ -221,6 +236,7 @@ test("get_session_state reports delta from the previously persisted state", asyn
     await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
 
@@ -247,9 +263,10 @@ test("get_session_state reports delta from the previously persisted state", asyn
     });
 
     assert.equal(result.status, "success");
-    assert.equal(Array.isArray(result.data.latestKnownStateDelta), true);
-    assert.equal(result.data.latestKnownStateDelta.some((item: string) => item.startsWith("appPhase:")), true);
-    assert.equal(result.data.latestKnownStateDelta.some((item: string) => item.startsWith("readiness:")), true);
+    const latestKnownStateDelta = result.data.latestKnownStateDelta ?? [];
+    assert.equal(Array.isArray(latestKnownStateDelta), true);
+    assert.equal(latestKnownStateDelta.some((item: string) => item.startsWith("appPhase:")), true);
+    assert.equal(latestKnownStateDelta.some((item: string) => item.startsWith("readiness:")), true);
   } finally {
     await cleanupSessionArtifact(sessionId);
   }
@@ -264,6 +281,7 @@ test("perform_action_with_evidence appends an action event to the persisted sess
     await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
 
@@ -301,6 +319,7 @@ test("get_logs appends evidence capture artifacts into the session audit", async
     await server.invoke("start_session", {
       sessionId,
       platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
       profile: "phase1",
     });
 
@@ -333,6 +352,7 @@ test("measure_ios_performance appends planned performance artifacts into the ses
     await server.invoke("start_session", {
       sessionId,
       platform: "ios",
+      deviceId: `ios-${buildTestDeviceId(sessionId)}`,
       profile: "native_ios",
     });
 

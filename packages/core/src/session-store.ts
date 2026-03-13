@@ -27,6 +27,12 @@ export interface PersistSessionStateResult {
   updated: boolean;
 }
 
+export interface AppendSessionTimelineEventResult {
+  relativePath?: string;
+  auditPath?: string;
+  updated: boolean;
+}
+
 export interface PersistedActionRecord {
   actionId: string;
   sessionId: string;
@@ -387,6 +393,38 @@ export async function persistSessionState(
     session: {
       ...existing.session,
       latestStateSummary: stateSummary,
+      timeline: [...existing.session.timeline, event],
+    },
+    artifacts: nextArtifacts,
+    updatedAt,
+  };
+  const relativePath = await writeSessionRecord(repoRoot, sessionId, nextRecord);
+  const auditPath = await syncSessionAuditRecord(repoRoot, nextRecord);
+
+  return {
+    relativePath,
+    auditPath,
+    updated: true,
+  };
+}
+
+export async function appendSessionTimelineEvent(
+  repoRoot: string,
+  sessionId: string,
+  event: SessionTimelineEvent,
+  artifacts: string[] = [],
+): Promise<AppendSessionTimelineEventResult> {
+  const existing = await loadSessionRecord(repoRoot, sessionId);
+  if (!existing) {
+    return { updated: false };
+  }
+
+  const nextArtifacts = Array.from(new Set([...existing.artifacts, ...artifacts]));
+  const updatedAt = new Date().toISOString();
+  const nextRecord: PersistedSessionRecord = {
+    ...existing,
+    session: {
+      ...existing.session,
       timeline: [...existing.session.timeline, event],
     },
     artifacts: nextArtifacts,
