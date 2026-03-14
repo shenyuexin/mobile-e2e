@@ -1,0 +1,49 @@
+# mobile-e2e-mcp
+
+> AI-first mobile E2E orchestration monorepo with deterministic-first execution, bounded OCR/CV fallback, and policy-governed session workflows.
+
+Primary notes:
+
+- Start with `repomix-output.xml` for global context, then verify conclusions against live repository files.
+- README files are high-information quick references (architecture, capabilities, execution model, constraints); deeper exhaustive material remains under `docs/`.
+
+## Core Entry
+
+- [README.md](README.md): English entry, quick start, monorepo map, architecture/capability overview.
+- [README.zh-CN.md](README.zh-CN.md): Chinese entry with mirrored structure.
+- [AGENTS.md](AGENTS.md): AI contributor navigation, invariants, and working order.
+
+## Architecture
+
+- [docs/architecture/overview.md](docs/architecture/overview.md): goals, scope, and design principles.
+- [docs/architecture/architecture.md](docs/architecture/architecture.md): control plane vs execution plane reference architecture.
+- [docs/architecture/capability-map.md](docs/architecture/capability-map.md): capability taxonomy and maturity model.
+- [docs/architecture/governance-security.md](docs/architecture/governance-security.md): governance, security, and observability model.
+- [docs/architecture/system-architecture-overview.md](docs/architecture/system-architecture-overview.md): Chinese system overview with mermaid diagram.
+
+## Delivery and Product
+
+- [docs/delivery/roadmap.md](docs/delivery/roadmap.md): phased implementation roadmap.
+- [docs/delivery/execution-index.md](docs/delivery/execution-index.md): execution control center and tracking index.
+- [docs/product/README.zh-CN.md](docs/product/README.zh-CN.md): product documentation index (deployment, integration, OSS scope).
+
+## Runtime and Validation
+
+- [package.json](package.json): root scripts (`build`, `typecheck`, `test`, `mcp:dev`, `mcp:stdio`).
+- [tests/README.md](tests/README.md): regression layers, fixtures, and CI scope.
+
+## Monorepo Packages
+
+- [packages/contracts](packages/contracts): shared contracts/types.
+- [packages/core](packages/core): policy/session/governance orchestration core.
+- [packages/adapter-maestro](packages/adapter-maestro): deterministic adapter and UI execution.
+- [packages/adapter-vision](packages/adapter-vision): OCR/vision fallback adapter.
+- [packages/mcp-server](packages/mcp-server): MCP server tool registry and stdio/dev runtime.
+- [packages/cli](packages/cli): CLI package boundary.
+
+## Optional Deep Dives
+
+- [docs/architecture/adapters-android.md](docs/architecture/adapters-android.md)
+- [docs/architecture/adapters-ios.md](docs/architecture/adapters-ios.md)
+- [docs/architecture/framework-coverage.md](docs/architecture/framework-coverage.md)
+- [docs/phases/program-status.zh-CN.md](docs/phases/program-status.zh-CN.md)

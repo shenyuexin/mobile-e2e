@@ -1,83 +1,213 @@
-# Mobile E2E MCP Blueprint (2026)
+# Mobile E2E MCP (2026)
 
-This repository contains a comprehensive technical blueprint for building a large-scale, extensible Mobile End-to-End (E2E) MCP platform for Android, iOS, React Native, and Flutter.
+> AI-first mobile E2E orchestration for Android/iOS/React Native/Flutter, with deterministic-first execution, bounded visual fallback, and governance-aware automation.
 
-## Codebase Navigation
+This repository is a pnpm monorepo that combines MCP tooling, adapter execution, and architecture docs for a scalable mobile E2E platform.
 
-- `repomix-output.xml` — A consolidated XML file containing the entire codebase for AI analysis and context gathering.
+## What This Repository Actually Is
 
-### Recommended Analysis Order (Important)
+This repo contains both:
 
-For any AI/code-analysis workflow, use this order:
+1. **Executable implementation** (MCP server, adapters, contracts, core orchestration), and
+2. **Architecture and delivery knowledge base** (design principles, capability model, phased rollout docs).
 
-1. **Read `repomix-output.xml` first** to get a fast global view (architecture, directory structure, and major code paths).
-2. **Run a delta check against the live repo** (`git ls-files` / targeted reads) before making conclusions.
-3. Treat `repomix-output.xml` as the **primary context entry**, but not the sole source of truth.
+If you only remember one thing: this project is designed as a **mobile orchestration layer for AI agents**, not a single-framework test runner.
 
-Why this matters:
+## Quick Start
 
-- Repomix can exclude some files (for example binary assets, ignored patterns, or files not captured in the packed file section).
-- Therefore, final judgments must be validated against real repository files.
+Prerequisites:
 
-## Documentation Index
+- Node.js 20+
+- pnpm `10.30.3` (from `packageManager`)
 
-- `README.zh-CN.md` — 中文能力介绍与阶段说明
-- `docs/phases/phase-validation-strategy.zh-CN.md` — 中文分阶段验收与验证策略
-- `docs/phases/phase1-start-checklist.zh-CN.md` — Phase 1 启动清单（含可执行命令）
-- `docs/phases/no-app-bootstrap.zh-CN.md` — 无业务 App 时的登录样例启动方案
-- `docs/phases/discovery-driven-execution.zh-CN.md` — 发现新问题后如何系统补回方案与验收
-- `docs/phases/phase-transition-rules.zh-CN.md` — 阶段完成与切换规则
-- `docs/phases/phase-1-closeout.zh-CN.md` — Phase 1 收尾记录
-- `docs/phases/phase-2-minimal-scope.zh-CN.md` — Phase 2 最小范围定义
-- `docs/phases/sample-harness-contract.zh-CN.md` — Sample harness 执行合同
-- `docs/phases/phase-2-closeout.zh-CN.md` — Phase 2 收尾记录
-- `docs/phases/phase-3-framework-profiles.zh-CN.md` — Phase 3 框架 profile 基线
-- `docs/phases/phase-4-governance-baseline.zh-CN.md` — Phase 4 治理基线
-- `docs/phases/phase-5-agentic-baseline.zh-CN.md` — Phase 5 agentic 基线
-- `docs/phases/phase-5-bounded-auto-remediation.zh-CN.md` — Phase 5 有边界自动恢复设计
-- `docs/phases/phase-5-bounded-auto-remediation-checklist.zh-CN.md` — Phase 5 有边界自动恢复实施任务清单
-- `docs/phases/program-status.zh-CN.md` — 当前项目阶段状态与剩余工作
-- `docs/phases/native-onboarding-mobitru.zh-CN.md` — Mobitru native onboarding 计划
-- `docs/phases/native-onboarding-results.zh-CN.md` — Mobitru native onboarding 结果
-- `docs/phases/native-harness-progress.zh-CN.md` — native harness 当前进展与下一步
-- `docs/phases/flutter-onboarding-plan.zh-CN.md` — Flutter onboarding 计划与当前阻塞
-- `docs/phases/flutter-onboarding-results.zh-CN.md` — Flutter onboarding 结果
-- `flows/samples/native/*.yaml` — native harness flow baselines for Mobitru
-- `flows/samples/flutter/*.yaml` — Flutter harness flow skeletons for Mobitru
-- `docs/architecture/overview.md` — goals, scope, and principles
-- `docs/architecture/capability-map.md` — complete capability taxonomy and maturity model
-- `docs/architecture/architecture.md` — reference architecture (control plane + execution plane)
-- `docs/architecture/diagrams/mobile-e2e-overall-architecture.md` — Excalidraw overall architecture link
-  - Source: `docs/architecture/diagrams/mobile-e2e-overall-architecture.excalidraw`  
-  - SVG: `docs/architecture/diagrams/mobile-e2e-overall-architecture.svg`  
-  - PNG preview: `docs/architecture/diagrams/mobile-e2e-overall-architecture.png`
+Run from repo root:
+
+```bash
+pnpm install
+pnpm build
+pnpm typecheck
+pnpm test
+
+# MCP server runtime modes
+pnpm mcp:dev
+pnpm mcp:stdio
+```
+
+## AI Agent Start Here
+
+For AI/code-analysis workflows, use this order:
+
+1. **Read `repomix-output.xml` first** for global architecture and code-path context.
+2. **Delta-check live repo files** (`git ls-files` + targeted reads).
+3. Treat `repomix-output.xml` as the **primary entry point**, not the only source of truth.
+
+Why: packed context may omit some files (binary assets, ignored paths, etc.), so final conclusions must be verified against live files.
+
+## Monorepo at a Glance
+
+- `packages/contracts` — shared types/contracts for tools, sessions, and result envelopes
+- `packages/core` — policy engine, session store/scheduler, governance primitives
+- `packages/adapter-maestro` — deterministic execution adapter, UI model/query/action path
+- `packages/adapter-vision` — OCR/visual fallback services
+- `packages/mcp-server` — MCP tool registry + stdio/dev CLI entry points
+- `packages/cli` — CLI package boundary
+- `configs/profiles` — framework profile contracts
+- `configs/policies` — governance/access policy baselines
+- `flows/samples` — sample flow baselines
+
+Dependency direction (high level):
+
+`contracts -> core -> adapters -> mcp-server -> CLI/stdio/dev runtime`
+
+## How It Works (End-to-End)
+
+Typical runtime path:
+
+1. Agent/client invokes an MCP tool via stdio or dev CLI.
+2. MCP server validates input and applies policy checks.
+3. Session context is resolved (or created), with lease/scheduling guardrails.
+4. Adapter router selects deterministic execution path first.
+5. Action executes and returns a structured result envelope.
+6. Artifacts/evidence (screens, logs, summaries) are attached for audit/debug.
+7. If deterministic resolution fails and policy allows it, bounded OCR/CV fallback is attempted.
+
+This is why the project emphasizes **session + policy + evidence**, not only UI actions.
+
+## High-Level Architecture
+
+Reference split:
+
+- **Control plane**: tool contracts, policy checks, session orchestration, audit/evidence indexing
+- **Execution plane**: platform actions, UI resolution, retries, interruption handling, visual fallback
+
+Architecture diagram:
+
+- [Overall architecture (Excalidraw)](docs/architecture/diagrams/mobile-e2e-overall-architecture.excalidraw)
+- PNG preview: `docs/architecture/diagrams/mobile-e2e-overall-architecture.png`
 
 [![Mobile E2E MCP Overall Architecture](docs/architecture/diagrams/mobile-e2e-overall-architecture.png)](docs/architecture/diagrams/mobile-e2e-overall-architecture.excalidraw)
-- `docs/architecture/adapters-android.md` — Android adapter design (ADB/UIAutomator/Espresso/Appium/Maestro)
-- `docs/architecture/adapters-ios.md` — iOS adapter design (simctl/XCUITest/WDA/idb)
-- [`docs/architecture/adapter-code-placement.md`](docs/architecture/adapter-code-placement.md) — where new adapter code should live as the repo grows
-- `docs/architecture/framework-coverage.md` — Native/RN/Flutter capability fit and strategy
-- `docs/delivery/roadmap.md` — phased implementation plan (MVP → enterprise)
-- `docs/architecture/governance-security.md` — security, observability, and governance model
-- `docs/delivery/review-log.md` — research synthesis and review decisions
-- `docs/delivery/implementation-playbook.md` — execution-level workstream playbook
-- `docs/architecture/ecosystem-landscape-2026.md` — ecosystem comparison and opportunity map
-- `docs/architecture/differentiation-strategy.md` — practical differentiators and moat strategy
-- `docs/delivery/execution-index.md` — execution control center for phase/workstream tracking
-- `docs/templates/adr-template.md` — architecture decision record template
-- `docs/templates/phase-review-checklist.md` — per-phase quality/governance checklist
-- `docs/templates/phase-charter-template.md` — phase charter template
-- `docs/templates/workstream-status-template.md` — workstream tracking template
-- `docs/templates/acceptance-evidence-template.md` — acceptance evidence template
-- `docs/templates/dependency-decision-register.md` — blockers and decision register
-- `docs/templates/sample-app-matrix-template.md` — compatibility sample matrix template
-- `docs/templates/bug-packet-template.md` — bug packet template
-- `configs/profiles/*.yaml` — framework profile contracts
-- `configs/policies/**/*.yaml` — interruption/governance policy baselines
-- `scripts/dev/*.sh` / `scripts/report/*.py` — sample harness runners and reporting tools
-- `examples/rn-login-demo/App.tsx.template` — 最小登录样例页面模板（Expo RN）
-- `docs/product/README.zh-CN.md` — 开源产品文档索引（部署模型、接入方式、开源边界）
+
+## Capability Map (Current Scope)
+
+- **Environment & device control** — discovery, lease/isolation, environment shaping
+- **App lifecycle** — install/launch/terminate/reset/deep-link entry
+- **Perception & interaction** — inspect/query UI, tap/type/wait, flow execution
+- **Diagnostics & evidence** — logs, crash signals, performance, screenshot/timeline artifacts
+- **Reliability & remediation** — reason-coded failures, bounded retries, remediation helpers
+
+Tool registry and signatures live in `packages/mcp-server/src/server.ts` and `packages/mcp-server/src/tools/*`.
+
+Representative MCP tools currently implemented include:
+
+- Session/lifecycle: `start_session`, `end_session`, `run_flow`, `reset_app_state`
+- Device/app: `list_devices`, `install_app`, `launch_app`, `terminate_app`
+- UI actions: `tap`, `type_text`, `wait_for_ui`, `tap_element`, `type_into_element`
+- UI perception: `inspect_ui`, `query_ui`, `resolve_ui_target`, `scroll_and_resolve_ui_target`, `scroll_and_tap_element`
+- Observability: `take_screenshot`, `record_screen`, `get_logs`, `get_crash_signals`, `collect_diagnostics`
+- Intelligence/recovery: `perform_action_with_evidence`, `explain_last_failure`, `rank_failure_candidates`, `recover_to_known_state`, `replay_last_stable_path`, `suggest_known_remediation`
+
+For exact signatures and supported inputs/outputs, use `packages/mcp-server/src/server.ts`.
+
+## Deterministic Ladder and Fallback Policy
+
+Action resolution order is intentional and strict:
+
+1. Stable ID/resource-id/testID/accessibility identifier
+2. Semantic tree match (text/label/role)
+3. OCR text-region fallback (bounded)
+4. CV/template fallback (bounded)
+5. Fail with reason code + artifacts
+
+Prohibited behavior:
+
+- OCR/CV as the default first path
+- Unbounded retries without state-change evidence
+- Silent downgrade from deterministic to probabilistic execution
+
+## Repository-Wide Principles
+
+- **Deterministic-first**: use stable IDs/tree/native capabilities first; OCR/CV is bounded fallback.
+- **Structured tool contracts**: return machine-consumable result envelopes (`status`, `reasonCode`, artifacts).
+- **Session-oriented execution**: actions run in auditable sessions with explicit policy profiles.
+- **Evidence-rich failures**: failures should carry enough context for explain/replay/remediation.
+
+## Session, Policy, and Governance Model
+
+- Sessions are auditable execution units with timeline and artifact references.
+- Policy profiles can restrict tool classes (for example read-only vs interactive/full-control).
+- Lease/scheduler constraints prevent unsafe concurrent execution on the same target.
+- Redaction/governance paths exist to keep evidence useful while respecting data boundaries.
+
+Key policy/config locations:
+
+- `configs/policies/*.yaml`
+- `configs/profiles/*.yaml`
+
+## Current Test and Validation Model
+
+Regression layers intentionally separate no-device core coverage from heavier lanes:
+
+- Unit stack across core/adapters/server (`pnpm test:unit`)
+- Root smoke validators (`pnpm test:smoke`)
+- Optional OCR smoke (`pnpm test:ocr-smoke`)
+
+Primary CI-oriented command:
+
+```bash
+pnpm test:ci
+```
+
+Testing details and fixture strategy: `tests/README.md`.
+
+## Non-Goals (Important for Correct Expectations)
+
+- This is not a replacement for every mobile framework internals.
+- This is not OCR-first automation.
+- This is not a guarantee of immediate parity across all native/RN/Flutter edge cases.
+- This is not a single abstraction that erases all platform differences.
+
+## Contribution Workflow (Minimal)
+
+Before opening a PR:
+
+```bash
+pnpm build
+pnpm typecheck
+pnpm test:unit
+pnpm test:smoke
+```
+
+For AI-assisted contribution guidelines and repository navigation rules, see [AGENTS.md](AGENTS.md).
+
+## Practical Reading Path (Human + AI)
+
+If you want to get productive quickly, read in this sequence:
+
+1. This README (mental model + commands + boundaries)
+2. `AGENTS.md` (repo navigation and invariants)
+3. `docs/architecture/architecture.md` (control plane vs execution plane)
+4. `packages/mcp-server/src/server.ts` (actual tool registry and invocation surface)
+5. `tests/README.md` (what is truly validated today)
+
+## Selected Docs
+
+- [README.zh-CN.md](README.zh-CN.md) — Chinese overview
+- [docs/architecture/overview.md](docs/architecture/overview.md) — goals/scope/principles
+- [docs/architecture/architecture.md](docs/architecture/architecture.md) — reference architecture
+- [docs/architecture/capability-map.md](docs/architecture/capability-map.md) — capability taxonomy/maturity
+- [docs/architecture/governance-security.md](docs/architecture/governance-security.md) — governance/security model
+- [docs/delivery/roadmap.md](docs/delivery/roadmap.md) — delivery phases
+- [docs/product/README.zh-CN.md](docs/product/README.zh-CN.md) — product/deployment scope
+- [tests/README.md](tests/README.md) — test layers and CI scope
+
+## Roadmap Snapshot (Short)
+
+- Near term: harden deterministic session/action reliability and evidence model.
+- Mid term: broaden framework/profile maturity and real-run coverage.
+- Long term: stronger agentic remediation/governance and enterprise controls.
+
+Detailed workstream planning remains in `docs/delivery/*` and `docs/phases/*`.
 
 ## Positioning
 
-The platform should not be "another test framework." It should be a universal AI-facing orchestration layer that can route actions to multiple backends with deterministic-first execution, visual fallback, and strict governance.
+This project is not another isolated test framework. It is a universal AI-facing orchestration layer that routes mobile E2E actions across multiple backends with deterministic-first behavior and strict governance boundaries.
