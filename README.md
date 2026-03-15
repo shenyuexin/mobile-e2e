@@ -77,6 +77,12 @@ Architecture reference:
 
 - [System architecture overview (Mermaid, in-repo)](docs/architecture/system-architecture-overview.md)
 - [Reference architecture details](docs/architecture/architecture.md)
+- [Architecture navigation index (zh-CN)](docs/architecture/README.zh-CN.md)
+
+Source-of-truth note:
+
+- Architecture docs describe both current baseline and target-state design.
+- If a doc statement conflicts with strict validation behavior, prefer `packages/contracts/*.schema.json` and `configs/policies/*.yaml` for current enforced behavior.
 
 ## Capability Map (Current Scope)
 
@@ -174,6 +180,10 @@ If you want to get productive quickly, read in this sequence:
 - [docs/architecture/architecture.md](docs/architecture/architecture.md) — reference architecture
 - [docs/architecture/capability-map.md](docs/architecture/capability-map.md) — capability taxonomy/maturity
 - [docs/architecture/governance-security.md](docs/architecture/governance-security.md) — governance/security model
+- [docs/architecture/README.zh-CN.md](docs/architecture/README.zh-CN.md) — architecture navigation index (zh-CN)
+- [docs/architecture/session-orchestration-architecture.zh-CN.md](docs/architecture/session-orchestration-architecture.zh-CN.md) — session lease/scheduler/runtime orchestration
+- [docs/architecture/policy-engine-runtime-architecture.zh-CN.md](docs/architecture/policy-engine-runtime-architecture.zh-CN.md) — policy runtime/guard/scope mapping
+- [docs/architecture/platform-implementation-matrix.zh-CN.md](docs/architecture/platform-implementation-matrix.zh-CN.md) — cross-platform support matrix
 - [docs/delivery/roadmap.md](docs/delivery/roadmap.md) — delivery phases
 - [docs/product/README.zh-CN.md](docs/product/README.zh-CN.md) — product/deployment scope
 - [tests/README.md](tests/README.md) — test layers and CI scope

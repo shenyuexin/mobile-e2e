@@ -93,6 +93,27 @@ Canonical fields for adapter conformance:
 - fallback eligibility
 - required policy scope
 
+## 4.1 Contract Truthfulness: Current Baseline vs Target Model
+
+To avoid over-claiming strictness, architecture docs in this repository follow this rule:
+
+- **Current enforced baseline** = what `packages/contracts/*schema.json` currently validates.
+- **Target model** = richer runtime fields we want all tools to converge to.
+
+Current enforced baseline (as of now):
+
+- `session.schema.json` requires a minimal session envelope (`sessionId/platform/deviceId/appId/policyProfile/startedAt/artifactsRoot/timeline`).
+- `tool-result.schema.json` enforces generic result envelope fields (`status/reasonCode/sessionId/durationMs/attempts/artifacts/data/nextSuggestions`).
+- Both schemas currently keep `additionalProperties: true`.
+
+Target model (documented in runtime architecture docs):
+
+- richer timeline event typing
+- action-centered evidence packet fields
+- explicit fallback and attribution metadata
+
+When reading this architecture, treat the current schemas as **validation baseline**, not yet a strict full-fidelity interoperability contract.
+
 ---
 
 ## 5. Adapter Router
@@ -102,6 +123,15 @@ For code ownership inside the current TypeScript adapter implementation, see [`d
 For the current React Native debugger sequence and the capability gap from Metro inspector snapshots to a full debugger, see [`docs/architecture/rn-debugger-sequence.md`](./rn-debugger-sequence.md).
 
 For the broader AI-first capability model of the project, including required state, evidence, attribution, recovery, memory, and governance layers, see [`docs/architecture/ai-first-capability-model.md`](./ai-first-capability-model.md).
+
+For runtime implementation-focused architecture details, see:
+
+- [`docs/architecture/session-orchestration-architecture.zh-CN.md`](./session-orchestration-architecture.zh-CN.md)
+- [`docs/architecture/policy-engine-runtime-architecture.zh-CN.md`](./policy-engine-runtime-architecture.zh-CN.md)
+- [`docs/architecture/execution-coordinator-and-fallback-ladder.zh-CN.md`](./execution-coordinator-and-fallback-ladder.zh-CN.md)
+- [`docs/architecture/evidence-timeline-architecture.zh-CN.md`](./evidence-timeline-architecture.zh-CN.md)
+- [`docs/architecture/failure-attribution-and-recovery-architecture.zh-CN.md`](./failure-attribution-and-recovery-architecture.zh-CN.md)
+- [`docs/architecture/platform-implementation-matrix.zh-CN.md`](./platform-implementation-matrix.zh-CN.md)
 
 Routing policy should evaluate:
 
