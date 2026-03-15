@@ -203,13 +203,19 @@ export function resolveInterruptionPlan(
   signals: InterruptionSignal[],
   rules: InterruptionPolicyRuleV2[],
   preferredSlot?: InterruptionActionSlot,
+  expectedType?: InterruptionPolicyRuleV2["type"],
 ): InterruptionResolutionPlan {
   const prioritized = [...rules].sort((left, right) => {
     const score = (priority: InterruptionPolicyRuleV2["priority"]) => (priority === "high" ? 3 : priority === "medium" ? 2 : 1);
     return score(right.priority) - score(left.priority);
   });
 
-  const matchedRule = prioritized.find((rule) => signalMatchesRule(signals, rule));
+  const matchedRule = prioritized.find((rule) => {
+    if (expectedType && rule.type !== expectedType) {
+      return false;
+    }
+    return signalMatchesRule(signals, rule);
+  });
   if (!matchedRule) {
     return {
       denied: true,

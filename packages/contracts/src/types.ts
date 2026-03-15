@@ -954,6 +954,8 @@ export interface ResolveInterruptionData {
   classification?: InterruptionClassification;
   matchedRuleId?: string;
   selectedSlot?: InterruptionActionSlot;
+  resolutionAttempts?: number;
+  verifiedCleared?: boolean;
   event?: InterruptionEvent;
 }
 export interface ResumeInterruptedActionInput {

@@ -45,7 +45,12 @@ export function decideInterruptionResolution(params: {
   policyRules: import("@mobile-e2e-mcp/contracts").InterruptionPolicyRuleV2[];
   preferredSlot?: "primary" | "secondary" | "cancel" | "destructive";
 }): { plan: InterruptionResolutionPlan; decision: ResolveInterruptionDecision } {
-  const plan = resolveInterruptionPlan(params.signals, params.policyRules, params.preferredSlot);
+  const plan = resolveInterruptionPlan(
+    params.signals,
+    params.policyRules,
+    params.preferredSlot,
+    params.classification.type,
+  );
   if (!plan.matchedRule) {
     return {
       plan,
@@ -63,6 +68,22 @@ export function decideInterruptionResolution(params: {
         status: "denied",
         matchedRuleId: plan.matchedRule.id,
         reason: plan.reason,
+      },
+    };
+  }
+
+  if (
+    params.classification.buttonSlots
+    && params.classification.buttonSlots.length > 0
+    && plan.selectedSlot
+    && !params.classification.buttonSlots.includes(plan.selectedSlot)
+  ) {
+    return {
+      plan,
+      decision: {
+        status: "failed",
+        matchedRuleId: plan.matchedRule.id,
+        reason: `Selected slot '${plan.selectedSlot}' is not available for classification '${params.classification.type}'.`,
       },
     };
   }

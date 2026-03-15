@@ -35,6 +35,9 @@
 ### WS-6 测试、验收与文档回写
 - [x] 完成
 
+### WS-7 P0/P1 通用编排强化（hard guard + strategy hardening）
+- [x] 完成
+
 ---
 
 ## 2. 任务清单
@@ -165,11 +168,54 @@
 
 ---
 
+## WS-7 P0/P1 通用编排强化（hard guard + strategy hardening）
+
+### Task 7.1 P0：pre/post interruption guard 升级为硬门禁
+- [x] `packages/adapter-maestro/src/index.ts`
+  - pre-guard 未通过（非 `resolved/not_needed`）时阻断主 action，不再继续执行 `executeIntentWithMaestro(...)`。
+  - post-guard 失败时覆盖最终结果为 failed，并回写 action record（避免“先成功后失败”的语义分叉）。
+  - post-guard 成功且已 resolved 时触发 `resumeInterruptedActionWithMaestro(...)`。
+
+### Task 7.2 P0：interruption 自动处置动作的 policy 一致性校验
+- [x] `packages/adapter-maestro/src/index.ts`
+  - 当中断规则策略需要 tap 能力（`tap_selector`/`choose_slot`/`coordinate_tap`）时，显式校验 access profile 对 `tap_element` 的许可。
+  - 被拒绝时返回 `POLICY_DENIED`，并写入 interruption escalated 事件。
+
+### Task 7.3 P0：status 语义收敛（含 partial）
+- [x] `packages/adapter-maestro/src/index.ts`
+  - resolve 阶段不再将 `partial` 隐式视作成功。
+  - 无可执行 tap 输入时显式失败（`INTERRUPTION_RESOLUTION_FAILED`）。
+
+### Task 7.4 P1：retry.maxAttempts 真正生效 + resolve 后验证
+- [x] `packages/adapter-maestro/src/index.ts`
+  - 消费 `matchedRule.retry.maxAttempts`，执行 bounded retry（内部上限保护）。
+  - 每次处置后重跑 detect，确认 interruption 已清除才标记 resolved。
+- [x] `packages/contracts/src/types.ts`
+  - `ResolveInterruptionData` 新增 `resolutionAttempts`、`verifiedCleared` 字段用于可观测性与审计。
+
+### Task 7.5 P1：classification 主导规则匹配（authoritative）
+- [x] `packages/core/src/policy-engine.ts`
+  - `resolveInterruptionPlan(...)` 新增 `expectedType` 过滤。
+- [x] `packages/adapter-maestro/src/interruption-resolver.ts`
+  - 调用 resolve plan 时传入 `classification.type`，避免跨类型误命中。
+  - 增加 `selectedSlot` 与 `classification.buttonSlots` 一致性校验。
+
+### Task 7.6 P1：测试补齐
+- [x] `packages/core/test/interruption-policy.test.ts`（新增）
+  - 覆盖 expectedType 过滤行为。
+- [x] `packages/adapter-maestro/test/interruption-resolver.test.ts`（扩展）
+  - 覆盖 slot 可用性校验。
+  - 覆盖 classification type 主导匹配。
+
+---
+
 ## 3. 每项任务完成记录（本轮摘要）
 
 - 完成记录：
   - PR: N/A（本地工作区）
   - Verify:
+    - `pnpm --filter @mobile-e2e-mcp/core test`
+    - `pnpm --filter @mobile-e2e-mcp/adapter-maestro test`
     - `pnpm typecheck`
     - `pnpm test`
     - `pnpm build`
@@ -177,7 +223,9 @@
     - `artifacts/sessions/*.json`
     - `artifacts/audit/*.json`
     - `tests/fixtures/ui/*`
-  - Notes: interruption v2 与 v1 规则保持兼容，避免中断既有 sample harness。
+  - Notes:
+    - interruption v2 与 v1 规则保持兼容，避免中断既有 sample harness。
+    - 本轮新增 P0/P1 强化后，中断处理从“可观测调用”升级为“流程硬门禁 + 有界验证闭环”。
 
 ---
 

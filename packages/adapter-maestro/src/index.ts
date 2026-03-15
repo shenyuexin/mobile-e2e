@@ -128,7 +128,9 @@ import {
   type OcrFallbackActionType,
 } from "@mobile-e2e-mcp/adapter-vision";
 import {
+  appendSessionTimelineEvent,
   isHighRiskInterruptionActionAllowed,
+  isToolAllowedByProfile,
   listActionRecordsForSession,
   loadAccessProfile,
   loadActionRecord,
@@ -997,7 +999,13 @@ interface OcrFallbackTestHooks {
   now?: () => string;
 }
 
+interface InterruptionGuardTestHooks {
+  resolveInterruption?: (input: ResolveInterruptionInput) => Promise<ToolResult<ResolveInterruptionData>>;
+  resumeInterruptedAction?: (input: ResumeInterruptedActionInput) => Promise<ToolResult<ResumeInterruptedActionData>>;
+}
+
 let ocrFallbackTestHooks: OcrFallbackTestHooks | undefined;
+let interruptionGuardTestHooks: InterruptionGuardTestHooks | undefined;
 
 export function setOcrFallbackTestHooksForTesting(hooks: OcrFallbackTestHooks | undefined): void {
   ocrFallbackTestHooks = hooks;
@@ -1005,6 +1013,14 @@ export function setOcrFallbackTestHooksForTesting(hooks: OcrFallbackTestHooks | 
 
 export function resetOcrFallbackTestHooksForTesting(): void {
   ocrFallbackTestHooks = undefined;
+}
+
+export function setInterruptionGuardTestHooksForTesting(hooks: InterruptionGuardTestHooks | undefined): void {
+  interruptionGuardTestHooks = hooks;
+}
+
+export function resetInterruptionGuardTestHooksForTesting(): void {
+  interruptionGuardTestHooks = undefined;
 }
 
 function mapIntentToOcrActionKind(action: ActionIntent): OcrFallbackActionType | undefined {
@@ -2089,6 +2105,14 @@ function buildTapInputFromResolution(params: {
   };
 }
 
+function interruptionResolutionRequiresTapScope(strategy: InterruptionPolicyRuleV2["action"]["strategy"] | undefined): boolean {
+  return strategy === "tap_selector" || strategy === "choose_slot" || strategy === "coordinate_tap";
+}
+
+function isInterruptionGuardPassed(status: ResolveInterruptionData["status"] | undefined): boolean {
+  return status === "resolved" || status === "not_needed";
+}
+
 function buildInterruptionCheckpoint(
   sessionId: string,
   platform: Platform,
@@ -2169,6 +2193,32 @@ export async function resolveInterruptionWithMaestro(
     };
   }
   const classification = input.classification ?? classifyInterruptionFromSignals(detected.data.signals);
+  if (sessionRecord && detected.data.stateSummary) {
+    await appendSessionTimelineEvent(
+      repoRoot,
+      input.sessionId,
+      buildInterruptionPersistenceEvent(
+        "interruption_detected",
+        input.actionId,
+        summarizeInterruptionDetail({ classification: detected.data.classification ?? classification, signals: detected.data.signals }),
+        detected.data.stateSummary,
+        detected.artifacts,
+      ),
+      detected.artifacts,
+    );
+    await appendSessionTimelineEvent(
+      repoRoot,
+      input.sessionId,
+      buildInterruptionPersistenceEvent(
+        "interruption_classified",
+        input.actionId,
+        summarizeInterruptionDetail({ classification, signals: detected.data.signals }),
+        detected.data.stateSummary,
+        detected.artifacts,
+      ),
+      detected.artifacts,
+    );
+  }
   const policyConfig = await loadInterruptionPolicyConfig(repoRoot, platform);
   const decision = decideInterruptionResolution({
     platform,
@@ -2226,7 +2276,64 @@ export async function resolveInterruptionWithMaestro(
     }
   }
 
+  if (
+    matchedRule
+    && decision.decision.status === "resolved"
+    && accessProfile
+    && interruptionResolutionRequiresTapScope(matchedRule.action.strategy)
+    && !isToolAllowedByProfile(accessProfile, "tap_element")
+  ) {
+    const deniedEvent: InterruptionEvent = buildInterruptionEvent({
+      actionId: input.actionId,
+      classification,
+      signals: detected.data.signals,
+      decision: {
+        ...decision.decision,
+        status: "denied",
+        reason: "Interruption resolution requires tap scope, but the current policy profile denies it.",
+      },
+      source: pickEventSource(detected.data.signals),
+      artifacts: detected.artifacts,
+    });
+    if (sessionRecord && detected.data.stateSummary) {
+      await persistInterruptionEvent(
+        repoRoot,
+        input.sessionId,
+        deniedEvent,
+        detected.data.stateSummary,
+        buildInterruptionPersistenceEvent(
+          "interruption_escalated",
+          input.actionId,
+          "Interruption resolution requires tap scope, but policy denied it.",
+          detected.data.stateSummary,
+          detected.artifacts,
+        ),
+        detected.artifacts,
+      );
+    }
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.policyDenied,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: detected.artifacts,
+      data: {
+        attempted: false,
+        status: "denied",
+        strategy: matchedRule.action.strategy,
+        classification,
+        matchedRuleId: matchedRule.id,
+        event: deniedEvent,
+      },
+      nextSuggestions: ["Switch to a policy profile that allows tap scope for interruption resolution."],
+    };
+  }
+
   let resolutionStatus = decision.decision.status;
+  let resolutionAttempts = 0;
+  let verifiedCleared = resolutionStatus === "not_needed";
+  let resolutionArtifacts = [...detected.artifacts];
   let resolutionReasonCode: ReasonCode = resolutionStatus === "resolved" ? REASON_CODES.ok : REASON_CODES.interruptionResolutionFailed;
   if (resolutionStatus === "resolved" && matchedRule) {
     const tapInput = buildTapInputFromResolution({
@@ -2240,9 +2347,39 @@ export async function resolveInterruptionWithMaestro(
       dryRun: input.dryRun,
     });
 
-    if (tapInput) {
-      const tapResult = await tapElementWithMaestro(tapInput);
-      if (tapResult.status === "failed") {
+    if (!tapInput) {
+      resolutionStatus = "failed";
+      resolutionReasonCode = REASON_CODES.interruptionResolutionFailed;
+    } else {
+      const maxAttempts = Math.max(1, Math.min(3, matchedRule.retry?.maxAttempts ?? 1));
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        resolutionAttempts = attempt;
+        const tapResult = await tapElementWithMaestro(tapInput);
+        resolutionArtifacts = Array.from(new Set([...resolutionArtifacts, ...tapResult.artifacts]));
+        if (tapResult.status === "failed" || tapResult.status === "partial") {
+          resolutionStatus = "failed";
+          resolutionReasonCode = REASON_CODES.interruptionResolutionFailed;
+          continue;
+        }
+
+        const verification = await detectInterruptionWithMaestro({
+          sessionId: input.sessionId,
+          platform,
+          runnerProfile: input.runnerProfile,
+          harnessConfigPath: input.harnessConfigPath,
+          deviceId: input.deviceId,
+          appId: input.appId,
+          actionId: input.actionId,
+          dryRun: input.dryRun,
+        });
+        resolutionArtifacts = Array.from(new Set([...resolutionArtifacts, ...verification.artifacts]));
+        if (!verification.data.detected) {
+          resolutionStatus = "resolved";
+          resolutionReasonCode = REASON_CODES.ok;
+          verifiedCleared = true;
+          break;
+        }
+
         resolutionStatus = "failed";
         resolutionReasonCode = REASON_CODES.interruptionResolutionFailed;
       }
@@ -2258,7 +2395,7 @@ export async function resolveInterruptionWithMaestro(
       status: resolutionStatus,
     },
     source: pickEventSource(detected.data.signals),
-    artifacts: detected.artifacts,
+    artifacts: resolutionArtifacts,
   });
 
   if (sessionRecord && detected.data.stateSummary) {
@@ -2275,20 +2412,20 @@ export async function resolveInterruptionWithMaestro(
         input.actionId,
         summarizeInterruptionDetail({ classification, signals: detected.data.signals }),
         detected.data.stateSummary,
-        detected.artifacts,
+        resolutionArtifacts,
       ),
-      detected.artifacts,
+      resolutionArtifacts,
       checkpoint,
     );
   }
 
   return {
-    status: resolutionStatus === "resolved" ? "success" : resolutionStatus === "denied" ? "failed" : "partial",
+    status: resolutionStatus === "resolved" || resolutionStatus === "not_needed" ? "success" : "failed",
     reasonCode: resolutionStatus === "resolved" ? REASON_CODES.ok : resolutionStatus === "denied" ? REASON_CODES.policyDenied : resolutionReasonCode,
     sessionId: input.sessionId,
     durationMs: Date.now() - startTime,
-    attempts: 1,
-    artifacts: detected.artifacts,
+    attempts: Math.max(1, resolutionAttempts),
+    artifacts: resolutionArtifacts,
     data: {
       attempted: true,
       status: resolutionStatus,
@@ -2296,6 +2433,8 @@ export async function resolveInterruptionWithMaestro(
       classification,
       matchedRuleId: matchedRule?.id,
       selectedSlot: decision.decision.selectedSlot,
+      resolutionAttempts: Math.max(1, resolutionAttempts),
+      verifiedCleared,
       event,
     },
     nextSuggestions: resolutionStatus === "resolved"
@@ -2494,7 +2633,10 @@ export async function performActionWithEvidenceWithMaestro(
   }
 
   const runnerProfile = input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE;
-  const preActionInterruption = await resolveInterruptionWithMaestro({
+  const resolveInterruptionExecutor = interruptionGuardTestHooks?.resolveInterruption ?? resolveInterruptionWithMaestro;
+  const resumeInterruptionExecutor = interruptionGuardTestHooks?.resumeInterruptedAction ?? resumeInterruptedActionWithMaestro;
+
+  const preActionInterruption = await resolveInterruptionExecutor({
     sessionId: input.sessionId,
     platform,
     runnerProfile,
@@ -2505,6 +2647,42 @@ export async function performActionWithEvidenceWithMaestro(
     checkpoint: buildInterruptionCheckpoint(input.sessionId, platform, actionId, input.action),
     dryRun: input.dryRun,
   });
+  if (!isInterruptionGuardPassed(preActionInterruption.data.status)) {
+    const guardReasonCode = preActionInterruption.reasonCode === REASON_CODES.ok
+      ? REASON_CODES.interruptionResolutionFailed
+      : preActionInterruption.reasonCode;
+    return {
+      status: "failed",
+      reasonCode: guardReasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: preActionInterruption.artifacts,
+      data: {
+        sessionRecordFound: Boolean(sessionRecord),
+        outcome: {
+          actionId,
+          actionType: input.action.actionType,
+          resolutionStrategy: "deterministic",
+          stateChanged: false,
+          fallbackUsed: false,
+          retryCount: 0,
+          confidence: 0.2,
+          failureCategory: "blocked",
+          outcome: "failed",
+        },
+        evidenceDelta: {
+          uiDiffSummary: `Action was blocked by unresolved interruption (${preActionInterruption.data.status}).`,
+        },
+        lowLevelStatus: "failed",
+        lowLevelReasonCode: guardReasonCode,
+        preActionInterruption: preActionInterruption.data,
+      },
+      nextSuggestions: preActionInterruption.nextSuggestions.length > 0
+        ? preActionInterruption.nextSuggestions
+        : ["Resolve interruption manually or adjust policy/signature rules before retrying the action."],
+    };
+  }
   const preStateResult = await getScreenSummaryWithMaestro({
     sessionId: input.sessionId,
     platform,
@@ -2713,9 +2891,9 @@ export async function performActionWithEvidenceWithMaestro(
     lowLevelReasonCode: finalReasonCode,
     updatedAt: new Date().toISOString(),
   });
-  const allArtifacts = persistedAction.relativePath ? [persistedAction.relativePath, ...artifacts] : artifacts;
+  let allArtifacts = persistedAction.relativePath ? [persistedAction.relativePath, ...artifacts] : artifacts;
 
-  const postActionInterruption = await resolveInterruptionWithMaestro({
+  const postActionInterruption = await resolveInterruptionExecutor({
     sessionId: input.sessionId,
     platform,
     runnerProfile,
@@ -2723,39 +2901,111 @@ export async function performActionWithEvidenceWithMaestro(
     deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
     appId: input.appId ?? sessionRecord?.session.appId,
     actionId,
+    checkpoint: buildInterruptionCheckpoint(input.sessionId, platform, actionId, input.action),
     dryRun: input.dryRun,
   });
 
+  let finalToolStatus = finalStatus;
+  let finalToolReasonCode = finalReasonCode;
+  let finalOutcome = outcome;
+  let finalActionabilityReview = [...actionabilityReview];
+  let finalLowLevelStatus = finalStatus;
+  let finalLowLevelReasonCode = finalReasonCode;
+
+  allArtifacts = Array.from(new Set([...allArtifacts, ...postActionInterruption.artifacts]));
+
+  if (!isInterruptionGuardPassed(postActionInterruption.data.status)) {
+    finalToolStatus = "failed";
+    finalToolReasonCode = postActionInterruption.reasonCode === REASON_CODES.ok
+      ? REASON_CODES.interruptionResolutionFailed
+      : postActionInterruption.reasonCode;
+    finalLowLevelStatus = "failed";
+    finalLowLevelReasonCode = finalToolReasonCode;
+    finalOutcome = {
+      ...finalOutcome,
+      outcome: "failed",
+      failureCategory: "blocked",
+      confidence: Math.min(finalOutcome.confidence ?? 0.5, 0.4),
+    };
+    finalActionabilityReview.unshift(`post_interruption_status:${postActionInterruption.data.status}`);
+  } else if (postActionInterruption.data.status === "resolved") {
+    const resumed = await resumeInterruptionExecutor({
+      sessionId: input.sessionId,
+      platform,
+      runnerProfile,
+      harnessConfigPath: input.harnessConfigPath,
+      deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+      appId: input.appId ?? sessionRecord?.session.appId,
+      checkpoint: buildInterruptionCheckpoint(input.sessionId, platform, actionId, input.action),
+      dryRun: input.dryRun,
+    });
+    allArtifacts = Array.from(new Set([...allArtifacts, ...resumed.artifacts]));
+    if (!resumed.data.resumed) {
+      finalToolStatus = "failed";
+      finalToolReasonCode = resumed.reasonCode === REASON_CODES.ok
+        ? REASON_CODES.interruptionRecoveryStateDrift
+        : resumed.reasonCode;
+      finalLowLevelStatus = "failed";
+      finalLowLevelReasonCode = finalToolReasonCode;
+      finalOutcome = {
+        ...finalOutcome,
+        outcome: "failed",
+        failureCategory: "blocked",
+      };
+      finalActionabilityReview.unshift("post_interruption_resume_failed");
+    }
+  }
+
+  if (finalToolStatus !== finalStatus || finalToolReasonCode !== finalReasonCode) {
+    const persistedAfterInterruption = await persistActionRecord(repoRoot, {
+      actionId,
+      sessionId: input.sessionId,
+      intent: input.action,
+      outcome: finalOutcome,
+      retryRecommendationTier,
+      retryRecommendation,
+      actionabilityReview: finalActionabilityReview,
+      evidenceDelta,
+      evidence,
+      lowLevelStatus: finalLowLevelStatus,
+      lowLevelReasonCode: finalLowLevelReasonCode,
+      updatedAt: new Date().toISOString(),
+    });
+    if (persistedAfterInterruption.relativePath) {
+      allArtifacts = Array.from(new Set([persistedAfterInterruption.relativePath, ...allArtifacts]));
+    }
+  }
+
   return {
-    status: finalStatus,
-    reasonCode: finalReasonCode,
+    status: finalToolStatus,
+    reasonCode: finalToolReasonCode,
     sessionId: input.sessionId,
     durationMs: Date.now() - startTime,
     attempts: 1,
     artifacts: allArtifacts,
     data: {
       sessionRecordFound: Boolean(sessionRecord),
-      outcome,
+      outcome: finalOutcome,
       evidenceDelta,
       preStateSummary,
       postStateSummary,
       postActionRefreshAttempted: postActionRefreshAttempted || undefined,
       retryRecommendationTier,
       retryRecommendation,
-      actionabilityReview,
-      lowLevelStatus: finalStatus,
-      lowLevelReasonCode: finalReasonCode,
+      actionabilityReview: finalActionabilityReview,
+      lowLevelStatus: finalLowLevelStatus,
+      lowLevelReasonCode: finalLowLevelReasonCode,
       evidence,
       sessionAuditPath: persistedSessionState?.auditPath,
       preActionInterruption: preActionInterruption.data,
       postActionInterruption: postActionInterruption.data,
     },
     nextSuggestions: buildRetryRecommendations({
-      finalStatus,
+      finalStatus: finalToolStatus,
       stateChanged,
       postActionRefreshAttempted,
-      actionabilityReview,
-      failureCategory,
+      actionabilityReview: finalActionabilityReview,
+      failureCategory: finalOutcome.failureCategory,
       ocrFallbackSuggestions: ocrFallbackResult?.nextSuggestions,
     }),
   };

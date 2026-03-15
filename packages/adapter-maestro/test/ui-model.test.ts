@@ -26,7 +26,7 @@ import {
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
 import { buildResolutionNextSuggestions } from "../src/ui-tools.ts";
-import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, performActionWithEvidenceWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, performActionWithEvidenceWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetInterruptionGuardTestHooksForTesting, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setInterruptionGuardTestHooksForTesting, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const ocrFixtureRoot = path.join(repoRoot, "tests", "fixtures", "ocr");
@@ -147,6 +147,7 @@ async function runServiceFixtureFallback(params: {
 
 test.afterEach(() => {
   resetOcrFallbackTestHooksForTesting();
+  resetInterruptionGuardTestHooksForTesting();
 });
 
 test("parseAndroidUiHierarchyNodes builds stable nodes and summary from fixture", async () => {
@@ -876,6 +877,99 @@ test("performActionWithEvidenceWithMaestro includes target-obscured hints in act
 
   assert.equal(Array.isArray(result.data.actionabilityReview), true);
   assert.equal(result.data.actionabilityReview?.some((item) => item.startsWith("target_resolution:")), true);
+});
+
+test("performActionWithEvidenceWithMaestro blocks action when pre-guard interruption is denied", async () => {
+  setInterruptionGuardTestHooksForTesting({
+    resolveInterruption: async (input) => ({
+      status: "failed",
+      reasonCode: REASON_CODES.policyDenied,
+      sessionId: input.sessionId,
+      durationMs: 1,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        attempted: false,
+        status: "denied",
+        strategy: "tap_selector",
+      },
+      nextSuggestions: ["Interruption action denied by policy profile."],
+    }),
+  });
+
+  const result = await performActionWithEvidenceWithMaestro({
+    sessionId: "perform-action-pre-guard-denied",
+    platform: "android",
+    dryRun: true,
+    action: {
+      actionType: "tap_element",
+      text: "Continue",
+    },
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, REASON_CODES.policyDenied);
+  assert.equal(result.data.preActionInterruption?.status, "denied");
+  assert.equal(result.data.outcome.failureCategory, "blocked");
+});
+
+test("performActionWithEvidenceWithMaestro runs pre/post guard and resume in sequence", async () => {
+  let resolveCalls = 0;
+  let resumeCalls = 0;
+
+  setInterruptionGuardTestHooksForTesting({
+    resolveInterruption: async (input) => {
+      resolveCalls += 1;
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: input.sessionId,
+        durationMs: 1,
+        attempts: 1,
+        artifacts: [`artifacts/interruption/resolve-${String(resolveCalls)}.json`],
+        data: {
+          attempted: true,
+          status: "resolved",
+          strategy: "tap_selector",
+          verifiedCleared: true,
+          resolutionAttempts: 1,
+        },
+        nextSuggestions: [],
+      };
+    },
+    resumeInterruptedAction: async (input) => {
+      resumeCalls += 1;
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: input.sessionId,
+        durationMs: 1,
+        attempts: 1,
+        artifacts: ["artifacts/interruption/resume.json"],
+        data: {
+          attempted: true,
+          resumed: true,
+        },
+        nextSuggestions: [],
+      };
+    },
+  });
+
+  const result = await performActionWithEvidenceWithMaestro({
+    sessionId: "perform-action-guard-resume-sequence",
+    platform: "android",
+    dryRun: true,
+    action: {
+      actionType: "tap_element",
+      text: "Continue",
+    },
+  });
+
+  assert.equal(resolveCalls, 2);
+  assert.equal(resumeCalls, 1);
+  assert.equal(result.data.preActionInterruption?.status, "resolved");
+  assert.equal(result.data.postActionInterruption?.status, "resolved");
+  assert.equal(result.artifacts.some((pathValue) => pathValue.includes("resume")), true);
 });
 
 test("queryUiNodes prefers clickable candidates over static label matches", () => {
