@@ -18,7 +18,9 @@
       "default": "./bundle/index.js"
     }
   },
-  "dependencies": {},
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5"
+  },
   "devDependencies": {
     "@mobile-e2e-mcp/adapter-maestro": "workspace:*",
     "@mobile-e2e-mcp/core": "workspace:*",
@@ -31,7 +33,8 @@
     "test": "pnpm build && tsx --test test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/dev-cli.ts",
-    "stdio": "tsx src/stdio-server.ts",
+    "stdio": "tsx src/mcp-stdio-server.ts",
+    "stdio:minimal": "tsx src/stdio-server.ts",
     "release:publish": "pnpm run bundle && pnpm publish --access public",
     "release:publish:dry-run": "pnpm run bundle && pnpm publish --access public --dry-run --no-git-checks",
     "release:patch": "pnpm version patch && pnpm run release:publish"

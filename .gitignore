@@ -18,6 +18,10 @@ examples/build/
 examples/demo-android-app/
 examples/demo-ios-app/
 examples/demo-flutter-app/
+examples/rn-tester/
+examples/flutter-samples/
+examples/wordpress-android/
+wordpress-android-launch.png
 # Node / PNPM workspace outputs
 node_modules/
 packages/*/node_modules/
