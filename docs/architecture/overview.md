@@ -81,3 +81,9 @@ Minimum app-under-test contract expectations:
 
 - React Native debugger sequence and capability gap: [`docs/architecture/rn-debugger-sequence.md`](./rn-debugger-sequence.md)
 - AI-first capability model: [`docs/architecture/ai-first-capability-model.md`](./ai-first-capability-model.md)
+- Runtime implementation architecture index (zh-CN): [`docs/architecture/README.zh-CN.md`](./README.zh-CN.md)
+- Session orchestration runtime: [`docs/architecture/session-orchestration-architecture.zh-CN.md`](./session-orchestration-architecture.zh-CN.md)
+- Policy engine runtime: [`docs/architecture/policy-engine-runtime-architecture.zh-CN.md`](./policy-engine-runtime-architecture.zh-CN.md)
+- Execution coordinator and fallback ladder: [`docs/architecture/execution-coordinator-and-fallback-ladder.zh-CN.md`](./execution-coordinator-and-fallback-ladder.zh-CN.md)
+- Evidence and timeline architecture: [`docs/architecture/evidence-timeline-architecture.zh-CN.md`](./evidence-timeline-architecture.zh-CN.md)
+- Failure attribution and recovery architecture: [`docs/architecture/failure-attribution-and-recovery-architecture.zh-CN.md`](./failure-attribution-and-recovery-architecture.zh-CN.md)
