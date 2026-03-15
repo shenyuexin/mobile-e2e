@@ -15,22 +15,15 @@ If you only remember one thing: this project is designed as a **mobile orchestra
 
 ## Quick Start
 
-Prerequisites:
-
-- Node.js 20+
-- pnpm `10.30.3` (from `packageManager`)
-
-Run from repo root:
-
-```bash
-pnpm install
-pnpm build
-pnpm typecheck
-pnpm test
-
-# MCP server runtime modes
-pnpm mcp:dev
-pnpm mcp:stdio
+```json
+{
+  "mcpServers": {
+    "mobile-e2e-mcp": {
+      "command": "npx",
+      "args": ["-y", "@mobile-e2e-mcp/mcp-server@latest"]
+    }
+  }
+}
 ```
 
 ## AI Agent Start Here
@@ -80,12 +73,10 @@ Reference split:
 - **Control plane**: tool contracts, policy checks, session orchestration, audit/evidence indexing
 - **Execution plane**: platform actions, UI resolution, retries, interruption handling, visual fallback
 
-Architecture diagram:
+Architecture reference:
 
-- [Overall architecture (Excalidraw)](docs/architecture/diagrams/mobile-e2e-overall-architecture.excalidraw)
-- PNG preview: `docs/architecture/diagrams/mobile-e2e-overall-architecture.png`
-
-[![Mobile E2E MCP Overall Architecture](docs/architecture/diagrams/mobile-e2e-overall-architecture.png)](docs/architecture/diagrams/mobile-e2e-overall-architecture.excalidraw)
+- [System architecture overview (Mermaid, in-repo)](docs/architecture/system-architecture-overview.md)
+- [Reference architecture details](docs/architecture/architecture.md)
 
 ## Capability Map (Current Scope)
 
@@ -165,19 +156,6 @@ Testing details and fixture strategy: `tests/README.md`.
 - This is not OCR-first automation.
 - This is not a guarantee of immediate parity across all native/RN/Flutter edge cases.
 - This is not a single abstraction that erases all platform differences.
-
-## Contribution Workflow (Minimal)
-
-Before opening a PR:
-
-```bash
-pnpm build
-pnpm typecheck
-pnpm test:unit
-pnpm test:smoke
-```
-
-For AI-assisted contribution guidelines and repository navigation rules, see [AGENTS.md](AGENTS.md).
 
 ## Practical Reading Path (Human + AI)
 

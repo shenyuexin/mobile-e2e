@@ -22,6 +22,8 @@ examples/demo-flutter-app/
 node_modules/
 packages/*/node_modules/
 packages/*/dist/
+packages/*/bundle/
+*.tgz
 *.tsbuildinfo
 
 .sisyphus/

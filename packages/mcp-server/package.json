@@ -1,26 +1,39 @@
 {
   "name": "@mobile-e2e-mcp/mcp-server",
-  "private": true,
-  "version": "0.0.0",
+  "private": false,
+  "version": "0.1.0",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./bundle/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "mobile-e2e-mcp": "./bundle/bin-stdio.js"
+  },
+  "files": [
+    "bundle",
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "default": "./bundle/index.js"
     }
   },
-  "dependencies": {
+  "dependencies": {},
+  "devDependencies": {
     "@mobile-e2e-mcp/adapter-maestro": "workspace:*",
     "@mobile-e2e-mcp/core": "workspace:*",
-    "@mobile-e2e-mcp/contracts": "workspace:*"
+    "@mobile-e2e-mcp/contracts": "workspace:*",
+    "tsup": "^8.5.0"
   },
   "scripts": {
     "build": "pnpm --filter @mobile-e2e-mcp/contracts build && pnpm --filter @mobile-e2e-mcp/core build && pnpm --filter @mobile-e2e-mcp/adapter-vision build && pnpm --filter @mobile-e2e-mcp/adapter-maestro build && tsc -p tsconfig.json",
+    "bundle": "pnpm run build && tsup --config tsup.config.ts",
     "test": "pnpm build && tsx --test test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/dev-cli.ts",
-    "stdio": "tsx src/stdio-server.ts"
+    "stdio": "tsx src/stdio-server.ts",
+    "release:publish": "pnpm run bundle && pnpm publish --access public",
+    "release:publish:dry-run": "pnpm run bundle && pnpm publish --access public --dry-run --no-git-checks",
+    "release:patch": "pnpm version patch && pnpm run release:publish"
   }
 }

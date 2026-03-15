@@ -15,22 +15,15 @@
 
 ## 快速开始
 
-前置要求：
-
-- Node.js 20+
-- pnpm `10.30.3`（见 `packageManager`）
-
-在仓库根目录执行：
-
-```bash
-pnpm install
-pnpm build
-pnpm typecheck
-pnpm test
-
-# MCP 运行模式
-pnpm mcp:dev
-pnpm mcp:stdio
+```json
+{
+  "mcpServers": {
+    "mobile-e2e-mcp": {
+      "command": "npx",
+      "args": ["-y", "@mobile-e2e-mcp/mcp-server@latest"]
+    }
+  }
+}
 ```
 
 ## AI Agent 从这里开始
@@ -80,12 +73,10 @@ pnpm mcp:stdio
 - **控制平面（Control Plane）**：工具契约、策略校验、会话编排、审计与证据索引
 - **执行平面（Execution Plane）**：平台动作执行、UI 解析、重试/中断处理、视觉兜底
 
-架构图：
+架构参考：
 
-- [整体架构（Excalidraw）](docs/architecture/diagrams/mobile-e2e-overall-architecture.excalidraw)
-- PNG 预览：`docs/architecture/diagrams/mobile-e2e-overall-architecture.png`
-
-[![Mobile E2E MCP Overall Architecture](docs/architecture/diagrams/mobile-e2e-overall-architecture.png)](docs/architecture/diagrams/mobile-e2e-overall-architecture.excalidraw)
+- [系统架构总览（Mermaid，仓库内）](docs/architecture/system-architecture-overview.md)
+- [参考架构详细版](docs/architecture/architecture.md)
 
 ## 能力地图（当前范围）
 
@@ -165,19 +156,6 @@ pnpm test:ci
 - 不是 OCR-first 自动化框架。
 - 不是一开始就覆盖 native/RN/Flutter 全部边界场景。
 - 不是试图抹平所有平台差异的“单一万能抽象”。
-
-## 贡献与开发最小流程
-
-提交 PR 前建议至少执行：
-
-```bash
-pnpm build
-pnpm typecheck
-pnpm test:unit
-pnpm test:smoke
-```
-
-AI 协作导航与约束见 [AGENTS.md](AGENTS.md)。
 
 ## 推荐阅读路径（人类 + AI）
 

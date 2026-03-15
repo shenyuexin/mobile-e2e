@@ -26,7 +26,10 @@
     "fixtures:ocr:sync": "tsx scripts/sync-ocr-fixtures.ts",
     "fixtures:ocr:check": "tsx scripts/sync-ocr-fixtures.ts --check",
     "mcp:dev": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server dev",
-    "mcp:stdio": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server stdio"
+    "mcp:stdio": "pnpm build && pnpm --filter @mobile-e2e-mcp/mcp-server stdio",
+    "release:mcp:publish": "pnpm --filter @mobile-e2e-mcp/mcp-server run release:publish",
+    "release:mcp:publish:dry-run": "pnpm --filter @mobile-e2e-mcp/mcp-server run release:publish:dry-run",
+    "release:mcp:patch": "pnpm --filter @mobile-e2e-mcp/mcp-server run release:patch"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
