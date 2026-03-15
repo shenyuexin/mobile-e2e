@@ -14,6 +14,7 @@ export {
   recordFailureSignature,
   persistActionRecord,
   persistEndedSession,
+  persistInterruptionEvent,
   persistSessionState,
   persistStartedSession,
   queryTimelineAroundAction,
@@ -39,6 +40,8 @@ export {
   buildAuditedArtifactEntries,
   buildSessionAuditRecord,
   collectInterruptionEvents,
+  isHighRiskInterruptionActionAllowed,
+  isHighRiskInterruptionRule,
   loadArtifactGovernanceConfig,
   loadSessionAuditSchemaConfig,
   redactSensitiveText,
@@ -47,11 +50,30 @@ export {
   isToolAllowedByProfile,
   loadAccessPolicyConfig,
   loadAccessProfile,
+  loadInterruptionPolicyConfig,
   requiredPolicyScopesForTool,
+  resolveInterruptionPlan,
 } from "./policy-engine.js";
-export type { AccessPolicyConfig, AccessProfile } from "./policy-engine.js";
+export type {
+  AccessPolicyConfig,
+  AccessProfile,
+  InterruptionPolicyConfig,
+  InterruptionResolutionPlan,
+} from "./policy-engine.js";
 export type { ArtifactGovernanceConfig, ArtifactRetentionProfile, SessionAuditArtifactEntry, SessionAuditRecord, SessionAuditSchemaConfig } from "./governance.js";
 export type { DeviceLease, DeviceLeaseConflict, DeviceLeaseState } from "./device-lease-store.js";
 export type { AcquireLeaseInput, AcquireLeaseResult, MarkLeaseResult, RecoverStaleLeasesResult, ReleaseLeaseInput, ReleaseLeaseResult } from "./execution-coordinator.js";
-export type { AppendSessionTimelineEventResult, PersistActionRecordResult, PersistEndedSessionResult, PersistSessionStateResult, PersistStartedSessionResult, PersistedActionRecord, PersistedBaselineIndexEntry, PersistedFailureIndexEntry, PersistedSessionRecord, TimelineQueryResult } from "./session-store.js";
+export type {
+  AppendSessionTimelineEventResult,
+  PersistActionRecordResult,
+  PersistEndedSessionResult,
+  PersistInterruptionEventResult,
+  PersistSessionStateResult,
+  PersistStartedSessionResult,
+  PersistedActionRecord,
+  PersistedBaselineIndexEntry,
+  PersistedFailureIndexEntry,
+  PersistedSessionRecord,
+  TimelineQueryResult,
+} from "./session-store.js";
 export type { RunExclusiveInput, RunExclusiveResult } from "./session-scheduler.js";

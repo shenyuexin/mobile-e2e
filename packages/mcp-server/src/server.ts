@@ -9,6 +9,10 @@ import type {
   CollectDebugEvidenceInput,
   CollectDiagnosticsData,
   CollectDiagnosticsInput,
+  ClassifyInterruptionData,
+  ClassifyInterruptionInput,
+  DetectInterruptionData,
+  DetectInterruptionInput,
   DescribeCapabilitiesData,
   DescribeCapabilitiesInput,
   DeviceInfo,
@@ -49,8 +53,12 @@ import type {
   RecordScreenInput,
   RecoverToKnownStateData,
   RecoverToKnownStateInput,
+  ResolveInterruptionData,
+  ResolveInterruptionInput,
   ResetAppStateData,
   ResetAppStateInput,
+  ResumeInterruptedActionData,
+  ResumeInterruptedActionInput,
   ReplayLastStablePathData,
   ReplayLastStablePathInput,
   ResolveUiTargetData,
@@ -83,6 +91,8 @@ export interface MobileE2EMcpToolRegistry {
   compare_against_baseline: (input: CompareAgainstBaselineInput) => Promise<ToolResult<CompareAgainstBaselineData>>;
   collect_debug_evidence: (input: CollectDebugEvidenceInput) => Promise<ToolResult<CollectDebugEvidenceData>>;
   collect_diagnostics: (input: CollectDiagnosticsInput) => Promise<ToolResult<CollectDiagnosticsData>>;
+  detect_interruption: (input: DetectInterruptionInput) => Promise<ToolResult<DetectInterruptionData>>;
+  classify_interruption: (input: ClassifyInterruptionInput) => Promise<ToolResult<ClassifyInterruptionData>>;
   describe_capabilities: (input: DescribeCapabilitiesInput) => Promise<ToolResult<DescribeCapabilitiesData>>;
   doctor: (input: DoctorInput) => Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>>;
   explain_last_failure: (input: ExplainLastFailureInput) => Promise<ToolResult<ExplainLastFailureData>>;
@@ -95,6 +105,8 @@ export interface MobileE2EMcpToolRegistry {
   inspect_ui: (input: InspectUiInput) => Promise<ToolResult>;
   query_ui: (input: QueryUiInput) => Promise<ToolResult<QueryUiData>>;
   recover_to_known_state: (input: RecoverToKnownStateInput) => Promise<ToolResult<RecoverToKnownStateData>>;
+  resolve_interruption: (input: ResolveInterruptionInput) => Promise<ToolResult<ResolveInterruptionData>>;
+  resume_interrupted_action: (input: ResumeInterruptedActionInput) => Promise<ToolResult<ResumeInterruptedActionData>>;
   resolve_ui_target: (input: ResolveUiTargetInput) => Promise<ToolResult<ResolveUiTargetData>>;
   replay_last_stable_path: (input: ReplayLastStablePathInput) => Promise<ToolResult<ReplayLastStablePathData>>;
   scroll_and_resolve_ui_target: (input: ScrollAndResolveUiTargetInput) => Promise<ToolResult<ScrollAndResolveUiTargetData>>;
@@ -126,7 +138,7 @@ export class MobileE2EMcpServer {
   constructor(private readonly tools: MobileE2EMcpToolRegistry) {}
 
   listTools(): Array<keyof MobileE2EMcpToolRegistry> {
-    return ["capture_js_console_logs", "capture_js_network_events", "compare_against_baseline", "collect_debug_evidence", "collect_diagnostics", "describe_capabilities", "doctor", "explain_last_failure", "find_similar_failures", "get_action_outcome", "get_crash_signals", "get_logs", "get_screen_summary", "get_session_state", "inspect_ui", "query_ui", "rank_failure_candidates", "record_screen", "recover_to_known_state", "replay_last_stable_path", "reset_app_state", "resolve_ui_target", "scroll_and_resolve_ui_target", "scroll_and_tap_element", "install_app", "list_js_debug_targets", "launch_app", "list_devices", "measure_android_performance", "measure_ios_performance", "perform_action_with_evidence", "start_session", "run_flow", "suggest_known_remediation", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
+    return ["capture_js_console_logs", "capture_js_network_events", "compare_against_baseline", "collect_debug_evidence", "collect_diagnostics", "detect_interruption", "classify_interruption", "describe_capabilities", "doctor", "explain_last_failure", "find_similar_failures", "get_action_outcome", "get_crash_signals", "get_logs", "get_screen_summary", "get_session_state", "inspect_ui", "query_ui", "rank_failure_candidates", "record_screen", "recover_to_known_state", "resolve_interruption", "resume_interrupted_action", "replay_last_stable_path", "reset_app_state", "resolve_ui_target", "scroll_and_resolve_ui_target", "scroll_and_tap_element", "install_app", "list_js_debug_targets", "launch_app", "list_devices", "measure_android_performance", "measure_ios_performance", "perform_action_with_evidence", "start_session", "run_flow", "suggest_known_remediation", "take_screenshot", "tap", "tap_element", "terminate_app", "type_text", "type_into_element", "wait_for_ui", "end_session"];
   }
 
   async invoke(toolName: "capture_js_console_logs", input: CaptureJsConsoleLogsInput): Promise<ToolResult<CaptureJsConsoleLogsData>>;
@@ -134,6 +146,8 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "compare_against_baseline", input: CompareAgainstBaselineInput): Promise<ToolResult<CompareAgainstBaselineData>>;
   async invoke(toolName: "collect_debug_evidence", input: CollectDebugEvidenceInput): Promise<ToolResult<CollectDebugEvidenceData>>;
   async invoke(toolName: "collect_diagnostics", input: CollectDiagnosticsInput): Promise<ToolResult<CollectDiagnosticsData>>;
+  async invoke(toolName: "detect_interruption", input: DetectInterruptionInput): Promise<ToolResult<DetectInterruptionData>>;
+  async invoke(toolName: "classify_interruption", input: ClassifyInterruptionInput): Promise<ToolResult<ClassifyInterruptionData>>;
   async invoke(toolName: "describe_capabilities", input: DescribeCapabilitiesInput): Promise<ToolResult<DescribeCapabilitiesData>>;
   async invoke(toolName: "doctor", input: DoctorInput): Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>>;
   async invoke(toolName: "explain_last_failure", input: ExplainLastFailureInput): Promise<ToolResult<ExplainLastFailureData>>;
@@ -146,6 +160,8 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "inspect_ui", input: InspectUiInput): Promise<ToolResult>;
   async invoke(toolName: "query_ui", input: QueryUiInput): Promise<ToolResult<QueryUiData>>;
   async invoke(toolName: "recover_to_known_state", input: RecoverToKnownStateInput): Promise<ToolResult<RecoverToKnownStateData>>;
+  async invoke(toolName: "resolve_interruption", input: ResolveInterruptionInput): Promise<ToolResult<ResolveInterruptionData>>;
+  async invoke(toolName: "resume_interrupted_action", input: ResumeInterruptedActionInput): Promise<ToolResult<ResumeInterruptedActionData>>;
   async invoke(toolName: "resolve_ui_target", input: ResolveUiTargetInput): Promise<ToolResult<ResolveUiTargetData>>;
   async invoke(toolName: "replay_last_stable_path", input: ReplayLastStablePathInput): Promise<ToolResult<ReplayLastStablePathData>>;
   async invoke(toolName: "scroll_and_resolve_ui_target", input: ScrollAndResolveUiTargetInput): Promise<ToolResult<ScrollAndResolveUiTargetData>>;
@@ -173,13 +189,15 @@ export class MobileE2EMcpServer {
   async invoke(toolName: "end_session", input: EndSessionInput): Promise<ToolResult<{ closed: boolean; endedAt: string }>>;
   async invoke(
     toolName: keyof MobileE2EMcpToolRegistry,
-    input: CaptureJsConsoleLogsInput | CaptureJsNetworkEventsInput | CompareAgainstBaselineInput | CollectDebugEvidenceInput | CollectDiagnosticsInput | DescribeCapabilitiesInput | DoctorInput | ExplainLastFailureInput | FindSimilarFailuresInput | GetActionOutcomeInput | GetCrashSignalsInput | GetLogsInput | GetScreenSummaryInput | GetSessionStateInput | InspectUiInput | QueryUiInput | RankFailureCandidatesInput | RecordScreenInput | RecoverToKnownStateInput | ReplayLastStablePathInput | ResetAppStateInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | ScrollAndTapElementInput | InstallAppInput | ListJsDebugTargetsInput | LaunchAppInput | ListDevicesInput | MeasureAndroidPerformanceInput | MeasureIosPerformanceInput | PerformActionWithEvidenceInput | StartSessionInput | RunFlowInput | ScreenshotInput | SuggestKnownRemediationInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
+    input: CaptureJsConsoleLogsInput | CaptureJsNetworkEventsInput | CompareAgainstBaselineInput | CollectDebugEvidenceInput | CollectDiagnosticsInput | DetectInterruptionInput | ClassifyInterruptionInput | DescribeCapabilitiesInput | DoctorInput | ExplainLastFailureInput | FindSimilarFailuresInput | GetActionOutcomeInput | GetCrashSignalsInput | GetLogsInput | GetScreenSummaryInput | GetSessionStateInput | InspectUiInput | QueryUiInput | RankFailureCandidatesInput | RecordScreenInput | RecoverToKnownStateInput | ResolveInterruptionInput | ResumeInterruptedActionInput | ReplayLastStablePathInput | ResetAppStateInput | ResolveUiTargetInput | ScrollAndResolveUiTargetInput | ScrollAndTapElementInput | InstallAppInput | ListJsDebugTargetsInput | LaunchAppInput | ListDevicesInput | MeasureAndroidPerformanceInput | MeasureIosPerformanceInput | PerformActionWithEvidenceInput | StartSessionInput | RunFlowInput | ScreenshotInput | SuggestKnownRemediationInput | TapInput | TapElementInput | TerminateAppInput | TypeTextInput | TypeIntoElementInput | WaitForUiInput | EndSessionInput,
   ): Promise<
       | ToolResult<CaptureJsConsoleLogsData>
       | ToolResult<CaptureJsNetworkEventsData>
       | ToolResult<CompareAgainstBaselineData>
       | ToolResult<CollectDebugEvidenceData>
       | ToolResult<CollectDiagnosticsData>
+      | ToolResult<DetectInterruptionData>
+      | ToolResult<ClassifyInterruptionData>
       | ToolResult<DescribeCapabilitiesData>
       | ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>
       | ToolResult<ExplainLastFailureData>
@@ -197,6 +215,8 @@ export class MobileE2EMcpServer {
       | ToolResult<RankFailureCandidatesData>
       | ToolResult<RecordScreenData>
       | ToolResult<RecoverToKnownStateData>
+      | ToolResult<ResolveInterruptionData>
+      | ToolResult<ResumeInterruptedActionData>
       | ToolResult<ReplayLastStablePathData>
       | ToolResult<ResetAppStateData>
       | ToolResult<Session>
@@ -216,6 +236,8 @@ export class MobileE2EMcpServer {
     if (toolName === "compare_against_baseline") return this.tools.compare_against_baseline(input as CompareAgainstBaselineInput);
     if (toolName === "collect_debug_evidence") return this.tools.collect_debug_evidence(input as CollectDebugEvidenceInput);
     if (toolName === "collect_diagnostics") return this.tools.collect_diagnostics(input as CollectDiagnosticsInput);
+    if (toolName === "detect_interruption") return this.tools.detect_interruption(input as DetectInterruptionInput);
+    if (toolName === "classify_interruption") return this.tools.classify_interruption(input as ClassifyInterruptionInput);
     if (toolName === "describe_capabilities") return this.tools.describe_capabilities(input as DescribeCapabilitiesInput);
     if (toolName === "doctor") return this.tools.doctor(input as DoctorInput);
     if (toolName === "explain_last_failure") return this.tools.explain_last_failure(input as ExplainLastFailureInput);
@@ -228,6 +250,8 @@ export class MobileE2EMcpServer {
     if (toolName === "inspect_ui") return this.tools.inspect_ui(input as InspectUiInput);
     if (toolName === "query_ui") return this.tools.query_ui(input as QueryUiInput);
     if (toolName === "recover_to_known_state") return this.tools.recover_to_known_state(input as RecoverToKnownStateInput);
+    if (toolName === "resolve_interruption") return this.tools.resolve_interruption(input as ResolveInterruptionInput);
+    if (toolName === "resume_interrupted_action") return this.tools.resume_interrupted_action(input as ResumeInterruptedActionInput);
     if (toolName === "resolve_ui_target") return this.tools.resolve_ui_target(input as ResolveUiTargetInput);
     if (toolName === "replay_last_stable_path") return this.tools.replay_last_stable_path(input as ReplayLastStablePathInput);
     if (toolName === "scroll_and_resolve_ui_target") return this.tools.scroll_and_resolve_ui_target(input as ScrollAndResolveUiTargetInput);

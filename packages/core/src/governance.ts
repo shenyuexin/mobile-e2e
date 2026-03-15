@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "yaml";
 import type { SessionTimelineEvent } from "@mobile-e2e-mcp/contracts";
+import type { InterruptionPolicyRuleV2 } from "@mobile-e2e-mcp/contracts";
 import type { PersistedSessionRecord } from "./session-store.js";
 
 export interface ArtifactRetentionProfile {
@@ -197,6 +198,26 @@ export function collectInterruptionEvents(timeline: SessionTimelineEvent[], conf
   return timeline
     .filter((event) => eventLooksLikeInterruption(event))
     .map((event) => redactSensitiveText(event.detail ?? event.summary ?? event.type, config));
+}
+
+export function isHighRiskInterruptionRule(rule: InterruptionPolicyRuleV2): boolean {
+  return rule.action.slot === "destructive";
+}
+
+export function isHighRiskInterruptionActionAllowed(
+  rule: InterruptionPolicyRuleV2,
+  policy: { allow: string[]; deny: string[] },
+): { allowed: boolean; reason?: string } {
+  if (!isHighRiskInterruptionRule(rule)) {
+    return { allowed: true };
+  }
+  if (policy.deny.includes("interrupt-high-risk")) {
+    return { allowed: false, reason: "High-risk interruption action is denied by policy profile." };
+  }
+  if (!policy.allow.includes("interrupt-high-risk")) {
+    return { allowed: false, reason: "High-risk interruption action requires explicit interrupt-high-risk policy scope." };
+  }
+  return { allowed: true };
 }
 
 function parseQueueWaitMs(timeline: SessionTimelineEvent[]): number[] {

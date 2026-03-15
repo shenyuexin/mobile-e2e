@@ -147,7 +147,10 @@ function toIosInspectNode(node: Record<string, unknown>, depth: number): Inspect
     text: readNonEmptyString(node, "title") ?? undefined,
     resourceId: readNonEmptyString(node, "AXUniqueId") ?? undefined,
     className: type,
-    packageName: readNonEmptyString(node, "role") ?? undefined,
+    packageName: readNonEmptyString(node, "bundleIdentifier")
+      ?? readNonEmptyString(node, "bundleId")
+      ?? readNonEmptyString(node, "bundle")
+      ?? undefined,
     contentDesc: readNonEmptyString(node, "AXLabel") ?? undefined,
     clickable: ["Button", "Link", "Cell"].includes(type ?? "") || (Array.isArray(node.custom_actions) && node.custom_actions.length > 0),
     enabled: node.enabled !== false,

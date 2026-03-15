@@ -1,7 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { ActionIntent, ActionOutcomeSummary, EvidenceDeltaSummary, ExecutionEvidence, FailureSignature, ReasonCode, Session, SessionTimelineEvent, StateSummary, ToolStatus } from "@mobile-e2e-mcp/contracts";
+import type {
+  ActionIntent,
+  ActionOutcomeSummary,
+  EvidenceDeltaSummary,
+  ExecutionEvidence,
+  FailureSignature,
+  InterruptionEvent,
+  ReasonCode,
+  ResumeCheckpoint,
+  Session,
+  SessionTimelineEvent,
+  StateSummary,
+  ToolStatus,
+} from "@mobile-e2e-mcp/contracts";
 import type { RetryRecommendation } from "@mobile-e2e-mcp/contracts";
 import { buildSessionAuditRecord, loadArtifactGovernanceConfig, loadSessionAuditSchemaConfig, type SessionAuditRecord } from "./governance.js";
 
@@ -11,6 +24,8 @@ export interface PersistedSessionRecord {
   endedAt?: string;
   artifacts: string[];
   updatedAt: string;
+  interruptionEvents?: InterruptionEvent[];
+  lastInterruptedActionCheckpoint?: ResumeCheckpoint;
 }
 
 export interface PersistEndedSessionResult {
@@ -26,6 +41,8 @@ export interface PersistSessionStateResult {
   auditPath?: string;
   updated: boolean;
 }
+
+export interface PersistInterruptionEventResult extends PersistSessionStateResult {}
 
 export interface AppendSessionTimelineEventResult {
   relativePath?: string;
@@ -97,7 +114,9 @@ function isSessionRecordShape(value: unknown): value is PersistedSessionRecord {
     && typeof value.closed === "boolean"
     && Array.isArray(value.artifacts)
     && typeof value.updatedAt === "string"
-    && (value.endedAt === undefined || typeof value.endedAt === "string");
+    && (value.endedAt === undefined || typeof value.endedAt === "string")
+    && (value.interruptionEvents === undefined || Array.isArray(value.interruptionEvents))
+    && (value.lastInterruptedActionCheckpoint === undefined || isRecord(value.lastInterruptedActionCheckpoint));
 }
 
 function assertSafeSessionId(sessionId: string): void {
@@ -322,10 +341,16 @@ export async function loadSessionAuditRecord(repoRoot: string, sessionId: string
 
 export async function persistStartedSession(repoRoot: string, session: Session): Promise<PersistStartedSessionResult> {
   const record: PersistedSessionRecord = {
-    session,
+    session: {
+      ...session,
+      interruptionEvents: session.interruptionEvents ?? [],
+      lastInterruptedActionCheckpoint: session.lastInterruptedActionCheckpoint,
+    },
     closed: false,
     artifacts: [],
     updatedAt: new Date().toISOString(),
+    interruptionEvents: session.interruptionEvents ?? [],
+    lastInterruptedActionCheckpoint: session.lastInterruptedActionCheckpoint,
   };
   const relativePath = await writeSessionRecord(repoRoot, session.sessionId, record);
   const auditPath = await syncSessionAuditRecord(repoRoot, record);
@@ -394,13 +419,59 @@ export async function persistSessionState(
       ...existing.session,
       latestStateSummary: stateSummary,
       timeline: [...existing.session.timeline, event],
+      interruptionEvents: existing.session.interruptionEvents,
+      lastInterruptedActionCheckpoint: existing.session.lastInterruptedActionCheckpoint,
     },
     artifacts: nextArtifacts,
     updatedAt,
+    interruptionEvents: existing.interruptionEvents,
+    lastInterruptedActionCheckpoint: existing.lastInterruptedActionCheckpoint,
   };
   const relativePath = await writeSessionRecord(repoRoot, sessionId, nextRecord);
   const auditPath = await syncSessionAuditRecord(repoRoot, nextRecord);
 
+  return {
+    relativePath,
+    auditPath,
+    updated: true,
+  };
+}
+
+export async function persistInterruptionEvent(
+  repoRoot: string,
+  sessionId: string,
+  interruptionEvent: InterruptionEvent,
+  stateSummary: StateSummary,
+  timelineEvent: SessionTimelineEvent,
+  artifacts: string[] = [],
+  checkpoint?: ResumeCheckpoint,
+): Promise<PersistInterruptionEventResult> {
+  const existing = await loadSessionRecord(repoRoot, sessionId);
+  if (!existing) {
+    return { updated: false };
+  }
+
+  const nextArtifacts = Array.from(new Set([...existing.artifacts, ...artifacts]));
+  const updatedAt = new Date().toISOString();
+  const nextInterruptionEvents = [...(existing.interruptionEvents ?? []), interruptionEvent];
+
+  const nextRecord: PersistedSessionRecord = {
+    ...existing,
+    session: {
+      ...existing.session,
+      latestStateSummary: stateSummary,
+      timeline: [...existing.session.timeline, timelineEvent],
+      interruptionEvents: nextInterruptionEvents,
+      lastInterruptedActionCheckpoint: checkpoint ?? existing.lastInterruptedActionCheckpoint,
+    },
+    artifacts: nextArtifacts,
+    updatedAt,
+    interruptionEvents: nextInterruptionEvents,
+    lastInterruptedActionCheckpoint: checkpoint ?? existing.lastInterruptedActionCheckpoint,
+  };
+
+  const relativePath = await writeSessionRecord(repoRoot, sessionId, nextRecord);
+  const auditPath = await syncSessionAuditRecord(repoRoot, nextRecord);
   return {
     relativePath,
     auditPath,

@@ -11,6 +11,7 @@ profiles:
       - install
       - uninstall
       - clear-data
+      - interrupt
     deny: []
   read-only:
     allow:
@@ -18,11 +19,13 @@ profiles:
       - screenshot
       - logs
       - performance
+      - interrupt
     deny:
       - tap
       - type
       - install
       - uninstall
+      - interrupt-high-risk
   interactive:
     allow:
       - inspect
@@ -32,8 +35,10 @@ profiles:
       - tap
       - type
       - swipe
+      - interrupt
     deny:
       - uninstall
+      - interrupt-high-risk
   full-control:
     allow:
       - inspect
@@ -46,3 +51,5 @@ profiles:
       - install
       - uninstall
       - clear-data
+      - interrupt
+      - interrupt-high-risk

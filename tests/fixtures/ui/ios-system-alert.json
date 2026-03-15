@@ -1,0 +1,30 @@
+[
+  {
+    "type": "Alert",
+    "role": "XCUIElementTypeAlert",
+    "AXLabel": "Allow Camera Access",
+    "title": "Allow Camera Access",
+    "enabled": true,
+    "frame": { "x": 40, "y": 620, "width": 700, "height": 380 },
+    "children": [
+      {
+        "type": "Button",
+        "role": "Button",
+        "AXLabel": "Don’t Allow",
+        "title": "Don’t Allow",
+        "enabled": true,
+        "frame": { "x": 80, "y": 900, "width": 300, "height": 72 },
+        "children": []
+      },
+      {
+        "type": "Button",
+        "role": "Button",
+        "AXLabel": "Allow",
+        "title": "Allow",
+        "enabled": true,
+        "frame": { "x": 400, "y": 900, "width": 300, "height": 72 },
+        "children": []
+      }
+    ]
+  }
+]

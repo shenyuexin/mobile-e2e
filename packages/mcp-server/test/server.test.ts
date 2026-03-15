@@ -23,6 +23,8 @@ test("createServer lists newly added UI tools", () => {
   const tools = server.listTools();
 
   assert.ok(tools.includes("collect_debug_evidence"));
+  assert.ok(tools.includes("detect_interruption"));
+  assert.ok(tools.includes("classify_interruption"));
   assert.ok(tools.includes("capture_js_console_logs"));
   assert.ok(tools.includes("capture_js_network_events"));
   assert.ok(tools.includes("collect_diagnostics"));
@@ -39,6 +41,8 @@ test("createServer lists newly added UI tools", () => {
   assert.ok(tools.includes("rank_failure_candidates"));
   assert.ok(tools.includes("record_screen"));
   assert.ok(tools.includes("recover_to_known_state"));
+  assert.ok(tools.includes("resolve_interruption"));
+  assert.ok(tools.includes("resume_interrupted_action"));
   assert.ok(tools.includes("replay_last_stable_path"));
   assert.ok(tools.includes("reset_app_state"));
   assert.ok(tools.includes("suggest_known_remediation"));

@@ -17,6 +17,11 @@ export type RecoveryStrategy = "none" | "wait_until_ready" | "relaunch_app" | "r
 export type OcrAllowedAction = "tap" | "assertText" | "longPress";
 export type OcrBlockedAction = "delete" | "purchase" | "confirmPayment";
 export type OcrMatchType = "exact" | "normalized" | "fuzzy" | "ai-reranked";
+export type InterruptionType = "system_alert" | "action_sheet" | "permission_prompt" | "app_modal" | "overlay" | "keyboard_blocking" | "unknown";
+export type InterruptionSignalSource = "ui_tree" | "state_summary" | "runtime" | "visual";
+export type InterruptionActionSlot = "primary" | "secondary" | "cancel" | "destructive";
+export type InterruptionResolutionStatus = "resolved" | "denied" | "not_needed" | "failed";
+export type InterruptionResolutionStrategy = "choose_slot" | "tap_selector" | "coordinate_tap" | "none";
 
 export interface OcrBounds {
   left: number;
@@ -107,6 +112,76 @@ export interface OcrCapabilitySummary {
   minConfidenceForTap: number;
   maxCandidatesBeforeFail: number;
   retryLimit: number;
+}
+
+export interface InterruptionSignal {
+  source: InterruptionSignalSource;
+  key: string;
+  value?: string;
+  confidence: number;
+  evidence?: string;
+}
+
+export interface InterruptionClassification {
+  type: InterruptionType;
+  confidence: number;
+  rationale: string[];
+  ownerPackage?: string;
+  ownerBundle?: string;
+  containerRole?: string;
+  buttonSlots?: InterruptionActionSlot[];
+}
+
+export interface InterruptionPolicySignature {
+  ownerPackage?: string;
+  ownerBundle?: string;
+  containerRole?: string;
+  requiredSignals?: string[];
+  anyText?: string[];
+}
+
+export interface InterruptionPolicyRuleV2 {
+  id: string;
+  platform: Platform;
+  type: InterruptionType;
+  priority: "high" | "medium" | "low";
+  auto: boolean;
+  signature: InterruptionPolicySignature;
+  action: {
+    strategy: InterruptionResolutionStrategy;
+    slot?: InterruptionActionSlot;
+    tapText?: string;
+    tapResourceId?: string;
+    firstAvailableText?: string[];
+  };
+  retry?: {
+    maxAttempts: number;
+  };
+}
+
+export interface ResumeCheckpoint {
+  actionId: string;
+  sessionId: string;
+  platform: Platform;
+  actionType: SupportedActionType;
+  selector?: InspectUiQuery;
+  params?: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface InterruptionEvent {
+  eventId: string;
+  timestamp: string;
+  actionId?: string;
+  type: InterruptionType;
+  confidence: number;
+  source: InterruptionSignalSource;
+  ruleId?: string;
+  status: InterruptionResolutionStatus;
+  detail?: string;
+  artifactRefs: string[];
+  signals: InterruptionSignal[];
+  classification?: InterruptionClassification;
 }
 
 export interface ExecutionEvidence {
@@ -278,7 +353,7 @@ export interface TimelineEvent {
   evidenceCompleteness?: EvidenceCompleteness;
 }
 export interface SessionTimelineEvent extends TimelineEvent {}
-export interface Session { sessionId: string; platform: Platform; deviceId: string; appId: string; policyProfile: string; startedAt: string; artifactsRoot: string; timeline: SessionTimelineEvent[]; profile?: RunnerProfile | null; phase?: string | null; sampleName?: string | null; capabilities?: CapabilityProfile; latestStateSummary?: StateSummary; }
+export interface Session { sessionId: string; platform: Platform; deviceId: string; appId: string; policyProfile: string; startedAt: string; artifactsRoot: string; timeline: SessionTimelineEvent[]; profile?: RunnerProfile | null; phase?: string | null; sampleName?: string | null; capabilities?: CapabilityProfile; latestStateSummary?: StateSummary; interruptionEvents?: InterruptionEvent[]; lastInterruptedActionCheckpoint?: ResumeCheckpoint; }
 export interface ToolResult<TData = unknown> { status: ToolStatus; reasonCode: ReasonCode; sessionId: string; durationMs: number; attempts: number; artifacts: string[]; data: TData; nextSuggestions: string[]; }
 export interface DeviceInfo { id: string; name?: string; platform: Platform; state: string; available: boolean; capabilities?: CapabilityProfile; }
 export interface DoctorCheck { name: string; status: "pass" | "warn" | "fail"; detail: string; }
@@ -838,6 +913,66 @@ export interface PerformActionWithEvidenceData {
   evidence?: ExecutionEvidence[];
   sessionAuditPath?: string;
   autoRemediation?: AutoRemediationResult;
+  preActionInterruption?: ResolveInterruptionData;
+  postActionInterruption?: ResolveInterruptionData;
+}
+export interface DetectInterruptionInput {
+  sessionId: string;
+  platform?: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  appId?: string;
+  actionId?: string;
+  dryRun?: boolean;
+}
+export interface DetectInterruptionData {
+  detected: boolean;
+  sessionRecordFound: boolean;
+  stateSummary?: StateSummary;
+  classification?: InterruptionClassification;
+  signals: InterruptionSignal[];
+  evidence?: ExecutionEvidence[];
+}
+export interface ClassifyInterruptionInput extends DetectInterruptionInput {
+  signals?: InterruptionSignal[];
+}
+export interface ClassifyInterruptionData {
+  found: boolean;
+  classification?: InterruptionClassification;
+  signals: InterruptionSignal[];
+}
+export interface ResolveInterruptionInput extends DetectInterruptionInput {
+  classification?: InterruptionClassification;
+  preferredSlot?: InterruptionActionSlot;
+  checkpoint?: ResumeCheckpoint;
+}
+export interface ResolveInterruptionData {
+  attempted: boolean;
+  status: InterruptionResolutionStatus;
+  strategy: InterruptionResolutionStrategy;
+  classification?: InterruptionClassification;
+  matchedRuleId?: string;
+  selectedSlot?: InterruptionActionSlot;
+  event?: InterruptionEvent;
+}
+export interface ResumeInterruptedActionInput {
+  sessionId: string;
+  platform?: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  appId?: string;
+  checkpoint?: ResumeCheckpoint;
+  dryRun?: boolean;
+}
+export interface ResumeInterruptedActionData {
+  attempted: boolean;
+  resumed: boolean;
+  checkpoint?: ResumeCheckpoint;
+  stateBefore?: StateSummary;
+  stateAfter?: StateSummary;
+  driftDetected?: boolean;
 }
 export interface GetActionOutcomeInput {
   sessionId?: string;

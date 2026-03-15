@@ -100,6 +100,12 @@ Action resolution order:
 
 - Flakiness controls, retries with reason codes, session report, crash diagnostics, baseline visuals, reusable interruption policy library, and interruption telemetry.
 
+Interruption v2 baseline for L2:
+
+- structured interruption signals (owner/package + container role + state blockers)
+- classify + policy-resolve + bounded resume tool chain
+- interruption event persistence in session timeline/audit
+
 ### L3 (Scale)
 
 - Multi-device orchestration, parallel sessions, cloud farm integration, policy controls.

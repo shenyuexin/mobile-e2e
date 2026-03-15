@@ -55,7 +55,12 @@ export async function enforcePolicyForTool<TInput>(toolName: string, input: TInp
     attempts: 1,
     artifacts: [],
     data: { toolName, policyProfile },
-    nextSuggestions: [`Tool '${toolName}' is denied by policy profile '${policyProfile}'. Start a session with a more permissive profile if this action is intended.`],
+    nextSuggestions: [
+      `Tool '${toolName}' is denied by policy profile '${policyProfile}'. Start a session with a more permissive profile if this action is intended.`,
+      ["detect_interruption", "classify_interruption", "resolve_interruption", "resume_interrupted_action"].includes(toolName)
+        ? "Interruption tools require 'interrupt' scope (and 'interrupt-high-risk' for destructive interruption actions)."
+        : undefined,
+    ].filter((value): value is string => Boolean(value)),
   };
 }
 

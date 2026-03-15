@@ -62,12 +62,14 @@ Scope:
 - Overlay/animation stabilization.
 - Crash signal capture.
 - Reusable interruption policy library and interruption telemetry/reporting.
+- Interruption Orchestrator v2 rollout: `detect -> classify -> resolve -> resume` with bounded recovery and policy scopes.
 
 Exit criteria:
 
 - Flakiness reduced by agreed threshold versus Phase 1 baseline with explicit measurement method.
 - Fallback usage telemetry and confidence traces present in all relevant action reports.
 - Interruption auto-resolution success rate reaches agreed threshold for supported prompt classes.
+- Unknown interruption evidence completeness stays at 100% (screenshot + tree + logs + action timeline window).
 
 Transition rule:
 

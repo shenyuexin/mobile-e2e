@@ -13,6 +13,8 @@ import {
   type CaptureJsNetworkEventsInput,
   type DescribeCapabilitiesData,
   type DescribeCapabilitiesInput,
+  type DetectInterruptionData,
+  type DetectInterruptionInput,
   type CollectDiagnosticsData,
   type CollectDiagnosticsInput,
   type DebugSignalSummary,
@@ -88,14 +90,23 @@ import {
   type ScrollAndResolveUiTargetData,
   type ScrollAndResolveUiTargetInput,
   type IosPerformanceTemplate,
+  type InterruptionEvent,
+  type InterruptionPolicyRuleV2,
   type TapElementData,
   type TapElementInput,
   type TapInput,
   type TerminateAppInput,
   type ToolResult,
   type TypeTextInput,
+  type ClassifyInterruptionData,
+  type ClassifyInterruptionInput,
   type TypeIntoElementData,
   type TypeIntoElementInput,
+  type ResolveInterruptionData,
+  type ResolveInterruptionInput,
+  type ResumeInterruptedActionData,
+  type ResumeInterruptedActionInput,
+  type ResumeCheckpoint,
   type SimilarFailure,
   type StateSummary,
   type SuggestKnownRemediationData,
@@ -116,7 +127,25 @@ import {
   verifyOcrAction,
   type OcrFallbackActionType,
 } from "@mobile-e2e-mcp/adapter-vision";
-import { listActionRecordsForSession, loadActionRecord, loadBaselineIndex, loadFailureIndex, loadLatestActionRecordForSession, loadSessionRecord, recordBaselineEntry, recordFailureSignature, persistActionRecord, persistSessionState, queryTimelineAroundAction, type PersistedActionRecord } from "@mobile-e2e-mcp/core";
+import {
+  isHighRiskInterruptionActionAllowed,
+  listActionRecordsForSession,
+  loadAccessProfile,
+  loadActionRecord,
+  loadBaselineIndex,
+  loadFailureIndex,
+  loadInterruptionPolicyConfig,
+  loadLatestActionRecordForSession,
+  loadSessionRecord,
+  persistActionRecord,
+  persistInterruptionEvent,
+  persistSessionState,
+  queryTimelineAroundAction,
+  recordBaselineEntry,
+  recordFailureSignature,
+  resolveInterruptionPlan,
+  type PersistedActionRecord,
+} from "@mobile-e2e-mcp/core";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -193,6 +222,10 @@ import {
   normalizeWaitForUiMode,
   reasonCodeForWaitTimeout,
 } from "./ui-tools.js";
+import { classifyInterruptionFromSignals } from "./interruption-classifier.js";
+import { detectInterruptionFromSummary } from "./interruption-detector.js";
+import { buildInterruptionEvent, decideInterruptionResolution } from "./interruption-resolver.js";
+import { buildInterruptionTimelineEvent, buildResumeCheckpoint, hasStateDrift, pickEventSource, summarizeInterruptionDetail } from "./interruption-orchestrator.js";
 import {
   buildInspectorExceptionLogEntry,
   buildJsConsoleLogSummary,
@@ -255,6 +288,10 @@ export {
   selectPreferredJsDebugTarget,
   selectPreferredJsDebugTargetWithReason,
 };
+export { classifyInterruptionFromSignals } from "./interruption-classifier.js";
+export { detectInterruptionFromSummary } from "./interruption-detector.js";
+export { buildInterruptionEvent, decideInterruptionResolution } from "./interruption-resolver.js";
+export { buildInterruptionTimelineEvent, buildResumeCheckpoint, hasStateDrift, pickEventSource, summarizeInterruptionDetail } from "./interruption-orchestrator.js";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 5000;
 const DEFAULT_WAIT_INTERVAL_MS = 500;
@@ -1918,10 +1955,512 @@ export async function getSessionStateWithMaestro(
   };
 }
 
+function buildInterruptionPersistenceEvent(
+  status:
+    | "interruption_detected"
+    | "interruption_classified"
+    | "interruption_resolved"
+    | "interrupted_action_resumed"
+    | "interruption_escalated",
+  actionId: string | undefined,
+  detail: string,
+  stateSummary: StateSummary,
+  artifacts: string[],
+): SessionTimelineEvent {
+  return buildInterruptionTimelineEvent({
+    type: status,
+    actionId,
+    detail,
+    stateSummary,
+    artifacts,
+  });
+}
+
+export async function detectInterruptionWithMaestro(
+  input: DetectInterruptionInput,
+): Promise<ToolResult<DetectInterruptionData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
+  const platform = input.platform ?? sessionRecord?.session.platform;
+  if (!platform) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        detected: false,
+        sessionRecordFound: false,
+        signals: [],
+      },
+      nextSuggestions: ["Provide platform explicitly or run start_session before detecting interruptions."],
+    };
+  }
+
+  const runnerProfile = input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE;
+  const summaryResult = await getScreenSummaryWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    includeDebugSignals: true,
+    dryRun: input.dryRun,
+  });
+  const detected = detectInterruptionFromSummary({
+    platform,
+    stateSummary: summaryResult.data.screenSummary,
+    uiSummary: summaryResult.data.uiSummary,
+  });
+
+  return {
+    status: detected.detected ? "success" : "partial",
+    reasonCode: detected.detected ? REASON_CODES.ok : REASON_CODES.interruptionUnclassified,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: summaryResult.artifacts,
+    data: {
+      detected: detected.detected,
+      sessionRecordFound: Boolean(sessionRecord),
+      stateSummary: summaryResult.data.screenSummary,
+      classification: detected.classification,
+      signals: detected.signals,
+      evidence: summaryResult.data.evidence,
+    },
+    nextSuggestions: detected.detected
+      ? []
+      : ["No strong interruption signal was detected. Capture a fresh UI summary after the blocking event appears."],
+  };
+}
+
+export async function classifyInterruptionWithMaestro(
+  input: ClassifyInterruptionInput,
+): Promise<ToolResult<ClassifyInterruptionData>> {
+  const startTime = Date.now();
+  const detected = await detectInterruptionWithMaestro(input);
+  const signals = input.signals ?? detected.data.signals;
+  const classification = classifyInterruptionFromSignals(signals);
+  return {
+    status: classification.type === "unknown" ? "partial" : "success",
+    reasonCode: classification.type === "unknown" ? REASON_CODES.interruptionUnclassified : REASON_CODES.ok,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: detected.artifacts,
+    data: {
+      found: classification.type !== "unknown",
+      classification,
+      signals,
+    },
+    nextSuggestions: classification.type === "unknown"
+      ? ["Add or refine interruption signatures for this screen in configs/policies/interruption/*.yaml."]
+      : [],
+  };
+}
+
+function buildTapInputFromResolution(params: {
+  sessionId: string;
+  platform: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  tapText?: string;
+  tapResourceId?: string;
+  dryRun?: boolean;
+}): TapElementInput | undefined {
+  if (!params.tapText && !params.tapResourceId) {
+    return undefined;
+  }
+  return {
+    sessionId: params.sessionId,
+    platform: params.platform,
+    runnerProfile: params.runnerProfile,
+    harnessConfigPath: params.harnessConfigPath,
+    deviceId: params.deviceId,
+    text: params.tapText,
+    resourceId: params.tapResourceId,
+    clickable: true,
+    dryRun: params.dryRun,
+  };
+}
+
+function buildInterruptionCheckpoint(
+  sessionId: string,
+  platform: Platform,
+  actionId: string,
+  action?: ActionIntent,
+): ResumeCheckpoint {
+  const selector = action
+    ? {
+      resourceId: action.resourceId,
+      contentDesc: action.contentDesc,
+      text: action.text,
+      className: action.className,
+      clickable: action.clickable,
+    }
+    : undefined;
+  return buildResumeCheckpoint({
+    actionId,
+    sessionId,
+    platform,
+    actionType: action?.actionType ?? "tap_element",
+    selector: selector && Object.values(selector).some((value) => value !== undefined) ? selector : undefined,
+    args: {
+      resourceId: action?.resourceId,
+      contentDesc: action?.contentDesc,
+      text: action?.text,
+      className: action?.className,
+      clickable: action?.clickable,
+      value: action?.value,
+      timeoutMs: action?.timeoutMs,
+      intervalMs: action?.intervalMs,
+      waitUntil: action?.waitUntil,
+      appId: action?.appId,
+      launchUrl: action?.launchUrl,
+    },
+  });
+}
+
+export async function resolveInterruptionWithMaestro(
+  input: ResolveInterruptionInput,
+): Promise<ToolResult<ResolveInterruptionData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
+  const platform = input.platform ?? sessionRecord?.session.platform;
+  if (!platform) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        attempted: false,
+        status: "failed",
+        strategy: "none",
+      },
+      nextSuggestions: ["Provide platform explicitly or run start_session before resolving interruptions."],
+    };
+  }
+
+  const detected = await detectInterruptionWithMaestro(input);
+  if (!detected.data.detected) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: detected.artifacts,
+      data: {
+        attempted: false,
+        status: "not_needed",
+        strategy: "none",
+        classification: detected.data.classification,
+      },
+      nextSuggestions: [],
+    };
+  }
+  const classification = input.classification ?? classifyInterruptionFromSignals(detected.data.signals);
+  const policyConfig = await loadInterruptionPolicyConfig(repoRoot, platform);
+  const decision = decideInterruptionResolution({
+    platform,
+    classification,
+    signals: detected.data.signals,
+    policyRules: policyConfig.rules,
+    preferredSlot: input.preferredSlot,
+  });
+
+  const matchedRule = decision.plan.matchedRule;
+  const policyProfileName = sessionRecord?.session.policyProfile ?? "sample-harness-default";
+  const accessProfile = await loadAccessProfile(repoRoot, policyProfileName);
+  if (matchedRule && accessProfile) {
+    const highRiskCheck = isHighRiskInterruptionActionAllowed(matchedRule, accessProfile);
+    if (!highRiskCheck.allowed) {
+      const deniedEvent: InterruptionEvent = buildInterruptionEvent({
+        actionId: input.actionId,
+        classification,
+        signals: detected.data.signals,
+        decision: {
+          ...decision.decision,
+          status: "denied",
+          reason: highRiskCheck.reason,
+        },
+        source: pickEventSource(detected.data.signals),
+        artifacts: detected.artifacts,
+      });
+      if (sessionRecord && detected.data.stateSummary) {
+        await persistInterruptionEvent(
+          repoRoot,
+          input.sessionId,
+          deniedEvent,
+          detected.data.stateSummary,
+          buildInterruptionPersistenceEvent("interruption_escalated", input.actionId, highRiskCheck.reason ?? "Denied by high-risk policy gate.", detected.data.stateSummary, detected.artifacts),
+          detected.artifacts,
+        );
+      }
+      return {
+        status: "failed",
+        reasonCode: REASON_CODES.policyDenied,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: detected.artifacts,
+        data: {
+          attempted: false,
+          status: "denied",
+          strategy: matchedRule.action.strategy,
+          classification,
+          matchedRuleId: matchedRule.id,
+          event: deniedEvent,
+        },
+        nextSuggestions: [highRiskCheck.reason ?? "Interruption action was denied by policy profile."],
+      };
+    }
+  }
+
+  let resolutionStatus = decision.decision.status;
+  let resolutionReasonCode: ReasonCode = resolutionStatus === "resolved" ? REASON_CODES.ok : REASON_CODES.interruptionResolutionFailed;
+  if (resolutionStatus === "resolved" && matchedRule) {
+    const tapInput = buildTapInputFromResolution({
+      sessionId: input.sessionId,
+      platform,
+      runnerProfile: input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE,
+      harnessConfigPath: input.harnessConfigPath,
+      deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+      tapText: decision.decision.tapText,
+      tapResourceId: decision.decision.tapResourceId,
+      dryRun: input.dryRun,
+    });
+
+    if (tapInput) {
+      const tapResult = await tapElementWithMaestro(tapInput);
+      if (tapResult.status === "failed") {
+        resolutionStatus = "failed";
+        resolutionReasonCode = REASON_CODES.interruptionResolutionFailed;
+      }
+    }
+  }
+
+  const event = buildInterruptionEvent({
+    actionId: input.actionId,
+    classification,
+    signals: detected.data.signals,
+    decision: {
+      ...decision.decision,
+      status: resolutionStatus,
+    },
+    source: pickEventSource(detected.data.signals),
+    artifacts: detected.artifacts,
+  });
+
+  if (sessionRecord && detected.data.stateSummary) {
+    const checkpoint = resolutionStatus === "resolved"
+      ? input.checkpoint ?? (input.actionId ? buildInterruptionCheckpoint(input.sessionId, platform, input.actionId) : undefined)
+      : undefined;
+    await persistInterruptionEvent(
+      repoRoot,
+      input.sessionId,
+      event,
+      detected.data.stateSummary,
+      buildInterruptionPersistenceEvent(
+        resolutionStatus === "resolved" ? "interruption_resolved" : "interruption_escalated",
+        input.actionId,
+        summarizeInterruptionDetail({ classification, signals: detected.data.signals }),
+        detected.data.stateSummary,
+        detected.artifacts,
+      ),
+      detected.artifacts,
+      checkpoint,
+    );
+  }
+
+  return {
+    status: resolutionStatus === "resolved" ? "success" : resolutionStatus === "denied" ? "failed" : "partial",
+    reasonCode: resolutionStatus === "resolved" ? REASON_CODES.ok : resolutionStatus === "denied" ? REASON_CODES.policyDenied : resolutionReasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: detected.artifacts,
+    data: {
+      attempted: true,
+      status: resolutionStatus,
+      strategy: matchedRule?.action.strategy ?? "none",
+      classification,
+      matchedRuleId: matchedRule?.id,
+      selectedSlot: decision.decision.selectedSlot,
+      event,
+    },
+    nextSuggestions: resolutionStatus === "resolved"
+      ? []
+      : [decision.decision.reason ?? "Interruption could not be resolved automatically."],
+  };
+}
+
+function toActionIntentFromCheckpoint(checkpoint: ResumeCheckpoint): ActionIntent {
+  const params = checkpoint.params ?? {};
+  return {
+    actionType: checkpoint.actionType,
+    resourceId: typeof params.resourceId === "string" ? params.resourceId : checkpoint.selector?.resourceId,
+    contentDesc: typeof params.contentDesc === "string" ? params.contentDesc : checkpoint.selector?.contentDesc,
+    text: typeof params.text === "string" ? params.text : checkpoint.selector?.text,
+    className: typeof params.className === "string" ? params.className : checkpoint.selector?.className,
+    clickable: typeof params.clickable === "boolean" ? params.clickable : checkpoint.selector?.clickable,
+    value: typeof params.value === "string" ? params.value : undefined,
+    timeoutMs: typeof params.timeoutMs === "number" ? params.timeoutMs : undefined,
+    intervalMs: typeof params.intervalMs === "number" ? params.intervalMs : undefined,
+    waitUntil: typeof params.waitUntil === "string" ? params.waitUntil as WaitForUiMode : undefined,
+    appId: typeof params.appId === "string" ? params.appId : undefined,
+    launchUrl: typeof params.launchUrl === "string" ? params.launchUrl : undefined,
+  };
+}
+
+export async function resumeInterruptedActionWithMaestro(
+  input: ResumeInterruptedActionInput,
+): Promise<ToolResult<ResumeInterruptedActionData>> {
+  const startTime = Date.now();
+  const repoRoot = resolveRepoPath();
+  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
+  const platform = input.platform ?? sessionRecord?.session.platform;
+  if (!platform) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { attempted: false, resumed: false },
+      nextSuggestions: ["Provide platform explicitly or run start_session before resuming interrupted actions."],
+    };
+  }
+
+  const checkpoint = input.checkpoint ?? sessionRecord?.session.lastInterruptedActionCheckpoint;
+  if (!checkpoint) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: { attempted: false, resumed: false },
+      nextSuggestions: ["No interruption checkpoint exists for this session."],
+    };
+  }
+
+  const runnerProfile = input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE;
+  const stateBeforeResult = await getScreenSummaryWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    includeDebugSignals: true,
+    dryRun: input.dryRun,
+  });
+
+  const replayResult = await executeIntentWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    dryRun: input.dryRun,
+  }, toActionIntentFromCheckpoint(checkpoint));
+
+  const stateAfterResult = await getScreenSummaryWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    includeDebugSignals: true,
+    dryRun: input.dryRun,
+  });
+
+  const driftDetected = hasStateDrift(stateBeforeResult.data.screenSummary, stateAfterResult.data.screenSummary);
+  const resumed = replayResult.status === "success" && !driftDetected;
+  const artifacts = Array.from(new Set([
+    ...stateBeforeResult.artifacts,
+    ...replayResult.artifacts,
+    ...stateAfterResult.artifacts,
+  ]));
+
+  if (sessionRecord) {
+    const classification = classifyInterruptionFromSignals(detectInterruptionFromSummary({
+      platform,
+      stateSummary: stateAfterResult.data.screenSummary,
+      uiSummary: stateAfterResult.data.uiSummary,
+    }).signals);
+    const event = buildInterruptionEvent({
+      actionId: checkpoint.actionId,
+      classification,
+      signals: detectInterruptionFromSummary({
+        platform,
+        stateSummary: stateAfterResult.data.screenSummary,
+        uiSummary: stateAfterResult.data.uiSummary,
+      }).signals,
+      decision: {
+        status: resumed ? "resolved" : "failed",
+        reason: resumed ? "Interrupted action resumed successfully." : "Interrupted action replay failed or drifted.",
+      },
+      source: "state_summary",
+      artifacts,
+    });
+    await persistInterruptionEvent(
+      repoRoot,
+      input.sessionId,
+      event,
+      stateAfterResult.data.screenSummary,
+      buildInterruptionPersistenceEvent(
+        resumed ? "interrupted_action_resumed" : "interruption_escalated",
+        checkpoint.actionId,
+        resumed ? "Interrupted action resumed." : "Interrupted action resume failed.",
+        stateAfterResult.data.screenSummary,
+        artifacts,
+      ),
+      artifacts,
+      checkpoint,
+    );
+  }
+
+  return {
+    status: resumed ? "success" : "partial",
+    reasonCode: resumed ? REASON_CODES.ok : driftDetected ? REASON_CODES.interruptionRecoveryStateDrift : replayResult.reasonCode,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts,
+    data: {
+      attempted: true,
+      resumed,
+      checkpoint,
+      stateBefore: stateBeforeResult.data.screenSummary,
+      stateAfter: stateAfterResult.data.screenSummary,
+      driftDetected,
+    },
+    nextSuggestions: resumed
+      ? []
+      : ["Resume replay did not reach a stable ready state. Inspect latest interruption event and state summary."],
+  };
+}
+
 export async function performActionWithEvidenceWithMaestro(
   input: PerformActionWithEvidenceInput,
 ): Promise<ToolResult<PerformActionWithEvidenceData>> {
   const startTime = Date.now();
+  const actionId = `action-${randomUUID()}`;
   const repoRoot = resolveRepoPath();
   const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
   const platform = input.platform ?? sessionRecord?.session.platform;
@@ -1937,7 +2476,7 @@ export async function performActionWithEvidenceWithMaestro(
       data: {
         sessionRecordFound: false,
         outcome: {
-          actionId: `action-${randomUUID()}`,
+          actionId,
           actionType: input.action.actionType,
           resolutionStrategy: "deterministic",
           stateChanged: false,
@@ -1955,6 +2494,17 @@ export async function performActionWithEvidenceWithMaestro(
   }
 
   const runnerProfile = input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE;
+  const preActionInterruption = await resolveInterruptionWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    actionId,
+    checkpoint: buildInterruptionCheckpoint(input.sessionId, platform, actionId, input.action),
+    dryRun: input.dryRun,
+  });
   const preStateResult = await getScreenSummaryWithMaestro({
     sessionId: input.sessionId,
     platform,
@@ -2000,7 +2550,6 @@ export async function performActionWithEvidenceWithMaestro(
   });
   let postStateSummary = postStateResult.data.screenSummary;
   let stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
-  const actionId = `action-${randomUUID()}`;
   const targetResolution = readResolutionSignal(lowLevelResult.data);
   let evidenceDelta = buildActionEvidenceDelta({
     preState: preStateSummary,
@@ -2166,6 +2715,17 @@ export async function performActionWithEvidenceWithMaestro(
   });
   const allArtifacts = persistedAction.relativePath ? [persistedAction.relativePath, ...artifacts] : artifacts;
 
+  const postActionInterruption = await resolveInterruptionWithMaestro({
+    sessionId: input.sessionId,
+    platform,
+    runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+    appId: input.appId ?? sessionRecord?.session.appId,
+    actionId,
+    dryRun: input.dryRun,
+  });
+
   return {
     status: finalStatus,
     reasonCode: finalReasonCode,
@@ -2187,6 +2747,8 @@ export async function performActionWithEvidenceWithMaestro(
       lowLevelReasonCode: finalReasonCode,
       evidence,
       sessionAuditPath: persistedSessionState?.auditPath,
+      preActionInterruption: preActionInterruption.data,
+      postActionInterruption: postActionInterruption.data,
     },
     nextSuggestions: buildRetryRecommendations({
       finalStatus,

@@ -26,6 +26,8 @@ test("buildToolList includes the new UI tools", () => {
   assert.ok(toolNames.includes("capture_js_console_logs"));
   assert.ok(toolNames.includes("capture_js_network_events"));
   assert.ok(toolNames.includes("collect_debug_evidence"));
+  assert.ok(toolNames.includes("detect_interruption"));
+  assert.ok(toolNames.includes("classify_interruption"));
   assert.ok(toolNames.includes("list_js_debug_targets"));
   assert.ok(toolNames.includes("describe_capabilities"));
   assert.ok(toolNames.includes("compare_against_baseline"));
@@ -52,6 +54,8 @@ test("buildToolList includes the new UI tools", () => {
   assert.ok(toolNames.includes("rank_failure_candidates"));
   assert.ok(toolNames.includes("record_screen"));
   assert.ok(toolNames.includes("recover_to_known_state"));
+  assert.ok(toolNames.includes("resolve_interruption"));
+  assert.ok(toolNames.includes("resume_interrupted_action"));
   assert.ok(toolNames.includes("replay_last_stable_path"));
   assert.ok(toolNames.includes("reset_app_state"));
   assert.ok(toolNames.includes("suggest_known_remediation"));

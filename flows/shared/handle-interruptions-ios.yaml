@@ -28,3 +28,6 @@ appId: host.exp.Exponent
 - tapOn:
     text: "存储密码"
     optional: true
+- tapOn:
+    text: "Cancel"
+    optional: true

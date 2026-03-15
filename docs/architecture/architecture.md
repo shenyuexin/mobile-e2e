@@ -174,6 +174,12 @@ Required functions:
 4. resume interrupted action with bounded retry
 5. emit interruption telemetry and artifacts
 
+Interruption Orchestrator v2 implementation notes:
+
+- Add explicit tool surface for `detect_interruption`, `classify_interruption`, `resolve_interruption`, and `resume_interrupted_action`.
+- Keep deterministic-first action execution while injecting pre/post interruption guard checks around bounded actions.
+- Persist interruption events into session timeline with explicit `interruption_detected` / `interruption_resolved` / `interrupted_action_resumed` markers.
+
 Interruption handling is deterministic-first and policy-driven. It must not silently dismiss unknown prompts without recording evidence.
 
 ---

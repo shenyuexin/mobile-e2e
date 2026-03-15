@@ -1,6 +1,14 @@
 import { resolveRepoPath } from "@mobile-e2e-mcp/adapter-maestro";
 import { appendSessionTimelineEvent, loadSessionRecord, recoverStaleLeases, runExclusive } from "@mobile-e2e-mcp/core";
-import type { PerformActionWithEvidenceInput, Platform, ToolResult } from "@mobile-e2e-mcp/contracts";
+import type {
+  PerformActionWithEvidenceInput,
+  Platform,
+  ToolResult,
+  DetectInterruptionInput,
+  ClassifyInterruptionInput,
+  ResolveInterruptionInput,
+  ResumeInterruptedActionInput,
+} from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import { MobileE2EMcpServer } from "./server.js";
 import { enforcePolicyForTool } from "./policy-guard.js";
@@ -11,6 +19,8 @@ import { collectDebugEvidence } from "./tools/collect-debug-evidence.js";
 import { collectDiagnostics } from "./tools/collect-diagnostics.js";
 import { describeCapabilities } from "./tools/describe-capabilities.js";
 import { doctor } from "./tools/doctor.js";
+import { detectInterruption } from "./tools/detect-interruption.js";
+import { classifyInterruption } from "./tools/classify-interruption.js";
 import { endSession } from "./tools/end-session.js";
 import { explainLastFailure } from "./tools/explain-last-failure.js";
 import { findSimilarFailures } from "./tools/find-similar-failures.js";
@@ -35,6 +45,8 @@ import { resetAppState } from "./tools/reset-app-state.js";
 import { resolveUiTarget } from "./tools/resolve-ui-target.js";
 import { rankFailureCandidates } from "./tools/rank-failure-candidates.js";
 import { replayLastStablePath } from "./tools/replay-last-stable-path.js";
+import { resolveInterruption } from "./tools/resolve-interruption.js";
+import { resumeInterruptedAction } from "./tools/resume-interrupted-action.js";
 import { runFlow } from "./tools/run-flow.js";
 import { scrollAndResolveUiTarget } from "./tools/scroll-and-resolve-ui-target.js";
 import { scrollAndTapElement } from "./tools/scroll-and-tap-element.js";
@@ -180,6 +192,8 @@ export function createServer(): MobileE2EMcpServer {
   const collectDiagnosticsHandler = withPolicyAndAudit("collect_diagnostics", collectDiagnostics);
   const describeCapabilitiesHandler = withPolicy("describe_capabilities", describeCapabilities);
   const doctorHandler = withPolicy("doctor", doctor);
+  const detectInterruptionHandler = withSessionExecution("detect_interruption", withPolicy("detect_interruption", (input: DetectInterruptionInput) => detectInterruption(input)));
+  const classifyInterruptionHandler = withSessionExecution("classify_interruption", withPolicy("classify_interruption", (input: ClassifyInterruptionInput) => classifyInterruption(input)));
   const explainLastFailureHandler = withPolicy("explain_last_failure", explainLastFailure);
   const findSimilarFailuresHandler = withPolicy("find_similar_failures", findSimilarFailures);
   const getActionOutcomeHandler = withPolicy("get_action_outcome", getActionOutcome);
@@ -192,6 +206,8 @@ export function createServer(): MobileE2EMcpServer {
   const recoverToKnownStateHandler = withSessionExecution("recover_to_known_state", withPolicy("recover_to_known_state", recoverToKnownState));
   const resolveUiTargetHandler = withPolicy("resolve_ui_target", resolveUiTarget);
   const replayLastStablePathHandler = withSessionExecution("replay_last_stable_path", withPolicy("replay_last_stable_path", replayLastStablePath));
+  const resolveInterruptionHandler = withSessionExecution("resolve_interruption", withPolicy("resolve_interruption", (input: ResolveInterruptionInput) => resolveInterruption(input)));
+  const resumeInterruptedActionHandler = withSessionExecution("resume_interrupted_action", withPolicy("resume_interrupted_action", (input: ResumeInterruptedActionInput) => resumeInterruptedAction(input)));
   const scrollAndResolveUiTargetHandler = withPolicy("scroll_and_resolve_ui_target", scrollAndResolveUiTarget);
   const scrollAndTapElementHandler = withPolicy("scroll_and_tap_element", scrollAndTapElement);
   const installAppHandler = withPolicy("install_app", installApp);
@@ -232,6 +248,8 @@ export function createServer(): MobileE2EMcpServer {
     collect_diagnostics: collectDiagnosticsHandler,
     describe_capabilities: describeCapabilitiesHandler,
     doctor: doctorHandler,
+    detect_interruption: detectInterruptionHandler,
+    classify_interruption: classifyInterruptionHandler,
     explain_last_failure: explainLastFailureHandler,
     find_similar_failures: findSimilarFailuresHandler,
     get_action_outcome: getActionOutcomeHandler,
@@ -242,6 +260,8 @@ export function createServer(): MobileE2EMcpServer {
     inspect_ui: inspectUiHandler,
     query_ui: queryUiHandler,
     recover_to_known_state: recoverToKnownStateHandler,
+    resolve_interruption: resolveInterruptionHandler,
+    resume_interrupted_action: resumeInterruptedActionHandler,
     resolve_ui_target: resolveUiTargetHandler,
     replay_last_stable_path: replayLastStablePathHandler,
     scroll_and_resolve_ui_target: scrollAndResolveUiTargetHandler,

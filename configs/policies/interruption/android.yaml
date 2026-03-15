@@ -1,47 +1,95 @@
 platform: android
+version: v2
 rules:
   - id: expo-intro
+    type: app_modal
     match:
       any_text:
         - Continue
+    signature:
+      ownerPackage: host.exp.exponent
+      containerRole: dialog
+      any_text:
+        - Continue
     action:
+      strategy: tap_selector
       tap_text: Continue
     priority: high
     auto: true
+    retry:
+      max_attempts: 1
   - id: expo-dev-ui
+    type: overlay
     match:
       any_text:
         - Reload
         - Go home
         - TOOLS
+    signature:
+      ownerPackage: host.exp.exponent
+      containerRole: dialog
+      any_text:
+        - Reload
+        - Go home
+        - TOOLS
     action:
+      strategy: tap_selector
       tap_text: Reload
     priority: high
     auto: true
+    retry:
+      max_attempts: 1
   - id: generic-permission-en
+    type: permission_prompt
     match:
       any_text:
         - Allow
         - Only this time
         - While using the app
+    signature:
+      ownerPackage: com.android.permissioncontroller
+      containerRole: dialog
+      requiredSignals:
+        - permission_prompt
+      any_text:
+        - Allow
+        - Only this time
+        - While using the app
     action:
+      strategy: tap_selector
+      slot: primary
       first_available_text:
         - While using the app
         - Only this time
         - Allow
     priority: medium
     auto: true
+    retry:
+      max_attempts: 1
   - id: generic-permission-zh
+    type: permission_prompt
     match:
       any_text:
         - 允许
         - 以后再说
+    signature:
+      ownerPackage: com.android.permissioncontroller
+      containerRole: dialog
+      requiredSignals:
+        - permission_prompt
+      any_text:
+        - 允许
+        - 以后再说
     action:
+      strategy: tap_selector
+      slot: primary
       first_available_text:
         - 允许
         - 以后再说
     priority: medium
     auto: true
+    retry:
+      max_attempts: 1
 notes:
   - Android Expo sample execution requires adb reverse tcp:8081 tcp:8081.
   - Expo-specific interruption rules are sample-harness assumptions, not general production-app rules.

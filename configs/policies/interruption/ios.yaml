@@ -1,23 +1,60 @@
 platform: ios
+version: v2
 rules:
   - id: save-password-en
+    type: system_alert
     match:
       any_text:
         - Save Password
         - Not Now
+    signature:
+      ownerBundle: com.apple.springboard
+      containerRole: alert
+      any_text:
+        - Save Password
+        - Not Now
     action:
+      strategy: tap_selector
+      slot: secondary
       tap_text: Not Now
     priority: high
     auto: true
+    retry:
+      max_attempts: 1
   - id: save-password-zh
+    type: system_alert
     match:
       any_text:
         - 存储密码
         - 以后
+    signature:
+      ownerBundle: com.apple.springboard
+      containerRole: alert
+      any_text:
+        - 存储密码
+        - 以后
     action:
+      strategy: tap_selector
+      slot: secondary
       tap_text: 以后
     priority: high
     auto: true
+    retry:
+      max_attempts: 1
+  - id: generic-action-sheet-safe-cancel
+    type: action_sheet
+    signature:
+      ownerBundle: com.apple.springboard
+      containerRole: sheet
+      requiredSignals:
+        - container_role
+    action:
+      strategy: choose_slot
+      slot: cancel
+    priority: medium
+    auto: false
+    retry:
+      max_attempts: 1
 notes:
   - iOS password-save prompts are treated as known golden-flow interruptions.
   - Unknown iOS interruptions must be captured in screenshots and debug output before new rules are added.

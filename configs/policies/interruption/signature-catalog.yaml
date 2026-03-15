@@ -1,0 +1,29 @@
+version: v2
+catalog:
+  ios:
+    springboard-alert:
+      ownerBundle: com.apple.springboard
+      containerRole: alert
+      requiredSignals:
+        - owner_bundle
+        - container_role
+    springboard-sheet:
+      ownerBundle: com.apple.springboard
+      containerRole: sheet
+      requiredSignals:
+        - owner_bundle
+        - container_role
+  android:
+    permission-controller-dialog:
+      ownerPackage: com.android.permissioncontroller
+      containerRole: dialog
+      requiredSignals:
+        - owner_package
+        - permission_prompt
+    app-modal-dialog:
+      containerRole: dialog
+      requiredSignals:
+        - container_role
+notes:
+  - Signature catalog centralizes reusable interruption matching primitives.
+  - Platform policies should reference these signatures to minimize rule duplication.

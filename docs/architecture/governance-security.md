@@ -10,6 +10,12 @@ Define policy profiles:
 
 Each MCP tool declares required policy scope.
 
+Interruption orchestration governance scopes:
+
+- `interrupt`: allows low-risk automatic interruption detection/classification/resolution.
+- `interrupt-high-risk`: required for destructive interruption actions (for example destructive slot on action sheet).
+- Unknown/high-risk interruption handling must remain auditable and policy-gated.
+
 ---
 
 ## 2. Access and Isolation

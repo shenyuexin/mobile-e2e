@@ -1,0 +1,30 @@
+[
+  {
+    "type": "Sheet",
+    "role": "XCUIElementTypeSheet",
+    "AXLabel": "Actions",
+    "title": "Actions",
+    "enabled": true,
+    "frame": { "x": 0, "y": 1320, "width": 780, "height": 360 },
+    "children": [
+      {
+        "type": "Button",
+        "role": "Button",
+        "AXLabel": "Delete",
+        "title": "Delete",
+        "enabled": true,
+        "frame": { "x": 40, "y": 1370, "width": 700, "height": 72 },
+        "children": []
+      },
+      {
+        "type": "Button",
+        "role": "Button",
+        "AXLabel": "Cancel",
+        "title": "Cancel",
+        "enabled": true,
+        "frame": { "x": 40, "y": 1490, "width": 700, "height": 72 },
+        "children": []
+      }
+    ]
+  }
+]

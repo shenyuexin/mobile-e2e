@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.android.permissioncontroller" clickable="false" enabled="true" scrollable="false" bounds="[0,0][1080,2400]">
+    <node index="0" text="Allow Camera Access" resource-id="android:id/alertTitle" class="android.widget.TextView" package="com.android.permissioncontroller" clickable="false" enabled="true" scrollable="false" bounds="[96,940][984,1020]" />
+    <node index="1" text="Only this time" resource-id="android:id/button1" class="android.widget.Button" package="com.android.permissioncontroller" clickable="true" enabled="true" scrollable="false" bounds="[96,1500][984,1600]" />
+    <node index="2" text="Deny" resource-id="android:id/button2" class="android.widget.Button" package="com.android.permissioncontroller" clickable="true" enabled="true" scrollable="false" bounds="[96,1610][984,1710]" />
+  </node>
+</hierarchy>
