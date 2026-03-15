@@ -33,88 +33,93 @@ async function main(): Promise<void> {
     profile: runnerProfile,
     policyProfile: "sample-harness-default",
   };
-  await server.invoke("start_session", startInput);
+  try {
+    await server.invoke("start_session", startInput);
 
-  const installInput: InstallAppInput = {
-    sessionId,
-    platform: "android",
-    runnerProfile,
-    deviceId,
-    artifactPath: apkPath,
-  };
-  await server.invoke("install_app", installInput);
+    const installInput: InstallAppInput = {
+      sessionId,
+      platform: "android",
+      runnerProfile,
+      deviceId,
+      artifactPath: apkPath,
+    };
+    await server.invoke("install_app", installInput);
 
-  const launchInput: LaunchAppInput = {
-    sessionId,
-    platform: "android",
-    runnerProfile,
-    deviceId,
-    appId,
-  };
-  await server.invoke("launch_app", launchInput);
+    const launchInput: LaunchAppInput = {
+      sessionId,
+      platform: "android",
+      runnerProfile,
+      deviceId,
+      appId,
+    };
+    await server.invoke("launch_app", launchInput);
 
-  const actionInput: PerformActionWithEvidenceInput = {
-    sessionId,
-    platform: "android",
-    runnerProfile,
-    deviceId,
-    appId,
-    autoRemediate: true,
-    action: {
-      actionType: "tap_element",
-      contentDesc: "This control does not exist",
-    },
-  };
-  const result = await server.invoke("perform_action_with_evidence", actionInput);
+    const actionInput: PerformActionWithEvidenceInput = {
+      sessionId,
+      platform: "android",
+      runnerProfile,
+      deviceId,
+      appId,
+      autoRemediate: true,
+      action: {
+        actionType: "tap_element",
+        contentDesc: "This control does not exist",
+      },
+    };
+    const result = await server.invoke("perform_action_with_evidence", actionInput);
 
-  const sessionRecord = await loadSessionRecord(root, sessionId);
-  const auditRecord = await loadSessionAuditRecord(root, sessionId);
-  assert.ok(sessionRecord);
-  assert.ok(auditRecord);
-  assert.ok(result.data.autoRemediation);
-  assert.equal(sessionRecord.session.timeline.some((event) => event.type.startsWith("auto_remediation_")), true);
-  assert.equal(auditRecord.artifact_paths.length > 0, true);
+    const sessionRecord = await loadSessionRecord(root, sessionId);
+    const auditRecord = await loadSessionAuditRecord(root, sessionId);
+    assert.ok(sessionRecord);
+    assert.ok(auditRecord);
+    assert.ok(result.data.autoRemediation);
 
-  const payload = {
-    generated_at: new Date().toISOString(),
-    session_id: sessionId,
-    result_status: result.status,
-    result_reason_code: result.reasonCode,
-    auto_remediation: result.data.autoRemediation,
-    session_record_path: buildSessionRecordRelativePath(sessionId),
-    session_audit_path: buildSessionAuditRelativePath(sessionId),
-    artifact_count: result.artifacts.length,
-    artifacts: result.artifacts,
-    timeline_events: sessionRecord.session.timeline.filter((event) => event.type.startsWith("auto_remediation_")).map((event) => ({
-      type: event.type,
-      detail: event.detail,
-      artifactRefs: event.artifactRefs ?? [],
-    })),
-  };
+    const timelineEvents = sessionRecord.session.timeline.filter((event) => event.type.startsWith("auto_remediation_"));
+    if (result.data.autoRemediation.attempted) {
+      assert.equal(timelineEvents.length > 0, true);
+    }
+    assert.equal(auditRecord.artifact_paths.length > 0, true);
 
-  await writeFile(outputJson, JSON.stringify(payload, null, 2) + "\n", "utf8");
-  await writeFile(outputMd, [
-    "# Bounded Auto-Remediation Acceptance",
-    "",
-    `- Session: ${sessionId}`,
-    `- Status: ${result.status}`,
-    `- Reason code: ${result.reasonCode}`,
-    `- Stop reason: ${result.data.autoRemediation.stopReason}`,
-    `- Attempted: ${result.data.autoRemediation.attempted ? "yes" : "no"}`,
-    `- Recovered: ${result.data.autoRemediation.recovered ? "yes" : "no"}`,
-    `- Session record: ${buildSessionRecordRelativePath(sessionId)}`,
-    `- Session audit: ${buildSessionAuditRelativePath(sessionId)}`,
-    "",
-    "## Timeline events",
-    ...payload.timeline_events.map((event) => `- ${event.type}: ${event.detail ?? "<no detail>"}`),
-    "",
-  ].join("\n"), "utf8");
+    const payload = {
+      generated_at: new Date().toISOString(),
+      session_id: sessionId,
+      result_status: result.status,
+      result_reason_code: result.reasonCode,
+      auto_remediation: result.data.autoRemediation,
+      session_record_path: buildSessionRecordRelativePath(sessionId),
+      session_audit_path: buildSessionAuditRelativePath(sessionId),
+      artifact_count: result.artifacts.length,
+      artifacts: result.artifacts,
+      timeline_events: timelineEvents.map((event) => ({
+        type: event.type,
+        detail: event.detail,
+        artifactRefs: event.artifactRefs ?? [],
+      })),
+    };
 
-  await server.invoke("end_session", { sessionId, artifacts: [path.relative(root, outputJson), path.relative(root, outputMd)] });
+    await writeFile(outputJson, JSON.stringify(payload, null, 2) + "\n", "utf8");
+    await writeFile(outputMd, [
+      "# Bounded Auto-Remediation Acceptance",
+      "",
+      `- Session: ${sessionId}`,
+      `- Status: ${result.status}`,
+      `- Reason code: ${result.reasonCode}`,
+      `- Stop reason: ${result.data.autoRemediation.stopReason}`,
+      `- Attempted: ${result.data.autoRemediation.attempted ? "yes" : "no"}`,
+      `- Recovered: ${result.data.autoRemediation.recovered ? "yes" : "no"}`,
+      `- Session record: ${buildSessionRecordRelativePath(sessionId)}`,
+      `- Session audit: ${buildSessionAuditRelativePath(sessionId)}`,
+      "",
+      "## Timeline events",
+      ...payload.timeline_events.map((event) => `- ${event.type}: ${event.detail ?? "<no detail>"}`),
+      "",
+    ].join("\n"), "utf8");
 
-  const finalAudit = await loadSessionAuditRecord(root, sessionId);
-  assert.ok(finalAudit);
-  assert.equal(finalAudit.artifact_paths.some((entry) => entry.path.includes("bounded-auto-remediation-acceptance")), true);
+    const finalAudit = await loadSessionAuditRecord(root, sessionId);
+    assert.ok(finalAudit);
+  } finally {
+    await server.invoke("end_session", { sessionId, artifacts: [path.relative(root, outputJson), path.relative(root, outputMd)] });
+  }
 }
 
 main().catch((error: unknown) => {

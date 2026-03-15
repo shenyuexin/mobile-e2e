@@ -15,6 +15,16 @@ function repoRootFromScript(): string {
   return path.resolve(path.dirname(scriptPath), "..");
 }
 
+function extractJsonPayload(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace < 0 || lastBrace < firstBrace) {
+    return undefined;
+  }
+  return trimmed.slice(firstBrace, lastBrace + 1);
+}
+
 async function runCli(cliArgs: string[], allowFailureExit = false): Promise<unknown> {
   const repoRoot = repoRootFromScript();
   const commandArgs = [
@@ -43,19 +53,17 @@ async function runCli(cliArgs: string[], allowFailureExit = false): Promise<unkn
       stderr += chunk.toString();
     });
     child.on("error", reject);
-      child.on("close", (code) => {
-        if (code === 0 || (allowFailureExit && stdout.trim().startsWith("{"))) {
-          resolve(stdout);
-          return;
-        }
+    child.on("close", (code) => {
+      const jsonPayload = extractJsonPayload(stdout);
+      if (code === 0 || (allowFailureExit && jsonPayload !== undefined)) {
+        resolve(jsonPayload ?? stdout);
+        return;
+      }
       reject(new Error(`CLI command failed (${String(code)}): ${stderr || stdout}`));
     });
   });
 
-  const trimmed = output.trim();
-  const firstBrace = trimmed.indexOf("{");
-  const lastBrace = trimmed.lastIndexOf("}");
-  const jsonPayload = firstBrace >= 0 && lastBrace >= firstBrace ? trimmed.slice(firstBrace, lastBrace + 1) : trimmed;
+  const jsonPayload = extractJsonPayload(output) ?? output.trim();
   return JSON.parse(jsonPayload);
 }
 
