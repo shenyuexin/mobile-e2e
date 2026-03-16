@@ -20,7 +20,7 @@
   - iOS：`host.exp.exponent`
 - MCP 调用入口：
   - OpenCode 用户视角：`opencode run "Use mobile-e2e-mcp MCP ..." --agent dev`
-  - 直接工具视角：`mobile-e2e-mcp_<tool>`（本会话调用）
+  - 直接工具视角：`mobile-e2e-mcp_<tool>`（MCP 工具调用，非仓库本地 `pnpm mcp:dev` 调试命令）
 
 > 说明：同一工具在“无参数默认调用”与“显式传 session/platform/device/appId”时结果可能不同。
 
@@ -46,6 +46,8 @@ opencode run "Use mobile-e2e-mcp MCP to call launch_app with {sessionId:'<sid>',
 mobile-e2e-mcp_<tool_name>({ ...args })
 ```
 
+> 说明：本清单所有工具示例均按“用户/AI 通过 MCP 调用”的口径编写，不使用仓库内部 dev-cli 调试命令作为主示例。
+
 ---
 
 ## 4. 全工具检查清单（含调用方式 + 双平台结果）
@@ -60,47 +62,47 @@ mobile-e2e-mcp_<tool_name>({ ...args })
 | capture_js_console_logs | `mobile-e2e-mcp_capture_js_console_logs({targetId})` | ✅ | ✅ | 需先 `list_js_debug_targets` 获取 targetId |
 | capture_js_network_events | `mobile-e2e-mcp_capture_js_network_events({targetId})` | ✅ | ✅ | 无网络事件时 collectedCount 可为 0 |
 | compare_against_baseline | `mobile-e2e-mcp_compare_against_baseline({sessionId})` | ✅ | ✅ | 按前置链路（先产出 outcome/baseline）复测通过 |
-| collect_debug_evidence | `mobile-e2e-mcp_collect_debug_evidence({sessionId,platform,deviceId,appId})` | ✅ | ✅ | dry-run + 指定 platform/session 复测通过 |
-| collect_diagnostics | `mobile-e2e-mcp_collect_diagnostics({sessionId,platform,deviceId})` | ✅ | ✅ | dry-run + 指定 platform/session 复测通过 |
+| collect_debug_evidence | `mobile-e2e-mcp_collect_debug_evidence({sessionId,appId?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 3）；业务过滤参数保持显式 |
+| collect_diagnostics | `mobile-e2e-mcp_collect_diagnostics({sessionId})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 2） |
 | detect_interruption | `mobile-e2e-mcp_detect_interruption({sessionId})` | ✅ | ✅ | 先 start_session 后调用，返回结构化结果 |
-| classify_interruption | `mobile-e2e-mcp_classify_interruption({signals})` | ✅ | ✅ | 空 signals 返回 `INTERRUPTION_UNCLASSIFIED` 属预期成功语义 |
-| describe_capabilities | `mobile-e2e-mcp_describe_capabilities()` | ✅ | ✅ | 可稳定返回工具能力画像 |
+| classify_interruption | `mobile-e2e-mcp_classify_interruption({sessionId,signals?})` | ✅ | ✅ | 省略 platform 时需 active session；空 signals 返回 `INTERRUPTION_UNCLASSIFIED` |
+| describe_capabilities | `mobile-e2e-mcp_describe_capabilities({platform})` | ✅ | ✅ | 可稳定返回工具能力画像 |
 | doctor | `mobile-e2e-mcp_doctor()` | ✅ | ✅ | 当检测到 IDB 缺失时会返回可执行安装指引（`pipx install fb-idb`、`brew install idb-companion`、`IDB_*_PATH` 配置） |
 | explain_last_failure | `mobile-e2e-mcp_explain_last_failure({sessionId})` | ✅ | ✅ | 先执行失败动作后复测通过 |
 | find_similar_failures | `mobile-e2e-mcp_find_similar_failures({sessionId})` | ✅ | ✅ | 先沉淀 failure signature 后复测通过 |
-| get_action_outcome | `mobile-e2e-mcp_get_action_outcome({sessionId,actionId/latest})` | ✅ | ✅ | 先 perform_action_with_evidence 取 actionId 后复测通过 |
-| get_crash_signals | `mobile-e2e-mcp_get_crash_signals({sessionId,platform,deviceId,appId})` | ✅ | ✅ | dry-run 复测通过；支持结构化返回 |
-| get_logs | `mobile-e2e-mcp_get_logs({sessionId,platform,deviceId,lines})` | ✅ | ✅ | 已拿到 Android/iOS 日志输出 |
-| get_screen_summary | `mobile-e2e-mcp_get_screen_summary({sessionId,...})` | ✅ | ✅ | 指定 platform + dry-run 下稳定成功 |
-| get_session_state | `mobile-e2e-mcp_get_session_state({sessionId})` | ✅ | ✅ | 无持久会话也可返回结构化状态 |
-| inspect_ui | `mobile-e2e-mcp_inspect_ui({sessionId,platform,deviceId})` | ✅ | ✅ | iOS 通过 idb companion 优先路径可稳定调用 |
-| query_ui | `mobile-e2e-mcp_query_ui({sessionId,selector/...})` | ✅ | ✅ | 按 selector 参数模板复测通过 |
-| resolve_ui_target | `mobile-e2e-mcp_resolve_ui_target({sessionId,contentDesc})` | ✅ | ✅ | `NO_MATCH/UNSUPPORTED_OPERATION` 按预期语义返回 |
-| scroll_and_resolve_ui_target | `mobile-e2e-mcp_scroll_and_resolve_ui_target({sessionId,selector})` | ✅ | ✅ | dry-run 复测返回预期结构化结果 |
-| scroll_and_tap_element | `mobile-e2e-mcp_scroll_and_tap_element({sessionId,selector})` | ✅ | ✅ | dry-run 复测返回预期结构化结果 |
-| install_app | `mobile-e2e-mcp_install_app({sessionId,artifactPath,...})` | ✅ | ✅ | 使用正确 runnerProfile（如 native_android）后复测通过 |
+| get_action_outcome | `mobile-e2e-mcp_get_action_outcome({actionId})` | ✅ | ✅ | 先 perform_action_with_evidence 取 actionId 后复测通过 |
+| get_crash_signals | `mobile-e2e-mcp_get_crash_signals({sessionId,appId?,lines?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 2） |
+| get_logs | `mobile-e2e-mcp_get_logs({sessionId,lines?,query?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 2） |
+| get_screen_summary | `mobile-e2e-mcp_get_screen_summary({sessionId,includeDebugSignals?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 3） |
+| get_session_state | `mobile-e2e-mcp_get_session_state({sessionId})` | ✅ | ✅ | 需可解析到 active session 上下文；否则返回 `CONFIGURATION_ERROR` |
+| inspect_ui | `mobile-e2e-mcp_inspect_ui({sessionId})` | ✅ | ✅ | 传 `sessionId` 时可从活动会话继承 platform/deviceId/runnerProfile（Wave 1A） |
+| query_ui | `mobile-e2e-mcp_query_ui({sessionId,selector/...})` | ✅ | ✅ | 查询条件保持显式；运行上下文由 session 继承（Wave 1A） |
+| resolve_ui_target | `mobile-e2e-mcp_resolve_ui_target({sessionId,contentDesc})` | ✅ | ✅ | 查询条件保持显式；运行上下文由 session 继承（Wave 1A） |
+| scroll_and_resolve_ui_target | `mobile-e2e-mcp_scroll_and_resolve_ui_target({sessionId,selector})` | ✅ | ✅ | 查询条件保持显式；运行上下文由 session 继承（Wave 1B） |
+| scroll_and_tap_element | `mobile-e2e-mcp_scroll_and_tap_element({sessionId,selector})` | ✅ | ✅ | 查询条件保持显式；运行上下文由 session 继承（Wave 1B） |
+| install_app | `mobile-e2e-mcp_install_app({sessionId,artifactPath})` | ✅ | ✅ | 传 `sessionId` 时可从活动会话继承 platform/deviceId/runnerProfile（MCP 层下沉） |
 | list_js_debug_targets | `mobile-e2e-mcp_list_js_debug_targets()` | ✅ | ✅ | 能稳定返回 Metro target 列表 |
-| launch_app | `mobile-e2e-mcp_launch_app({sessionId,platform,deviceId,appId})` | ✅ | ✅ | 显式参数下双平台可成功 |
+| launch_app | `mobile-e2e-mcp_launch_app({sessionId})` | ✅ | ✅ | 传 `sessionId` 时可从活动会话继承 platform/deviceId/appId/runnerProfile（MCP 层下沉） |
 | list_devices | `mobile-e2e-mcp_list_devices()` | ✅ | ✅ | 能返回 Android+iOS 设备清单 |
 | measure_android_performance | `mobile-e2e-mcp_measure_android_performance({sessionId,deviceId,appId,durationMs})` | ✅ | ✅ | 非目标平台返回预期语义；目标平台测量链路通过 |
 | measure_ios_performance | `mobile-e2e-mcp_measure_ios_performance({sessionId,deviceId,appId,durationMs})` | ✅ | ✅ | dry-run（含 time-profiler/animation-hitches）复测通过 |
-| perform_action_with_evidence | `mobile-e2e-mcp_perform_action_with_evidence({sessionId,action,autoRemediate})` | ✅ | ✅ | 按 action 参数模板复测通过（含可归因 evidence） |
+| perform_action_with_evidence | `mobile-e2e-mcp_perform_action_with_evidence({sessionId,action,autoRemediate?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 4）；action 保持显式 |
 | rank_failure_candidates | `mobile-e2e-mcp_rank_failure_candidates({sessionId})` | ✅ | ✅ | 先生成失败窗口后复测通过 |
-| record_screen | `mobile-e2e-mcp_record_screen({sessionId,platform,deviceId,durationMs,outputPath})` | ✅ | ✅ | iOS 录屏命令已修复（adapter shell 由 `;` 改为换行拼接） |
-| recover_to_known_state | `mobile-e2e-mcp_recover_to_known_state({sessionId,platform,deviceId})` | ✅ | ✅ | 返回 `reasonCode=OK` 且 recovery summary 可用 |
-| resolve_interruption | `mobile-e2e-mcp_resolve_interruption({sessionId,signals/classification})` | ✅ | ✅ | 补齐 interruption signals 后复测通过 |
-| resume_interrupted_action | `mobile-e2e-mcp_resume_interrupted_action({sessionId})` | ✅ | ✅ | 使用 checkpoint 参数模板复测通过 |
-| replay_last_stable_path | `mobile-e2e-mcp_replay_last_stable_path({sessionId,...})` | ✅ | ✅ | 先建立 stable action 后复测通过 |
-| reset_app_state | `mobile-e2e-mcp_reset_app_state({sessionId,strategy,appId})` | ✅ | ✅ | clear_data/keychain_reset 等策略按平台复测可用 |
-| take_screenshot | `mobile-e2e-mcp_take_screenshot({sessionId,platform,deviceId,outputPath})` | ✅ | ✅ | 双平台均成功产出截图 |
-| tap | `mobile-e2e-mcp_tap({sessionId,platform,deviceId,x,y})` | ✅ | ✅ | iOS/Android dry-run 复测通过（返回预期命令结构） |
-| tap_element | `mobile-e2e-mcp_tap_element({sessionId,contentDesc/...})` | ✅ | ✅ | 通过 selector + dry-run 复测，返回预期结构化语义 |
-| type_text | `mobile-e2e-mcp_type_text({sessionId,platform,deviceId,text})` | ✅ | ✅ | iOS/Android dry-run 复测通过（idb/text 命令可解析） |
-| type_into_element | `mobile-e2e-mcp_type_into_element({sessionId,selector,text})` | ✅ | ✅ | 按 selector/value 模板复测通过 |
-| terminate_app | `mobile-e2e-mcp_terminate_app({sessionId,platform,deviceId,appId})` | ✅ | ✅ | iOS 需使用正确 Expo appId 大小写：`host.exp.Exponent` |
-| wait_for_ui | `mobile-e2e-mcp_wait_for_ui({sessionId,selector,timeoutMs})` | ✅ | ✅ | 按 wait-until/timeout 参数模板复测通过（预期语义） |
+| record_screen | `mobile-e2e-mcp_record_screen({sessionId,durationMs?,outputPath?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 2） |
+| recover_to_known_state | `mobile-e2e-mcp_recover_to_known_state({sessionId})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 4） |
+| resolve_interruption | `mobile-e2e-mcp_resolve_interruption({sessionId,signals/classification?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 4） |
+| resume_interrupted_action | `mobile-e2e-mcp_resume_interrupted_action({sessionId,checkpoint?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 4） |
+| replay_last_stable_path | `mobile-e2e-mcp_replay_last_stable_path({sessionId})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 4） |
+| reset_app_state | `mobile-e2e-mcp_reset_app_state({sessionId,strategy})` | ✅ | ✅ | 传 `sessionId` 时可从活动会话继承 platform/deviceId/appId/runnerProfile |
+| take_screenshot | `mobile-e2e-mcp_take_screenshot({sessionId,outputPath?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 2） |
+| tap | `mobile-e2e-mcp_tap({sessionId,x,y})` | ✅ | ✅ | 坐标保持显式；运行上下文由 session 继承（Wave 2） |
+| tap_element | `mobile-e2e-mcp_tap_element({sessionId,contentDesc/...})` | ✅ | ✅ | 查询条件保持显式；运行上下文由 session 继承（Wave 1B） |
+| type_text | `mobile-e2e-mcp_type_text({sessionId,text})` | ✅ | ✅ | 输入文本保持显式；运行上下文由 session 继承（Wave 2） |
+| type_into_element | `mobile-e2e-mcp_type_into_element({sessionId,selector,value})` | ✅ | ✅ | 查询条件与输入值保持显式；运行上下文由 session 继承（Wave 1B） |
+| terminate_app | `mobile-e2e-mcp_terminate_app({sessionId})` | ✅ | ✅ | 传 `sessionId` 时可从活动会话继承 platform/deviceId/appId/runnerProfile；iOS 仍需正确 appId（来自会话） |
+| wait_for_ui | `mobile-e2e-mcp_wait_for_ui({sessionId,selector,timeoutMs})` | ✅ | ✅ | 查询条件保持显式；运行上下文由 session 继承（Wave 1A） |
 | start_session | `mobile-e2e-mcp_start_session({platform,deviceId,appId?})` | ✅ | ✅ | 显式 platform/deviceId 时稳定 |
-| run_flow | `mobile-e2e-mcp_run_flow({sessionId,flowPath/...})` | ✅ | ✅ | 在正确 profile/policy 下复测通过；read-only 策略拒绝为预期行为 |
+| run_flow | `mobile-e2e-mcp_run_flow({sessionId,flowPath?,runCount?})` | ✅ | ✅ | 运行上下文由 session 继承（Wave 4） |
 | suggest_known_remediation | `mobile-e2e-mcp_suggest_known_remediation({sessionId})` | ✅ | ✅ | 常见返回 `found:false`（库未命中） |
 | end_session | `mobile-e2e-mcp_end_session({sessionId})` | ✅ | ✅ | 双平台结束会话稳定 |
 
