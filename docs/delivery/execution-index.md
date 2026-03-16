@@ -38,6 +38,8 @@
 - CI baseline: .github/workflows/phase3-real-run.yml, reports/phase-sample-report.json, reports/acceptance-evidence.json
 - Real-app pilot runbook: docs/delivery/real-app-pilot-checklist-and-acceptance.zh-CN.md
 - OpenCode CLI MCP validation plan: docs/delivery/cli-mcp-tool-validation-plan.zh-CN.md
+- OpenCode CLI MCP validation execution (2026-03-16): docs/delivery/cli-mcp-validation-execution-2026-03-16.zh-CN.md
+- OpenCode CLI MCP full tool checklist (2026-03-16): docs/delivery/cli-mcp-tool-checklist-2026-03-16.zh-CN.md
 - Pilot execution snapshot (2026-03-15): docs/delivery/pilot-execution-2026-03-15.zh-CN.md
 - Flakiness baseline: artifacts/phase1-ios/ and artifacts/phase1-android/
 - Security checklist report: TBD

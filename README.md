@@ -187,6 +187,7 @@ If you want to get productive quickly, read in this sequence:
 - [docs/delivery/roadmap.md](docs/delivery/roadmap.md) — delivery phases
 - [docs/delivery/real-app-pilot-checklist-and-acceptance.zh-CN.md](docs/delivery/real-app-pilot-checklist-and-acceptance.zh-CN.md) — real-app pilot checklist + go/no-go acceptance flow
 - [docs/delivery/cli-mcp-tool-validation-plan.zh-CN.md](docs/delivery/cli-mcp-tool-validation-plan.zh-CN.md) — OpenCode CLI MCP availability/stability validation plan
+- [docs/delivery/cli-mcp-tool-checklist-2026-03-16.zh-CN.md](docs/delivery/cli-mcp-tool-checklist-2026-03-16.zh-CN.md) — full MCP tool checklist with invocation examples and Android/iOS status
 - [docs/product/README.zh-CN.md](docs/product/README.zh-CN.md) — product/deployment scope
 - [tests/README.md](tests/README.md) — test layers and CI scope
 
