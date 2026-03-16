@@ -352,6 +352,7 @@ test("runDoctor includes an explicit iOS performance recommendation check", asyn
   try {
     const result = await runDoctor({ includeUnavailable: true });
     assert.equal(result.data.checks.some((check) => check.name === "ios performance recommendation"), true);
+    assert.equal(Array.isArray(result.data.guidance), true);
   } finally {
     if (originalSimUdid !== undefined) {
       process.env.SIM_UDID = originalSimUdid;

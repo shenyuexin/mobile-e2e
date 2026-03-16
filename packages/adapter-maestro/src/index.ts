@@ -226,7 +226,7 @@ import {
 } from "./ui-tools.js";
 import { classifyInterruptionFromSignals } from "./interruption-classifier.js";
 import { detectInterruptionFromSummary } from "./interruption-detector.js";
-import { buildDoctorNextSuggestions } from "./doctor-guidance.js";
+import { buildDoctorGuidance } from "./doctor-guidance.js";
 import { buildInterruptionEvent, decideInterruptionResolution } from "./interruption-resolver.js";
 import { buildInterruptionTimelineEvent, buildResumeCheckpoint, hasStateDrift, pickEventSource, summarizeInterruptionDetail } from "./interruption-orchestrator.js";
 import {
@@ -7997,7 +7997,7 @@ export async function installAppWithMaestro(input: InstallAppInput): Promise<Too
 
 export async function runDoctor(
   input: DoctorInput = {},
-): Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] } }>> {
+): Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] }; guidance: Array<{ dependency: string; status: "pass" | "warn" | "fail"; platformScope: "android" | "ios" | "cross"; installCommands: string[]; verifyCommands: string[]; envHints: string[] }> }>> {
   const repoRoot = resolveRepoPath();
   const startTime = Date.now();
   const sessionId = `doctor-${Date.now()}`;
@@ -8057,7 +8057,7 @@ export async function runDoctor(
 
   const { status, reasonCode } = classifyDoctorOutcome(checks);
 
-  const nextSuggestions = buildDoctorNextSuggestions(checks);
+  const { guidance, nextSuggestions } = buildDoctorGuidance(checks);
 
   return {
     status,
@@ -8069,6 +8069,7 @@ export async function runDoctor(
     data: {
       checks,
       devices: deviceResult.data,
+      guidance,
     },
     nextSuggestions,
   };
