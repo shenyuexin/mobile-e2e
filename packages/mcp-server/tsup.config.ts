@@ -2,7 +2,7 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: ["src/index.ts", "src/bin-stdio.ts"],
-  format: ["esm"],
+  format: ["cjs"],
   target: "node20",
   platform: "node",
   bundle: true,
@@ -16,4 +16,7 @@ export default defineConfig({
     "@mobile-e2e-mcp/core",
     "@mobile-e2e-mcp/adapter-maestro",
   ],
+  outExtension: () => ({
+    js: ".cjs",
+  }),
 });

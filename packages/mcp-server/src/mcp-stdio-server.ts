@@ -9,7 +9,7 @@ async function main(): Promise<void> {
   const server = new Server(
     {
       name: "mobile-e2e-mcp",
-      version: "0.1.0",
+      version: "0.1.4",
     },
     {
       capabilities: {

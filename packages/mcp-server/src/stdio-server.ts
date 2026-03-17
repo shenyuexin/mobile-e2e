@@ -1,4 +1,5 @@
 import process from "node:process";
+import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { createServer } from "./index.js";
@@ -149,7 +150,9 @@ export async function main(): Promise<void> {
   }
 }
 
-const isEntrypoint = process.argv[1] ? fileURLToPath(import.meta.url) === process.argv[1] : false;
+const currentScriptPath = process.argv[1] ?? "";
+const isDirectStdioScript = ["stdio-server.js", "stdio-server.ts", "stdio-server.cjs"].includes(path.basename(currentScriptPath));
+const isEntrypoint = currentScriptPath ? fileURLToPath(import.meta.url) === currentScriptPath && isDirectStdioScript : false;
 
 if (isEntrypoint) {
   main().catch((error: unknown) => {
