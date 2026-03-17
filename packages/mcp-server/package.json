@@ -1,7 +1,7 @@
 {
   "name": "@shenyuexin/mobile-e2e-mcp",
   "private": false,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "AI-first Mobile E2E MCP server for Android/iOS/React Native/Flutter",
   "repository": {
     "type": "git",
