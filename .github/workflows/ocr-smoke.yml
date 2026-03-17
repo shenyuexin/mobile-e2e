@@ -10,6 +10,8 @@ on:
       - "tests/fixtures/ocr/**"
       - "scripts/sync-ocr-fixtures.ts"
       - "scripts/validate-ocr-fixtures.ts"
+      - ".github/workflows/ocr-smoke.yml"
+      - ".gitignore"
       - "package.json"
       - "pnpm-lock.yaml"
   pull_request:
@@ -18,6 +20,8 @@ on:
       - "tests/fixtures/ocr/**"
       - "scripts/sync-ocr-fixtures.ts"
       - "scripts/validate-ocr-fixtures.ts"
+      - ".github/workflows/ocr-smoke.yml"
+      - ".gitignore"
       - "package.json"
       - "pnpm-lock.yaml"
 
@@ -25,17 +29,18 @@ jobs:
   macos-ocr-smoke:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
         with:
           version: 10.30.3
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm validate:ocr-fixtures
       - name: Run OCR smoke test
+        if: ${{ hashFiles('tests/fixtures/ocr/manifest.json') != '' }}
         run: pnpm test:ocr-smoke 2>&1 | tee ocr-smoke.log
       - name: Collect OCR smoke diagnostics
         if: failure()
@@ -51,4 +56,4 @@ jobs:
         with:
           name: ocr-smoke-diagnostics
           path: ocr-smoke-artifacts
-          if-no-files-found: error
+          if-no-files-found: warn

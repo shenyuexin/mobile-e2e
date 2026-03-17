@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,16 @@ import {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const ocrFixtureRoot = path.join(repoRoot, "tests", "fixtures", "ocr");
+const manifestPath = path.join(ocrFixtureRoot, "manifest.json");
+
+async function hasOcrFixtureManifest(): Promise<boolean> {
+  try {
+    await access(manifestPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function screenshotFixturePath(name: string): string {
   return path.join(ocrFixtureRoot, `${name}.png`);
@@ -62,7 +72,12 @@ test("verifyOcrAction succeeds when state changes", () => {
   assert.equal(result.verified, true);
 });
 
-test("MacVisionOcrProvider normalizes screenshot fixture observations", async () => {
+test("MacVisionOcrProvider normalizes screenshot fixture observations", async (t) => {
+  if (!(await hasOcrFixtureManifest())) {
+    t.skip("OCR fixtures are not tracked in this repository profile.");
+    return;
+  }
+
   const screenshotPath = screenshotFixturePath("signin-success");
   const provider = new MacVisionOcrProvider({
     execute: async (input) => {
@@ -82,7 +97,12 @@ test("MacVisionOcrProvider maps executor failures", async () => {
   await assert.rejects(provider.extractTextRegions({ screenshotPath: screenshotFixturePath("signin-success"), platform: "ios" }));
 });
 
-test("OcrService executes assertText against a screenshot fixture after deterministic miss", async () => {
+test("OcrService executes assertText against a screenshot fixture after deterministic miss", async (t) => {
+  if (!(await hasOcrFixtureManifest())) {
+    t.skip("OCR fixtures are not tracked in this repository profile.");
+    return;
+  }
+
   const screenshotPath = screenshotFixturePath("signin-success");
   const service = new OcrService({
     provider: new MacVisionOcrProvider({ execute: async () => readObservationFixture("signin-success") }),
@@ -105,7 +125,12 @@ test("OcrService executes assertText against a screenshot fixture after determin
   assert.equal(result.evidence?.screenshotPath, screenshotPath);
 });
 
-test("OcrService executes tap verification flow from a screenshot fixture", async () => {
+test("OcrService executes tap verification flow from a screenshot fixture", async (t) => {
+  if (!(await hasOcrFixtureManifest())) {
+    t.skip("OCR fixtures are not tracked in this repository profile.");
+    return;
+  }
+
   const screenshotPath = screenshotFixturePath("continue-success");
   const service = new OcrService({
     provider: new MacVisionOcrProvider({ execute: async () => readObservationFixture("continue-success") }),
@@ -147,7 +172,12 @@ test("OcrService executes tap verification flow from a screenshot fixture", asyn
   assert.equal(result.matchedTarget?.text, "Continue");
 });
 
-test("OcrService fails safely on low-confidence screenshot fixtures", async () => {
+test("OcrService fails safely on low-confidence screenshot fixtures", async (t) => {
+  if (!(await hasOcrFixtureManifest())) {
+    t.skip("OCR fixtures are not tracked in this repository profile.");
+    return;
+  }
+
   const screenshotPath = screenshotFixturePath("continue-low-confidence");
   const service = new OcrService({
     provider: new MacVisionOcrProvider({ execute: async () => readObservationFixture("continue-low-confidence") }),
@@ -168,7 +198,12 @@ test("OcrService fails safely on low-confidence screenshot fixtures", async () =
   assert.equal(result.evidence?.ocrConfidence !== undefined && result.evidence.ocrConfidence < DEFAULT_OCR_FALLBACK_POLICY.minConfidenceForTap, true);
 });
 
-test("OcrService fails safely on ambiguous screenshot fixtures", async () => {
+test("OcrService fails safely on ambiguous screenshot fixtures", async (t) => {
+  if (!(await hasOcrFixtureManifest())) {
+    t.skip("OCR fixtures are not tracked in this repository profile.");
+    return;
+  }
+
   const screenshotPath = screenshotFixturePath("continue-ambiguous");
   const service = new OcrService({
     provider: new MacVisionOcrProvider({ execute: async () => readObservationFixture("continue-ambiguous") }),

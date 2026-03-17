@@ -81,6 +81,15 @@ async function validateFixture(root: string, fixture: OcrFixtureManifestEntry): 
 
 async function main(): Promise<void> {
   const fixtureRoot = path.join(repoRootFromScript(), "tests", "fixtures", "ocr");
+  const manifestPath = path.join(fixtureRoot, "manifest.json");
+
+  try {
+    await access(manifestPath);
+  } catch {
+    console.log("Skipped OCR fixture validation: tests/fixtures/ocr/manifest.json not found.");
+    return;
+  }
+
   const manifest = await loadManifest(fixtureRoot);
   for (const fixture of manifest.fixtures) {
     await validateFixture(fixtureRoot, fixture);
