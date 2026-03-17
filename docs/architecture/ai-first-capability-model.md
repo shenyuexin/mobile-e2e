@@ -464,4 +464,4 @@ If these are not true, the project may still be useful, but it is not yet optimi
 
 ## 12. Implementation Companion
 
-For a phase-by-phase implementation breakdown, package touch points, suggested contracts, sprint backlog, and acceptance criteria, see [`docs/delivery/ai-first-implementation-plan.md`](../delivery/ai-first-implementation-plan.md).
+For implementation direction and phase sequencing, see the public roadmap at [`docs/delivery/roadmap.md`](../delivery/roadmap.md).

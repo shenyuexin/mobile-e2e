@@ -212,6 +212,7 @@ the repository settings:
 ## Selected Docs
 
 - [README.zh-CN.md](README.zh-CN.md) — Chinese overview
+- [docs/README.md](docs/README.md) — public documentation index and publication policy
 - [docs/architecture/overview.md](docs/architecture/overview.md) — goals/scope/principles
 - [docs/architecture/architecture.md](docs/architecture/architecture.md) — reference architecture
 - [docs/architecture/capability-map.md](docs/architecture/capability-map.md) — capability taxonomy/maturity
@@ -221,12 +222,7 @@ the repository settings:
 - [docs/architecture/policy-engine-runtime-architecture.zh-CN.md](docs/architecture/policy-engine-runtime-architecture.zh-CN.md) — policy runtime/guard/scope mapping
 - [docs/architecture/platform-implementation-matrix.zh-CN.md](docs/architecture/platform-implementation-matrix.zh-CN.md) — cross-platform support matrix
 - [docs/delivery/roadmap.md](docs/delivery/roadmap.md) — delivery phases
-- [docs/delivery/real-app-pilot-checklist-and-acceptance.zh-CN.md](docs/delivery/real-app-pilot-checklist-and-acceptance.zh-CN.md) — real-app pilot checklist + go/no-go acceptance flow
-- [docs/delivery/cli-mcp-tool-validation-plan.zh-CN.md](docs/delivery/cli-mcp-tool-validation-plan.zh-CN.md) — OpenCode CLI MCP availability/stability validation plan
-- [docs/delivery/cli-mcp-tool-checklist-2026-03-16.zh-CN.md](docs/delivery/cli-mcp-tool-checklist-2026-03-16.zh-CN.md) — full MCP tool checklist with invocation examples and Android/iOS status
-- [docs/delivery/mcp-ux-improvement-implementation-plan.zh-CN.md](docs/delivery/mcp-ux-improvement-implementation-plan.zh-CN.md) — implementation plan for doctor guidance, session context alias, and preset command layer
 - [docs/delivery/npm-release-and-git-tagging.zh-CN.md](docs/delivery/npm-release-and-git-tagging.zh-CN.md) — npm 发版与 Git tag 一体化规范（@shenyuexin/mobile-e2e-mcp）
-- [docs/product/README.zh-CN.md](docs/product/README.zh-CN.md) — product/deployment scope
 - [tests/README.md](tests/README.md) — test layers and CI scope
 
 ## Roadmap Snapshot (Short)
@@ -235,7 +231,7 @@ the repository settings:
 - Mid term: broaden framework/profile maturity and real-run coverage.
 - Long term: stronger agentic remediation/governance and enterprise controls.
 
-Detailed workstream planning remains in `docs/delivery/*` and `docs/phases/*`.
+Detailed public planning references are maintained in `docs/delivery/roadmap.md` and `docs/architecture/*`.
 
 ## Positioning
 

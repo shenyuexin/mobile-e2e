@@ -265,7 +265,7 @@ unknown 中断必须保留完整证据包：
 - `docs/architecture/architecture.md`
 - `docs/architecture/capability-map.md`
 - `docs/architecture/governance-security.md`
-- `docs/phases/discovery-driven-execution.zh-CN.md`
+- `docs/delivery/roadmap.md`
 - `configs/policies/interruption/android.yaml`
 - `configs/policies/interruption/ios.yaml`
 - `flows/shared/handle-interruptions-android.yaml`

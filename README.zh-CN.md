@@ -170,12 +170,12 @@ pnpm test:ci
 ## 精选文档入口
 
 - [README.md](README.md) — English overview
+- [docs/README.md](docs/README.md) — 对外文档总索引与公开边界
 - [docs/architecture/overview.md](docs/architecture/overview.md) — 目标/范围/原则
 - [docs/architecture/architecture.md](docs/architecture/architecture.md) — 参考架构
 - [docs/architecture/capability-map.md](docs/architecture/capability-map.md) — 能力域与成熟度
 - [docs/architecture/governance-security.md](docs/architecture/governance-security.md) — 治理与安全
 - [docs/delivery/roadmap.md](docs/delivery/roadmap.md) — 分阶段交付路线
-- [docs/product/README.zh-CN.md](docs/product/README.zh-CN.md) — 产品/部署边界
 - [tests/README.md](tests/README.md) — 测试层与 CI 范围
 
 ## 路线图快照（简版）
@@ -184,7 +184,7 @@ pnpm test:ci
 - 中期：扩展 framework/profile 成熟度与真实运行覆盖。
 - 远期：强化 agentic 恢复治理与企业级控制能力。
 
-详细任务分解仍在 `docs/delivery/*` 与 `docs/phases/*`。
+公开的路线与范围以 `docs/delivery/roadmap.md` 与 `docs/architecture/*` 为准。
 
 ## 项目定位
 

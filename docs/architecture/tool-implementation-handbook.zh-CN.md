@@ -76,7 +76,7 @@ m2e_start_session({
 深入设计文档：
 
 - `docs/architecture/session-orchestration-architecture.zh-CN.md`
-- `docs/product/07-concurrency-scheduler-implementation-plan-and-checklists.zh-CN.md`
+- `docs/architecture/platform-implementation-matrix.zh-CN.md`
 
 ### 2.2 OCR 默认方案与外部接入（用户版说明）
 
@@ -227,6 +227,7 @@ m2e_start_session({
 
 ## 6. 更完整示例索引
 
-如果你需要“每个工具都带真实双平台复测记录”的版本，查看：
+如果你需要工具签名与契约的完整视图，请以以下来源为准：
 
-- `docs/delivery/cli-mcp-tool-checklist-2026-03-16.zh-CN.md`
+- `packages/mcp-server/src/server.ts`
+- `packages/contracts/src/index.ts`
