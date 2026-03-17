@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +16,27 @@ const thisDir = fileURLToPath(new URL('.', import.meta.url));
 const repoRoot = resolve(thisDir, '..', '..');
 const pkgName = '@shenyuexin/mobile-e2e-mcp';
 const pkgJsonPath = resolve(repoRoot, 'packages/mcp-server/package.json');
+
+function bumpSemver(version: string, level: ReleaseLevel): string {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) {
+    throw new Error(`Unsupported version format: ${version}. Expected x.y.z`);
+  }
+
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+
+  if (level === 'major') {
+    return `${major + 1}.0.0`;
+  }
+
+  if (level === 'minor') {
+    return `${major}.${minor + 1}.0`;
+  }
+
+  return `${major}.${minor}.${patch + 1}`;
+}
 
 function run(command: string): string {
   return execSync(command, {
@@ -38,10 +59,12 @@ if (status.length > 0) {
   throw new Error('Working tree is not clean. Commit or stash changes before release.');
 }
 
-runWithOutput(`pnpm --filter ${pkgName} exec npm version ${levelArg} --no-git-tag-version`);
+const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as Record<string, unknown>;
+const currentVersion = String(pkgJson.version ?? '');
+const version = bumpSemver(currentVersion, levelArg);
+pkgJson.version = version;
+writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`, 'utf8');
 
-const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as { version: string };
-const version = pkgJson.version;
 const tagName = `mcp-server-v${version}`;
 
 runWithOutput('pnpm build');
