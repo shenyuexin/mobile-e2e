@@ -1,0 +1,14 @@
+# Default owners for all repository paths.
+# Replace @shenyuexin with the canonical maintainer account/team if needed.
+* @shenyuexin
+
+# Core packages
+/packages/core/ @shenyuexin
+/packages/mcp-server/ @shenyuexin
+/packages/adapter-maestro/ @shenyuexin
+/packages/adapter-vision/ @shenyuexin
+
+# Governance and docs
+/configs/ @shenyuexin
+/docs/ @shenyuexin
+/flows/ @shenyuexin
