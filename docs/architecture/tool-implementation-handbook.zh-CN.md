@@ -57,6 +57,56 @@ m2e_start_session({
 - 当前仅有 1 个活动会话：工具会自动绑定该会话；
 - 同时有多个活动会话：会返回歧义错误，提示你显式传 `sessionId`（或补充 platform/deviceId 缩小范围）。
 
+### 2.1 并发 Session / 多设备能力（用户版说明）
+
+当前项目的并发能力是：
+
+- **同设备互斥**：同一个 `platform + deviceId` 同时只允许一个写会话持有租约；
+- **多设备并发**：不同 `deviceId` 的会话可并行执行；
+- **会话队列与可观测**：会有 queue wait / lease 相关事件和证据；
+- **stale lease 回收**：异常中断后会尝试恢复租约状态。
+
+你可以把它理解为“**单设备强一致、多设备可并行**”的运行模型。
+
+> 说明：
+>
+> - “双设备 sync 编排”目前是**预留能力**（内部预留了 `coordinationKey` / `barrierId` 等字段），还不是对外稳定工具合同。
+> - 也就是说：现在可以稳定地做“多设备并发会话”，但“跨设备编排器（barrier/sync workflow）”仍属于后续演进。
+
+深入设计文档：
+
+- `docs/architecture/session-orchestration-architecture.zh-CN.md`
+- `docs/product/07-concurrency-scheduler-implementation-plan-and-checklists.zh-CN.md`
+
+### 2.2 OCR 默认方案与外部接入（用户版说明）
+
+当前 OCR 路径是**deterministic-first**：
+
+1. 先走确定性定位（UI 树 / selector）
+2. 再走语义解析
+3. 最后才进入有界 OCR fallback
+
+默认 OCR 提供方：
+
+- **`MacVisionOcrProvider`（macOS 本地）**
+- 不依赖外部 API Key，开箱即用（macOS 环境）
+
+当前外部 OCR 接入状态：
+
+- 已有统一接口：`OcrProvider`（`packages/adapter-vision/src/ocr/types.ts`）
+- 已有服务注入点：`OcrService` 可注入 `provider`（`packages/adapter-vision/src/ocr/service/ocr-service.ts`）
+- 但**尚未提供稳定的“配置化外部 provider 接入”用户入口**（例如通过 YAML/CLI 一键切换远程 MCP/HTTP OCR）
+
+这意味着：
+
+- 现在用户默认用的是内置 `MacVision`；
+- 若你要接外部 OCR，需要按 `OcrProvider` 接口做代码级扩展并在运行链路注入。
+
+深入设计文档：
+
+- `docs/architecture/mobile-e2e-ocr-fallback-design.md`
+- `docs/architecture/mobile-e2e-ocr-fallback-implementation-checklist.md`
+
 ---
 
 ## 3. 全量工具（46）逐项说明 + 命令示例
