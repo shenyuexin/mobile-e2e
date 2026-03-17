@@ -1,0 +1,59 @@
+name: Release MCP Package
+
+on:
+  push:
+    tags:
+      - 'mcp-server-v*'
+
+jobs:
+  publish-mcp-package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify tag matches package version
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          PKG_VERSION="$(node -p "require('./packages/mcp-server/package.json').version")"
+          EXPECTED_TAG="mcp-server-v${PKG_VERSION}"
+          if [ "$TAG_NAME" != "$EXPECTED_TAG" ]; then
+            echo "Tag '$TAG_NAME' does not match package version '$PKG_VERSION' (expected '$EXPECTED_TAG')."
+            exit 1
+          fi
+
+      - name: Build and package
+        run: pnpm --filter @shenyuexin/mobile-e2e-mcp run bundle
+
+      - name: Publish package to npm
+        run: pnpm --filter @shenyuexin/mobile-e2e-mcp run release:publish:ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "@shenyuexin/mobile-e2e-mcp ${GITHUB_REF_NAME#mcp-server-v}" \
+            --notes "Automated release for ${GITHUB_REF_NAME}."
