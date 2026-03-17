@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844" viewBox="0 0 390 844">
-  <rect width="390" height="844" fill="#f3fbf7"/>
-  <rect x="22" y="96" width="346" height="632" rx="30" fill="#ffffff" stroke="#d8efe0"/>
-  <text x="48" y="178" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#234a39">Pick an option</text>
-  <rect x="48" y="338" width="294" height="76" rx="24" fill="#14b86a"/>
-  <text x="195" y="386" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#ffffff">Continue</text>
-  <rect x="48" y="466" width="294" height="76" rx="24" fill="#0f9f5c"/>
-  <text x="195" y="514" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#ffffff">Continue</text>
-</svg>
