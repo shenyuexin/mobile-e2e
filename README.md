@@ -225,6 +225,7 @@ the repository settings:
 - [docs/delivery/cli-mcp-tool-validation-plan.zh-CN.md](docs/delivery/cli-mcp-tool-validation-plan.zh-CN.md) — OpenCode CLI MCP availability/stability validation plan
 - [docs/delivery/cli-mcp-tool-checklist-2026-03-16.zh-CN.md](docs/delivery/cli-mcp-tool-checklist-2026-03-16.zh-CN.md) — full MCP tool checklist with invocation examples and Android/iOS status
 - [docs/delivery/mcp-ux-improvement-implementation-plan.zh-CN.md](docs/delivery/mcp-ux-improvement-implementation-plan.zh-CN.md) — implementation plan for doctor guidance, session context alias, and preset command layer
+- [docs/delivery/npm-release-and-git-tagging.zh-CN.md](docs/delivery/npm-release-and-git-tagging.zh-CN.md) — npm 发版与 Git tag 一体化规范（@shenyuexin/mobile-e2e-mcp）
 - [docs/product/README.zh-CN.md](docs/product/README.zh-CN.md) — product/deployment scope
 - [tests/README.md](tests/README.md) — test layers and CI scope
 
