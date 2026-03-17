@@ -10,6 +10,9 @@ interface ValidationCase {
   validate: (result: unknown) => void;
 }
 
+const runSeed = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+let runCounter = 0;
+
 function repoRootFromScript(): string {
   const scriptPath = fileURLToPath(import.meta.url);
   return path.resolve(path.dirname(scriptPath), "..");
@@ -25,15 +28,45 @@ function extractJsonPayload(raw: string): string | undefined {
   return trimmed.slice(firstBrace, lastBrace + 1);
 }
 
+function hasFlag(args: string[], flag: string): boolean {
+  return args.includes(flag);
+}
+
+function readFlagValue(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  if (index < 0) {
+    return undefined;
+  }
+  return args[index + 1];
+}
+
+function withIsolatedRuntimeArgs(cliArgs: string[]): string[] {
+  const args = [...cliArgs];
+  const caseId = `${runSeed}-${++runCounter}`;
+  const platform = readFlagValue(args, "--platform");
+  const isDryRun = hasFlag(args, "--dry-run");
+
+  if (!hasFlag(args, "--session-id") && isDryRun) {
+    args.push("--session-id", `validate-dry-run-${caseId}`);
+  }
+
+  if (platform === "android" && !hasFlag(args, "--device-id") && isDryRun) {
+    args.push("--device-id", `validate-dry-run-device-${caseId}`);
+  }
+
+  return args;
+}
+
 async function runCli(cliArgs: string[], allowFailureExit = false): Promise<unknown> {
   const repoRoot = repoRootFromScript();
+  const isolatedCliArgs = withIsolatedRuntimeArgs(cliArgs);
   const commandArgs = [
     "--filter",
     "@shenyuexin/mobile-e2e-mcp",
     "exec",
     "tsx",
     "src/dev-cli.ts",
-    ...cliArgs,
+    ...isolatedCliArgs,
   ];
 
   const output = await new Promise<string>((resolve, reject) => {
