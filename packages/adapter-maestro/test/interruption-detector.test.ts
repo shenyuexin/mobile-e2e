@@ -65,3 +65,36 @@ test("detectInterruptionFromSummary infers iOS springboard owner for system aler
   assert.equal(result.classification.type, "system_alert");
   assert.equal(result.signals.some((signal) => signal.key === "owner_bundle" && signal.value === "com.apple.springboard"), true);
 });
+
+test("detectInterruptionFromSummary does not flag normal app owner package as interruption", () => {
+  const result = detectInterruptionFromSummary({
+    platform: "android",
+    stateSummary: {
+      appPhase: "authentication",
+      readiness: "ready",
+      blockingSignals: [],
+      topVisibleTexts: ["Login", "Password", "Sign in"],
+    },
+    uiSummary: {
+      totalNodes: 3,
+      clickableNodes: 1,
+      scrollableNodes: 0,
+      nodesWithText: 3,
+      nodesWithContentDesc: 0,
+      sampleNodes: [
+        {
+          text: "Sign in",
+          className: "android.widget.Button",
+          packageName: "com.epam.mobitru",
+          clickable: true,
+          enabled: true,
+          scrollable: false,
+        },
+      ],
+    },
+  });
+
+  assert.equal(result.detected, false);
+  assert.equal(result.classification.type, "unknown");
+  assert.equal(result.signals.some((signal) => signal.key === "owner_package"), false);
+});
