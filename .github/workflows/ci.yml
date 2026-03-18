@@ -22,6 +22,37 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test:unit
+      - name: Prepare CI metadata artifact (unit-and-typecheck)
+        if: always()
+        run: |
+          mkdir -p ci-metadata
+          cat > ci-metadata/unit-and-typecheck.txt <<'EOF'
+          job: unit-and-typecheck
+          workflow: CI
+          run_id: ${{ github.run_id }}
+          run_attempt: ${{ github.run_attempt }}
+          ref: ${{ github.ref }}
+          sha: ${{ github.sha }}
+          status: ${{ job.status }}
+          EOF
+      - name: Upload CI metadata artifact (unit-and-typecheck)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-unit-typecheck-metadata
+          path: ci-metadata/unit-and-typecheck.txt
+          if-no-files-found: error
+      - name: Append job summary (unit-and-typecheck)
+        if: always()
+        run: |
+          {
+            echo "## CI Job Summary: unit-and-typecheck"
+            echo "- Status: **${{ job.status }}**"
+            echo "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`ci-unit-typecheck-metadata\`"
+            echo "- Evidence guide: docs/showcase/ci-evidence.md"
+            echo "- Boundary: Ubuntu CI validates build/typecheck/unit-scope signals and is not real-device proof."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   dry-run-smoke:
     runs-on: ubuntu-latest
@@ -37,3 +68,34 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:smoke
+      - name: Prepare CI metadata artifact (dry-run-smoke)
+        if: always()
+        run: |
+          mkdir -p ci-metadata
+          cat > ci-metadata/dry-run-smoke.txt <<'EOF'
+          job: dry-run-smoke
+          workflow: CI
+          run_id: ${{ github.run_id }}
+          run_attempt: ${{ github.run_attempt }}
+          ref: ${{ github.ref }}
+          sha: ${{ github.sha }}
+          status: ${{ job.status }}
+          EOF
+      - name: Upload CI metadata artifact (dry-run-smoke)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-dry-run-smoke-metadata
+          path: ci-metadata/dry-run-smoke.txt
+          if-no-files-found: error
+      - name: Append job summary (dry-run-smoke)
+        if: always()
+        run: |
+          {
+            echo "## CI Job Summary: dry-run-smoke"
+            echo "- Status: **${{ job.status }}**"
+            echo "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`ci-dry-run-smoke-metadata\`"
+            echo "- Evidence guide: docs/showcase/ci-evidence.md"
+            echo "- Boundary: Ubuntu CI does not validate physical-device behavior; use showcase real-device evidence for that." 
+          } >> "$GITHUB_STEP_SUMMARY"
