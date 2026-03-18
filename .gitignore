@@ -20,6 +20,10 @@ output/
 .gradle-flutter-isolated/
 examples/build/
 
+# Curated demo assets are intentionally versioned under docs/showcase/
+!docs/showcase/videos/
+!docs/showcase/videos/*.mp4
+
 # Locally cloned third-party example apps
 examples/demo-android-app/
 examples/demo-ios-app/
