@@ -22,6 +22,9 @@
 - 演示说明与证据索引：
   - [docs/showcase/README.md](docs/showcase/README.md)
   - [docs/showcase/demo-playbook.zh-CN.md](docs/showcase/demo-playbook.zh-CN.md)
+- CI 证据与边界说明：
+  - [docs/showcase/ci-evidence.md](docs/showcase/ci-evidence.md)
+  - [最新 CI 运行记录](https://github.com/shenyuexin/mobile-e2e-mcp/actions/workflows/ci.yml)
 
 ### GIF 快速预览
 

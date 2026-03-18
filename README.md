@@ -22,6 +22,12 @@ If you want to verify this project is runnable before reading architecture detai
 - Demo playbook and evidence index:
   - [docs/showcase/README.md](docs/showcase/README.md)
   - [docs/showcase/demo-playbook.zh-CN.md](docs/showcase/demo-playbook.zh-CN.md)
+  - [docs/showcase/failure-intelligence-demo.md](docs/showcase/failure-intelligence-demo.md)
+- Golden path guide:
+  - [docs/guides/golden-path.md](docs/guides/golden-path.md)
+- CI evidence and boundary notes:
+  - [docs/showcase/ci-evidence.md](docs/showcase/ci-evidence.md)
+  - [Latest CI workflow runs](https://github.com/shenyuexin/mobile-e2e-mcp/actions/workflows/ci.yml)
 
 ### Quick GIF Preview
 

@@ -2,6 +2,10 @@
 
 This folder contains reproducible, real-device demo evidence used by README.
 
+## Failure-intelligence demo
+
+- `docs/showcase/failure-intelligence-demo.md`
+
 ## Primary demo videos
 
 - Happy path (Android real device):
