@@ -28,6 +28,10 @@ import { compareAgainstBaseline } from "./tools/compare-against-baseline.js";
 import { describeCapabilities } from "./tools/describe-capabilities.js";
 import { detectInterruption } from "./tools/detect-interruption.js";
 import { doctor } from "./tools/doctor.js";
+import { executeIntent } from "./tools/execute-intent.js";
+import { completeTask } from "./tools/complete-task.js";
+import { exportSessionFlow } from "./tools/export-session-flow.js";
+import { recordTaskFlow } from "./tools/record-task-flow.js";
 import { endSession } from "./tools/end-session.js";
 import { explainLastFailure } from "./tools/explain-last-failure.js";
 import { findSimilarFailures } from "./tools/find-similar-failures.js";
@@ -402,6 +406,18 @@ export function createServer(): MobileE2EMcpServer {
 		describeCapabilities,
 	);
 	const doctorHandler = withPolicy("doctor", doctor);
+	const executeIntentHandler = withSessionExecution(
+		"execute_intent",
+		withPolicy("execute_intent", executeIntent),
+		{ requireResolvedSessionContext: true },
+	);
+	const completeTaskHandler = withSessionExecution(
+		"complete_task",
+		withPolicy("complete_task", completeTask),
+		{ requireResolvedSessionContext: true },
+	);
+	const exportSessionFlowHandler = withPolicy("export_session_flow", exportSessionFlow);
+	const recordTaskFlowHandler = withPolicy("record_task_flow", recordTaskFlow);
 	const detectInterruptionHandler = withSessionExecution(
 		"detect_interruption",
 		withPolicy("detect_interruption", (input: DetectInterruptionInput) =>
@@ -603,6 +619,10 @@ export function createServer(): MobileE2EMcpServer {
 		collect_diagnostics: collectDiagnosticsHandler,
 		describe_capabilities: describeCapabilitiesHandler,
 		doctor: doctorHandler,
+		execute_intent: executeIntentHandler,
+		complete_task: completeTaskHandler,
+		export_session_flow: exportSessionFlowHandler,
+		record_task_flow: recordTaskFlowHandler,
 		detect_interruption: detectInterruptionHandler,
 		classify_interruption: classifyInterruptionHandler,
 		explain_last_failure: explainLastFailureHandler,
