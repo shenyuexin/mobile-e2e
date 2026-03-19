@@ -92,3 +92,8 @@ tests/fixtures/ocr/
 # Optional non-runtime config artifacts
 configs/harness/
 configs/matrices/
+
+# Generated flow outputs (keep curated baseline only)
+flows/samples/generated/*.yaml
+!flows/samples/generated/.gitkeep
+!flows/samples/generated/example-login-smoke.yaml

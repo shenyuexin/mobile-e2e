@@ -7,9 +7,9 @@
 
 本仓库是一个 pnpm monorepo，组合了 MCP 工具层、执行适配层与架构文档，用于构建可扩展的移动端 E2E 平台。
 
-## 30 秒可信度证明
+## 能力展示
 
-如果你想先确认“它真的能跑”，再看架构细节，先看这部分：
+如果你想先快速了解能力，再深入看架构细节，先看这部分：
 
 - Happy Path 录屏（登录 -> 滚动 -> 加购 -> Orders -> Cart）：
   - `docs/showcase/videos/m2e-happy-path-scroll-pause-40s.mp4`

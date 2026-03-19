@@ -7,9 +7,9 @@
 
 This repository is a pnpm monorepo that combines MCP tooling, adapter execution, and architecture docs for a scalable mobile E2E platform.
 
-## 30-Second Proof 
+## Capability Showcase
 
-If you want to verify this project is runnable before reading architecture details, start here:
+If you want a quick hands-on tour before diving into architecture details, start here:
 
 - Happy path video (login -> scroll -> add to cart -> orders -> cart):
   - `docs/showcase/videos/m2e-happy-path-scroll-pause-40s.mp4`

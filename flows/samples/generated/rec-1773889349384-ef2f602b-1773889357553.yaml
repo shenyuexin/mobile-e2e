@@ -1,5 +1,0 @@
-appId: "com.epam.mobitru"
----
-- launchApp:
-    appId: "com.epam.mobitru"
-    clearState: false
