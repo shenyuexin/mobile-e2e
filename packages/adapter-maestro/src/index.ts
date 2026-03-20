@@ -4097,6 +4097,73 @@ export async function runFlowWithMaestro(input: RunFlowInput): Promise<ToolResul
     }
   }
 
+  if (input.platform === "android") {
+    const usersExecution = await executeRunner(["adb", "-s", env.DEVICE_ID ?? DEFAULT_ANDROID_DEVICE_ID, "shell", "pm", "list", "users"], repoRoot, process.env);
+    const usersOutput = usersExecution.stdout.replaceAll(String.fromCharCode(13), "");
+    const hasRunningSecondaryUser = /UserInfo\{[1-9]\d*:.*\}\s+running/.test(usersOutput);
+    const hasXSpaceUser = /xspace/i.test(usersOutput);
+    const forceUserZero = env.M2E_FORCE_ANDROID_USER_0 !== "0";
+    const needsUserScopedReplay = usersExecution.exitCode === 0 && (hasRunningSecondaryUser || hasXSpaceUser);
+    const manufacturerExecution = await executeRunner(["adb", "-s", env.DEVICE_ID ?? DEFAULT_ANDROID_DEVICE_ID, "shell", "getprop", "ro.product.manufacturer"], repoRoot, process.env);
+    const manufacturer = manufacturerExecution.stdout.trim().toLowerCase();
+    const flowContent = await readFile(path.resolve(repoRoot, effectiveFlowPath), "utf8").catch(() => "");
+    const hasTextCommands = /(^|\n)- (inputText|pasteText|setClipboard):?|(^|\n)- inputText:|(^|\n)- pasteText|(^|\n)- setClipboard:/m.test(flowContent);
+    const allowsOemTextFallback = (manufacturer === "vivo" || manufacturer === "oppo") && needsUserScopedReplay && hasTextCommands;
+    if (needsUserScopedReplay && forceUserZero) {
+      env.ANDROID_USER_ID = env.ANDROID_USER_ID ?? "0";
+    }
+    if (allowsOemTextFallback) {
+      env.ANDROID_OEM_TEXT_FALLBACK = env.ANDROID_OEM_TEXT_FALLBACK ?? "1";
+    }
+
+    const helperPackageArgs = env.ANDROID_USER_ID
+      ? ["adb", "-s", env.DEVICE_ID ?? DEFAULT_ANDROID_DEVICE_ID, "shell", "cmd", "package", "list", "packages", "--user", env.ANDROID_USER_ID]
+      : ["adb", "-s", env.DEVICE_ID ?? DEFAULT_ANDROID_DEVICE_ID, "shell", "pm", "list", "packages"];
+    const packagesExecution = await executeRunner(helperPackageArgs, repoRoot, process.env);
+    const packagesOutput = packagesExecution.stdout.replaceAll(String.fromCharCode(13), "");
+    const hasDriverApp = /(^|\n)package:dev\.mobile\.maestro(\n|$)/.test(packagesOutput);
+    const hasDriverServer = /(^|\n)package:dev\.mobile\.maestro\.test(\n|$)/.test(packagesOutput);
+    if (packagesExecution.exitCode === 0 && (!hasDriverApp || !hasDriverServer) && !allowsOemTextFallback) {
+      const preflightPath = path.join(artifactsDir.absolutePath, "android-preflight.log");
+      await writeFile(preflightPath, `${usersOutput}\n\n${packagesOutput}`, "utf8");
+      const missingHelpers = [
+        ...(hasDriverApp ? [] : ["dev.mobile.maestro"]),
+        ...(hasDriverServer ? [] : ["dev.mobile.maestro.test"]),
+      ];
+      return {
+        status: "failed",
+        reasonCode: REASON_CODES.deviceUnavailable,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [toRelativePath(repoRoot, preflightPath)],
+        data: {
+          dryRun: false,
+          harnessConfigPath,
+          runnerProfile,
+          runnerScript,
+          flowPath: effectiveFlowPath,
+          requestedFlowPath,
+          configuredFlows: selection.configuredFlows,
+          artifactsDir: artifactsDir.relativePath,
+          totalRuns: runCount,
+          passedRuns: 0,
+          failedRuns: runCount,
+          command,
+          exitCode: null,
+          summaryLine: `Blocked before replay: Maestro helper app missing (${missingHelpers.join(", ")})${env.ANDROID_USER_ID ? ` for user ${env.ANDROID_USER_ID}` : ""}.`,
+        },
+        nextSuggestions: [
+          `Install missing helper app(s) once on device (${missingHelpers.join(", ")})${env.ANDROID_USER_ID ? ` for user ${env.ANDROID_USER_ID}` : ""} and rerun run_flow.`,
+          ...(env.ANDROID_USER_ID
+            ? [`Try: adb -s ${env.DEVICE_ID ?? DEFAULT_ANDROID_DEVICE_ID} shell am switch-user ${env.ANDROID_USER_ID} before replay.`]
+            : []),
+          "This guard prevents repeated install authorization prompts during replay.",
+        ],
+      };
+    }
+  }
+
   const execution = await executeRunner(["bash", absoluteRunnerScript, String(runCount)], repoRoot, env);
 
   await writeFile(path.join(artifactsDir.absolutePath, "command.stdout.log"), execution.stdout, "utf8");
