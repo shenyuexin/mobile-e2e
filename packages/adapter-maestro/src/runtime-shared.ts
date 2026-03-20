@@ -45,6 +45,12 @@ export function toRelativePath(repoRoot: string, targetPath: string): string {
 
 export function buildFailureReason(stderr: string, exitCode: number | null): ReasonCode {
   const combined = stderr.toLowerCase();
+  if (combined.includes("deadline exceeded") || combined.includes("deadline_exceeded") || (combined.includes("grpc") && combined.includes("deadline"))) {
+    return REASON_CODES.timeout;
+  }
+  if (combined.includes("timed out") || combined.includes("timeout")) {
+    return REASON_CODES.timeout;
+  }
   if ((combined.includes("xcrun") || combined.includes("trace_processor")) && (combined.includes("enoent") || combined.includes("not found"))) {
     return REASON_CODES.configurationError;
   }

@@ -50,8 +50,15 @@ interface ParsedRawEvent {
   rawLine: string;
 }
 
+interface AdbDeviceEntry {
+  id: string;
+  state: string;
+}
+
 const SWIPE_DISTANCE_THRESHOLD_PX = 24;
 const SWIPE_DURATION_THRESHOLD_MS = 1200;
+const SWIPE_MIN_MOVE_SAMPLES = 2;
+const SWIPE_STRONG_DISTANCE_THRESHOLD_PX = 220;
 
 interface ExtendedRawRecordedEvent extends RawRecordedEvent {
   eventMonotonicMs?: number;
@@ -70,7 +77,13 @@ interface ExtendedRawRecordedEvent extends RawRecordedEvent {
   };
 }
 
-function mapAndroidKeyTokenToText(token: string): string | undefined {
+function mapAndroidKeyTokenToText(token: string, shiftPressed: boolean): string | undefined {
+  if (shiftPressed && token === "2") {
+    return "@";
+  }
+  if (shiftPressed && token === "MINUS") {
+    return "_";
+  }
   if (/^[A-Z]$/.test(token)) {
     return token.toLowerCase();
   }
@@ -91,6 +104,12 @@ function mapAndroidKeyTokenToText(token: string): string | undefined {
   }
   if (token === "UNDERSCORE") {
     return "_";
+  }
+  if (token === "TAB") {
+    return "\t";
+  }
+  if (token === "ENTER") {
+    return "\n";
   }
   return undefined;
 }
@@ -195,6 +214,36 @@ function spawnDetachedShell(command: string, repoRoot: string, env: NodeJS.Proce
   return Number.isFinite(child.pid) ? child.pid : undefined;
 }
 
+function parseAdbDeviceEntries(output: string): AdbDeviceEntry[] {
+  return output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("List of devices attached"))
+    .map((line) => line.split(/\s+/))
+    .filter((parts) => parts.length >= 2)
+    .map((parts) => ({ id: parts[0], state: parts[1] }));
+}
+
+function choosePreferredAndroidDeviceId(entries: AdbDeviceEntry[]): string | undefined {
+  const online = entries.filter((entry) => entry.state === "device");
+  const physical = online.find((entry) => !entry.id.startsWith("emulator-"));
+  return physical?.id ?? online[0]?.id;
+}
+
+async function resolveAndroidRecordingDeviceId(repoRoot: string, inputDeviceId?: string, dryRun?: boolean): Promise<string | undefined> {
+  if (inputDeviceId && inputDeviceId.length > 0) {
+    return inputDeviceId;
+  }
+  if (dryRun) {
+    return buildDefaultDeviceId("android");
+  }
+  const listed = await executeRunner(["adb", "devices"], repoRoot, process.env);
+  if (listed.exitCode !== 0) {
+    return undefined;
+  }
+  return choosePreferredAndroidDeviceId(parseAdbDeviceEntries(listed.stdout));
+}
+
 function parseRawInputEvents(rawContent: string): ParsedRawEvent[] {
   const lines = rawContent.split(/\r?\n/).filter((line) => line.trim().length > 0);
   let currentX: number | undefined;
@@ -203,77 +252,121 @@ function parseRawInputEvents(rawContent: string): ParsedRawEvent[] {
   let touchStartX: number | undefined;
   let touchStartY: number | undefined;
   let touchStartTime: number | undefined;
+  let touchMoveSamples = 0;
   let touchActive = false;
+  let shiftPressed = false;
+
+  const finalizeTouch = (eventMonotonicMs: number, rawLine: string): void => {
+    if (!touchActive) {
+      return;
+    }
+    const startX = touchStartX ?? currentX;
+    const startY = touchStartY ?? currentY;
+    const endX = currentX;
+    const endY = currentY;
+    const durationMs = touchStartTime !== undefined && eventMonotonicMs > 0
+      ? Math.max(0, eventMonotonicMs - touchStartTime)
+      : undefined;
+    if (startX !== undefined && startY !== undefined && endX !== undefined && endY !== undefined) {
+      const movement = distance(startX, startY, endX, endY);
+      const qualifiesByDistanceAndTrace = movement >= SWIPE_DISTANCE_THRESHOLD_PX
+        && touchMoveSamples >= SWIPE_MIN_MOVE_SAMPLES;
+      const qualifiesAsStrongSwipe = movement >= SWIPE_STRONG_DISTANCE_THRESHOLD_PX;
+      if ((qualifiesByDistanceAndTrace || qualifiesAsStrongSwipe) && (durationMs ?? 0) <= SWIPE_DURATION_THRESHOLD_MS) {
+        events.push({
+          type: "swipe",
+          eventMonotonicMs,
+          x: startX,
+          y: startY,
+          endX,
+          endY,
+          gesture: {
+            kind: "swipe",
+            start: { x: startX, y: startY },
+            end: { x: endX, y: endY },
+            durationMs,
+          },
+          rawLine,
+        });
+      } else {
+        events.push({
+          type: "tap",
+          eventMonotonicMs,
+          x: endX,
+          y: endY,
+          gesture: {
+            kind: "tap",
+            start: { x: startX, y: startY },
+            end: { x: endX, y: endY },
+            durationMs,
+          },
+          rawLine,
+        });
+      }
+    } else {
+      events.push({ type: "tap", eventMonotonicMs, x: currentX, y: currentY, rawLine });
+    }
+    touchActive = false;
+    touchStartX = undefined;
+    touchStartY = undefined;
+    touchStartTime = undefined;
+    touchMoveSamples = 0;
+  };
 
   for (const line of lines) {
     const eventMonotonicMs = extractEventMonotonicMs(line);
     const positionX = line.match(/(?:ABS_MT_POSITION_X|ABS_X)\s+([0-9a-fA-F]+)/);
     if (positionX) {
       currentX = parseHexMaybe(positionX[1]);
+      if (touchActive) {
+        if (touchStartX === undefined) {
+          touchStartX = currentX;
+        }
+        touchMoveSamples += 1;
+      }
     }
     const positionY = line.match(/(?:ABS_MT_POSITION_Y|ABS_Y)\s+([0-9a-fA-F]+)/);
     if (positionY) {
       currentY = parseHexMaybe(positionY[1]);
+      if (touchActive) {
+        if (touchStartY === undefined) {
+          touchStartY = currentY;
+        }
+        touchMoveSamples += 1;
+      }
+    }
+
+    const trackingId = line.match(/ABS_MT_TRACKING_ID\s+([0-9a-fA-F]+)/);
+    if (trackingId) {
+      const token = trackingId[1]?.toLowerCase();
+      if (token === "ffffffff") {
+        finalizeTouch(eventMonotonicMs, line);
+        continue;
+      }
+      if (!touchActive) {
+        touchActive = true;
+        touchStartX = undefined;
+        touchStartY = undefined;
+        touchStartTime = eventMonotonicMs;
+        touchMoveSamples = 0;
+        currentX = undefined;
+        currentY = undefined;
+      }
+      continue;
     }
 
     if (/BTN_TOUCH\s+DOWN/.test(line)) {
       touchActive = true;
-      touchStartX = currentX;
-      touchStartY = currentY;
+      touchStartX = undefined;
+      touchStartY = undefined;
       touchStartTime = eventMonotonicMs;
+      touchMoveSamples = 0;
+      currentX = undefined;
+      currentY = undefined;
       continue;
     }
     if (/BTN_TOUCH\s+UP/.test(line)) {
-      if (!touchActive) {
-        continue;
-      }
-      const startX = touchStartX ?? currentX;
-      const startY = touchStartY ?? currentY;
-      const endX = currentX;
-      const endY = currentY;
-      const durationMs = touchStartTime !== undefined && eventMonotonicMs > 0
-        ? Math.max(0, eventMonotonicMs - touchStartTime)
-        : undefined;
-      if (startX !== undefined && startY !== undefined && endX !== undefined && endY !== undefined) {
-        const movement = distance(startX, startY, endX, endY);
-        if (movement >= SWIPE_DISTANCE_THRESHOLD_PX && (durationMs ?? 0) <= SWIPE_DURATION_THRESHOLD_MS) {
-          events.push({
-            type: "swipe",
-            eventMonotonicMs,
-            x: startX,
-            y: startY,
-            endX,
-            endY,
-            gesture: {
-              kind: "swipe",
-              start: { x: startX, y: startY },
-              end: { x: endX, y: endY },
-              durationMs,
-            },
-            rawLine: line,
-          });
-        } else {
-          events.push({
-            type: "tap",
-            eventMonotonicMs,
-            x: endX,
-            y: endY,
-            gesture: {
-              kind: "tap",
-              start: { x: startX, y: startY },
-              end: { x: endX, y: endY },
-              durationMs,
-            },
-            rawLine: line,
-          });
-        }
-      } else {
-        events.push({ type: "tap", eventMonotonicMs, x: currentX, y: currentY, rawLine: line });
-      }
-      touchActive = false;
-      touchStartX = undefined;
-      touchStartY = undefined;
-      touchStartTime = undefined;
+      finalizeTouch(eventMonotonicMs, line);
       continue;
     }
     if (/KEY_BACK\s+DOWN/.test(line)) {
@@ -289,13 +382,22 @@ function parseRawInputEvents(rawContent: string): ParsedRawEvent[] {
       continue;
     }
 
+    if (/KEY_(?:LEFTSHIFT|RIGHTSHIFT)\s+DOWN/.test(line)) {
+      shiftPressed = true;
+      continue;
+    }
+    if (/KEY_(?:LEFTSHIFT|RIGHTSHIFT)\s+UP/.test(line)) {
+      shiftPressed = false;
+      continue;
+    }
+
     const keyDown = line.match(/KEY_([A-Z0-9_]+)\s+DOWN/);
     if (keyDown) {
       const token = keyDown[1];
       if (token === "BACK" || token === "HOME" || token === "APPSELECT") {
         continue;
       }
-      const mapped = mapAndroidKeyTokenToText(token);
+      const mapped = mapAndroidKeyTokenToText(token, shiftPressed);
       if (mapped !== undefined) {
         events.push({ type: "type", eventMonotonicMs, textDelta: mapped, rawLine: line });
       }
@@ -330,6 +432,11 @@ interface ResolvedSelector {
 interface SnapshotCandidate {
   ref: string;
   capturedAtMs: number;
+}
+
+interface ViewportSize {
+  width: number;
+  height: number;
 }
 
 function parseSnapshotCapturedAtMs(ref: string): number | undefined {
@@ -395,6 +502,132 @@ function resolveSelectorAtPoint(xml: string, x?: number, y?: number): ResolvedSe
   return best?.selector;
 }
 
+function deriveViewportSizeFromXml(xml: string): ViewportSize | undefined {
+  const nodes = parseAndroidUiHierarchyNodes(xml);
+  let maxRight = 0;
+  let maxBottom = 0;
+  for (const node of nodes) {
+    const bounds = parseUiBounds(node.bounds);
+    if (!bounds) {
+      continue;
+    }
+    if (bounds.right > maxRight) {
+      maxRight = bounds.right;
+    }
+    if (bounds.bottom > maxBottom) {
+      maxBottom = bounds.bottom;
+    }
+  }
+  if (maxRight <= 0 || maxBottom <= 0) {
+    return undefined;
+  }
+  return { width: maxRight, height: maxBottom };
+}
+
+function normalizeCoordinate(raw: number, rawMax: number, viewportMax: number): number {
+  if (rawMax <= 0 || viewportMax <= 0) {
+    return raw;
+  }
+  const scaled = Math.round((raw / rawMax) * viewportMax);
+  return Math.min(viewportMax, Math.max(0, scaled));
+}
+
+function normalizeEventsToViewport(events: ExtendedRawRecordedEvent[], viewport: ViewportSize): ExtendedRawRecordedEvent[] {
+  const coordinateValues = events.flatMap((event) => {
+    const values: number[] = [];
+    if (event.x !== undefined) values.push(event.x);
+    if (event.y !== undefined) values.push(event.y);
+    if (event.gesture?.start?.x !== undefined) values.push(event.gesture.start.x);
+    if (event.gesture?.start?.y !== undefined) values.push(event.gesture.start.y);
+    if (event.gesture?.end?.x !== undefined) values.push(event.gesture.end.x);
+    if (event.gesture?.end?.y !== undefined) values.push(event.gesture.end.y);
+    return values;
+  });
+
+  if (coordinateValues.length === 0) {
+    return events;
+  }
+
+  const maxX = Math.max(
+    0,
+    ...events.flatMap((event) => [
+      event.x ?? 0,
+      event.gesture?.start?.x ?? 0,
+      event.gesture?.end?.x ?? 0,
+    ]),
+  );
+  const maxY = Math.max(
+    0,
+    ...events.flatMap((event) => [
+      event.y ?? 0,
+      event.gesture?.start?.y ?? 0,
+      event.gesture?.end?.y ?? 0,
+    ]),
+  );
+
+  const appearsRawAxisSpace = maxX > viewport.width * 1.2 || maxY > viewport.height * 1.2;
+  if (!appearsRawAxisSpace) {
+    return events;
+  }
+
+  return events.map((event) => {
+    const normalizedX = event.x !== undefined ? normalizeCoordinate(event.x, maxX, viewport.width) : undefined;
+    const normalizedY = event.y !== undefined ? normalizeCoordinate(event.y, maxY, viewport.height) : undefined;
+    const normalizedGesture = event.gesture
+      ? {
+        ...event.gesture,
+        ...(event.gesture.start
+          ? {
+            start: {
+              x: normalizeCoordinate(event.gesture.start.x, maxX, viewport.width),
+              y: normalizeCoordinate(event.gesture.start.y, maxY, viewport.height),
+            },
+          }
+          : {}),
+        ...(event.gesture.end
+          ? {
+            end: {
+              x: normalizeCoordinate(event.gesture.end.x, maxX, viewport.width),
+              y: normalizeCoordinate(event.gesture.end.y, maxY, viewport.height),
+            },
+          }
+          : {}),
+      }
+      : undefined;
+    return {
+      ...event,
+      x: normalizedX,
+      y: normalizedY,
+      gesture: normalizedGesture,
+      normalizedPoint: normalizedX !== undefined && normalizedY !== undefined ? { x: normalizedX, y: normalizedY } : event.normalizedPoint,
+    };
+  });
+}
+
+async function maybeNormalizeEventsUsingSnapshotViewport(
+  repoRoot: string,
+  recordSessionId: string,
+  events: ExtendedRawRecordedEvent[],
+  fallbackSnapshotRef?: string,
+): Promise<ExtendedRawRecordedEvent[]> {
+  const snapshotRefs = await listSnapshotRefsForSession(repoRoot, recordSessionId);
+  const candidateRefs = snapshotRefs.length > 0
+    ? snapshotRefs
+    : (fallbackSnapshotRef ? [fallbackSnapshotRef] : []);
+  for (const ref of candidateRefs) {
+    const snapshotXml = await readFile(path.resolve(repoRoot, ref), "utf8").catch(() => "");
+    if (!snapshotXml) {
+      continue;
+    }
+    const viewport = deriveViewportSizeFromXml(snapshotXml);
+    if (!viewport) {
+      continue;
+    }
+    return normalizeEventsToViewport(events, viewport);
+  }
+  return events;
+}
+
 function mapMonotonicToIso(startedAt: string, eventMonotonicMs: number | undefined, anchorMonotonicMs: number | undefined): string {
   if (!eventMonotonicMs || !anchorMonotonicMs) {
     return new Date().toISOString();
@@ -452,6 +685,9 @@ export async function startRecordSessionWithMaestro(input: StartRecordSessionInp
   const recordSessionId = `rec-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const startedAt = new Date().toISOString();
   const platform = input.platform ?? "android";
+  const resolvedAndroidDeviceId = platform === "android"
+    ? await resolveAndroidRecordingDeviceId(repoRoot, input.deviceId, input.dryRun)
+    : input.deviceId;
   if (platform !== "android") {
     return {
       status: "partial",
@@ -460,11 +696,11 @@ export async function startRecordSessionWithMaestro(input: StartRecordSessionInp
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: {
-        recordSessionId,
-        sessionId: input.sessionId,
-        platform,
-        deviceId: input.deviceId ?? buildDefaultDeviceId(platform),
+        data: {
+          recordSessionId,
+          sessionId: input.sessionId,
+          platform,
+          deviceId: input.deviceId ?? buildDefaultDeviceId(platform),
         appId: input.appId ?? buildDefaultAppId(platform),
         recordingProfile: input.recordingProfile ?? "default",
         status: "running",
@@ -476,7 +712,33 @@ export async function startRecordSessionWithMaestro(input: StartRecordSessionInp
     };
   }
 
-  const deviceId = input.deviceId ?? buildDefaultDeviceId(platform);
+  if (!resolvedAndroidDeviceId) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.deviceUnavailable,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        recordSessionId,
+        sessionId: input.sessionId,
+        platform,
+        deviceId: "unknown",
+        appId: input.appId ?? buildDefaultAppId(platform),
+        recordingProfile: input.recordingProfile ?? "default",
+        status: "cancelled",
+        startedAt,
+        captureChannels: ["input_events", "ui_snapshots", "app_context"],
+        rawEventsPath: buildRecordEventsRelativePath(recordSessionId),
+      },
+      nextSuggestions: [
+        "No online Android device detected. Connect a physical device or boot an emulator (adb devices must show state 'device'), then retry start_record_session.",
+      ],
+    };
+  }
+
+  const deviceId = resolvedAndroidDeviceId;
   const appId = input.appId ?? buildDefaultAppId(platform);
   const rawEventsRelativePath = buildRecordEventsRelativePath(recordSessionId);
   const rawEventsAbsolutePath = path.resolve(repoRoot, rawEventsRelativePath);
@@ -711,13 +973,25 @@ export async function endRecordSessionWithMaestro(input: EndRecordSessionInput):
       uiSnapshotRef: snapshotRef,
       };
     });
-    const enrichedNormalized = await enrichEventsWithSelectors(repoRoot, normalized);
+    const viewportNormalized = await maybeNormalizeEventsUsingSnapshotViewport(
+      repoRoot,
+      input.recordSessionId,
+      normalized,
+      contextSnapshot.uiSnapshotRef,
+    );
+    const enrichedNormalized = await enrichEventsWithSelectors(repoRoot, viewportNormalized);
     if (normalized.length > 0) {
       await persistRawRecordedEvents(repoRoot, input.recordSessionId, enrichedNormalized as RawRecordedEvent[]);
       capturedEvents = enrichedNormalized;
     }
   } else {
-    capturedEvents = await enrichEventsWithSelectors(repoRoot, capturedEvents);
+    const viewportNormalized = await maybeNormalizeEventsUsingSnapshotViewport(
+      repoRoot,
+      input.recordSessionId,
+      capturedEvents,
+      contextSnapshot.uiSnapshotRef,
+    );
+    capturedEvents = await enrichEventsWithSelectors(repoRoot, viewportNormalized);
   }
 
   const mapped = mapRawEventsToRecordedSteps(input.recordSessionId, capturedEvents, {
@@ -861,6 +1135,11 @@ export async function cancelRecordSessionWithMaestro(input: CancelRecordSessionI
 }
 
 export const recordingRuntimeInternals = {
+  parseAdbDeviceEntries,
+  choosePreferredAndroidDeviceId,
+  parseRawInputEvents,
+  deriveViewportSizeFromXml,
+  normalizeEventsToViewport,
   parseSnapshotCapturedAtMs,
   chooseNearestSnapshotRef,
   mapMonotonicToIso,
