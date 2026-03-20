@@ -44,4 +44,5 @@
 - [ ] Contracts/exports updated before downstream consumption when applicable
 - [ ] Policy / session / evidence impact reviewed when capability behavior changed
 - [ ] Deterministic-first behavior preserved, with explicit fallback semantics when used
+- [ ] No new platform command builder / selector-query / policy logic added to `packages/adapter-maestro/src/index.ts`
 - [ ] Scope is focused and reviewable

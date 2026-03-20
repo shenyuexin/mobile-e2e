@@ -30,3 +30,4 @@ If a delivery process becomes stable and reusable, promote it into `architecture
 
 - `engineering/type-export-sequencing-guideline.md` — avoid cross-package type export sequencing mistakes
 - `engineering/ai-first-capability-expansion-guideline.md` — keep new features aligned with AI-first, deterministic-first, policy-aware harness design
+- `engineering/capability-family-inventory.md` — capability family ownership and phased refactor guardrails
