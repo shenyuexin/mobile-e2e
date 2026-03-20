@@ -12,6 +12,8 @@ This directory now keeps only public-facing architecture and delivery references
 - `showcase/` — reproducible demo evidence, recordings, and run reports
   - `showcase/README.md` — showcase entry with reproducible scripts and canonical video assets
   - `showcase/demo-playbook.zh-CN.md` — verified happy-path and interruption-recovery demo scripts
+- `guides/flow-generation.md` — flow export/replay guide, including `run_flow` Android replay configuration
+- `guides/vivo-oppo-multi-user-replay.md` — OEM multi-user replay diagnosis and user-0 / OEM-fallback guidance
 - `templates/` — reusable templates for ADR, review, evidence, and planning artifacts
 
 ## Publication boundary

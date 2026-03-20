@@ -61,6 +61,37 @@ Read `result.data.report.flowPath`, then replay:
 }
 ```
 
+For OEM real devices that need explicit replay controls (for example vivo/oppo multi-user devices), pass `androidReplayOptions`:
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "run_flow",
+    "arguments": {
+      "sessionId": "record-login-001",
+      "platform": "android",
+      "deviceId": "10AEA40Z3Y000R5",
+      "flowPath": "flows/samples/native/mobitru-android-login.yaml",
+      "androidReplayOptions": {
+        "userId": "0",
+        "textInputStrategy": "oem_fallback",
+        "expectedAppPhase": "detail"
+      }
+    }
+  }
+}
+```
+
+Use cases:
+
+- `userId`: force replay in a specific Android user space (typically `0` for vivo/oppo XSpace devices)
+- `textInputStrategy`:
+  - `auto` — default adapter decision
+  - `maestro` — force native Maestro text input path
+  - `oem_fallback` — force adb/UI-dump based OEM-safe text replay path
+- `expectedAppPhase`: strong post-run validation target (for example `detail` after login)
+
 For a compact quickstart version, also see `docs/guides/record-session-quickstart.md`.
 
 ## 2) Action-record export path
@@ -95,3 +126,5 @@ Replay exported flow with `run_flow` and returned `data.outputPath`.
 ## 3) Mapping coverage and current limit
 
 Current mapping covers `launch_app`, `tap_element`, `type_into_element`, and `wait_for_ui`. `terminate_app` is skipped and reported in warnings.
+
+For OEM-specific replay caveats and troubleshooting, see `docs/guides/vivo-oppo-multi-user-replay.md`.
