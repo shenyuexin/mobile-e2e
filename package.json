@@ -29,6 +29,8 @@
     "mcp:stdio": "pnpm build && pnpm --filter @shenyuexin/mobile-e2e-mcp stdio",
     "release:mcp:publish": "pnpm --filter @shenyuexin/mobile-e2e-mcp run release:publish",
     "release:mcp:publish:dry-run": "pnpm --filter @shenyuexin/mobile-e2e-mcp run release:publish:dry-run",
+    "release:mcp:check": "pnpm tsx scripts/release/validate-mcp-release.ts",
+    "release:mcp:sync-changelog": "pnpm tsx scripts/release/sync-mcp-release-changelog.ts",
     "release:mcp:patch": "pnpm --filter @shenyuexin/mobile-e2e-mcp run release:patch",
     "release:mcp:prepare-tag": "tsx scripts/release/prepare-mcp-release.ts"
   },
