@@ -10,6 +10,8 @@ export type {
   ActionOutcomeSummary,
   ActionResolutionStrategy,
   AmbiguityDiff,
+  AndroidReplayOptions,
+  AndroidTextInputStrategy,
   CapabilityGroup,
   CapabilityProfile,
   CapabilitySupportLevel,

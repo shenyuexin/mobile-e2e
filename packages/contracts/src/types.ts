@@ -1472,6 +1472,27 @@ export interface ScrollAndResolveUiTargetData {
   content?: string;
   summary?: InspectUiSummary;
 }
-export interface RunFlowInput { sessionId: string; platform?: Platform; runnerProfile?: RunnerProfile; flowPath?: string; harnessConfigPath?: string; runnerScript?: string; runCount?: number; dryRun?: boolean; artifactRoot?: string; deviceId?: string; appId?: string; launchUrl?: string; env?: Record<string, string>; }
+export type AndroidTextInputStrategy = "auto" | "maestro" | "oem_fallback";
+export interface AndroidReplayOptions {
+  userId?: string;
+  textInputStrategy?: AndroidTextInputStrategy;
+  expectedAppPhase?: AppPhase;
+}
+export interface RunFlowInput {
+  sessionId: string;
+  platform?: Platform;
+  runnerProfile?: RunnerProfile;
+  flowPath?: string;
+  harnessConfigPath?: string;
+  runnerScript?: string;
+  runCount?: number;
+  dryRun?: boolean;
+  artifactRoot?: string;
+  deviceId?: string;
+  appId?: string;
+  launchUrl?: string;
+  env?: Record<string, string>;
+  androidReplayOptions?: AndroidReplayOptions;
+}
 export interface StartSessionInput { platform: Platform; sessionId?: string; deviceId?: string; appId?: string; policyProfile?: string; phase?: string | null; profile?: RunnerProfile | null; sampleName?: string | null; artifactsRoot?: string; harnessConfigPath?: string; }
 export interface EndSessionInput { sessionId: string; artifacts?: string[]; }
