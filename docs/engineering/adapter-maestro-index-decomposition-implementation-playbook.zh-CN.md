@@ -325,7 +325,7 @@ pnpm test
 - Phase D：`eab9384`（interruption-tools 抽离）
 - Phase E：`82431cb`（action-orchestrator 抽离）
 - Phase F：`7edf291`（task-planner + action-outcome + recovery-tools 分层）
-- Phase G：`5b0057c`（门禁文档固化）+ `30d50e9`（继续收敛 index facade）
+- Phase G：`5b0057c`（门禁文档固化）+ `30d50e9`（继续收敛 index facade）+ `eafef06`（Phase G 收尾与证据快照）
 
 收尾结论：
 
