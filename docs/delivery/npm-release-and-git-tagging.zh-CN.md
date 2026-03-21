@@ -8,6 +8,7 @@
 2. 发版过程可审计、可回放
 3. 降低人工漏打 tag/错打 tag 风险
 4. 让 CHANGELOG 按 tag diff 自动补齐，减少手工维护
+5. 让 `repomix-output.xml` 随 release commit 一起刷新，保持 AI 入口快照与 tag 对齐
 
 ## 统一约定
 
@@ -45,9 +46,10 @@
 3. 根据“上一个 MCP tag -> 当前 tag”的 commit diff 自动生成/更新 `CHANGELOG.md` 中该版本节
 4. 再次校验 tag / package version / changelog 三者一致
 5. 将同步后的 `CHANGELOG.md` 回写到默认分支
-6. 构建打包
-7. 发布到 npm（使用 `NPM_TOKEN`）
-8. 创建 GitHub Release
+6. 同步生成最新 `repomix-output.xml` 并与 release 元数据一起回写默认分支
+7. 构建打包
+8. 发布到 npm（使用 `NPM_TOKEN`）
+9. 创建 GitHub Release
 
 ## 标准操作流程（推荐）
 
@@ -63,11 +65,12 @@ pnpm release:mcp:prepare-tag patch
 1. 检查工作区必须干净
 2. 更新 `@shenyuexin/mobile-e2e-mcp` 版本（不自动打默认 v tag）
 3. 根据“上一个 MCP tag -> 当前待发版版本”的 commit diff 自动生成/更新 `CHANGELOG.md`
-4. 校验 changelog / package version / tag 三者一致
-5. 运行 `pnpm build`、`pnpm typecheck`、`pnpm test:mcp-server`
-6. 提交版本变更（含 `CHANGELOG.md`）
-7. 创建并推送规范 tag：`mcp-server-v<version>`
-8. 推送分支与 tag，触发 GitHub Actions 自动发包
+4. 生成最新 `repomix-output.xml`，让仓库级 AI 快照与本次待发布代码一致
+5. 校验 changelog / package version / tag 三者一致
+6. 运行 `pnpm build`、`pnpm typecheck`、`pnpm test:mcp-server`
+7. 提交版本变更（含 `CHANGELOG.md` 与 `repomix-output.xml`）
+8. 创建并推送规范 tag：`mcp-server-v<version>`
+9. 推送分支与 tag，触发 GitHub Actions 自动发包
 
 ## 现在的推荐流程（你只需要关心 tag）
 
@@ -89,10 +92,10 @@ pnpm release:mcp:prepare-tag patch
 
 - GitHub Actions 会自动：
   1. 按“上一个 tag -> 当前 tag”生成该版本 changelog
-  2. 把 `CHANGELOG.md` 回写到默认分支
+  2. 把 `CHANGELOG.md` 与最新 `repomix-output.xml` 一起回写到默认分支
   3. 再继续 npm publish
 
-也就是说，**以后不要求你手工先写 `CHANGELOG.md`**。
+也就是说，**以后不要求你手工先写 `CHANGELOG.md`，也不需要手工刷新 `repomix-output.xml`**。
 
 ### 单独校验/同步发版元数据
 
