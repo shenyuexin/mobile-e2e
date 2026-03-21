@@ -6,6 +6,8 @@
 
 ## Capability impact
 
+> Required when this PR touches capability-governed paths such as `packages/contracts`, `packages/core`, `packages/adapter-*`, `packages/mcp-server`, `configs/*`, `README*`, or support-boundary docs under `docs/architecture/*` and selected `docs/engineering/*` guides. CI checks these fields for guarded-path PRs.
+
 - Capability category: state / action / evidence / diagnosis / recovery / infra-only
 - User-visible or AI-facing behavior change:
 - Platforms/frameworks affected: Android / iOS / React Native / Flutter / docs-only
