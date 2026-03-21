@@ -71,6 +71,14 @@ pnpm mcp:stdio
 3. Update docs near changed behavior (README/docs/tests notes) when behavior changes.
 4. Re-run relevant verification commands before proposing changes.
 
+## 6.5) Commit Message Expectations
+
+- Commit messages should include a concise semantic-style title plus body text explaining **why** the change is needed.
+- Do not stop at a title-only commit message when the change affects behavior, architecture, release automation, policy, or developer workflow.
+- Good default pattern:
+  - Title: `type(scope): short summary`
+  - Body: 1-2 short paragraphs or bullets covering why the change was made, what boundary or workflow it affects, and any important rollout/review context.
+
 ## 7) Where to Go Deeper
 
 - `docs/engineering/ai-first-capability-expansion-guideline.md`

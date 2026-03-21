@@ -27,7 +27,10 @@ pnpm test
 
 ## Commit and PR quality
 
-- Write clear commit messages explaining why the change is needed.
+- Write commit messages with both:
+  - a concise semantic-style title (`type(scope): short summary` when applicable)
+  - body text that explains **why** the change is needed and any important scope or workflow impact
+- Avoid title-only commit messages for behavior, architecture, release, policy, CI, or developer-workflow changes.
 - In PR description, include:
   - problem statement
   - approach and tradeoffs
