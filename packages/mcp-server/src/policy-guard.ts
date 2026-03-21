@@ -12,6 +12,14 @@ function extractSessionId(input: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function extractStartSessionPolicyProfile(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) {
+    return undefined;
+  }
+  const value = (input as { policyProfile?: unknown }).policyProfile;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
 export async function validatePolicyProfile(policyProfile: string | undefined): Promise<void> {
   const repoRoot = resolveRepoPath();
   const profile = await loadAccessProfile(repoRoot, policyProfile ?? DEFAULT_POLICY_PROFILE);
@@ -21,14 +29,15 @@ export async function validatePolicyProfile(policyProfile: string | undefined): 
 }
 
 export async function enforcePolicyForTool<TInput>(toolName: string, input: TInput): Promise<ToolResult<{ toolName: string; policyProfile: string }> | undefined> {
-  if (toolName === "start_session" || toolName === "end_session") {
+  if (toolName === "end_session") {
     return undefined;
   }
 
   const repoRoot = resolveRepoPath();
   const sessionId = extractSessionId(input);
+  const startSessionPolicyProfile = toolName === "start_session" ? extractStartSessionPolicyProfile(input) : undefined;
   const sessionRecord = sessionId ? await loadSessionRecord(repoRoot, sessionId) : undefined;
-  const policyProfile = sessionRecord?.session.policyProfile ?? DEFAULT_POLICY_PROFILE;
+  const policyProfile = startSessionPolicyProfile ?? sessionRecord?.session.policyProfile ?? DEFAULT_POLICY_PROFILE;
   const profile = await loadAccessProfile(repoRoot, policyProfile);
   if (!profile) {
     return {

@@ -1,5 +1,5 @@
 import { buildCapabilityProfile, buildDefaultAppId, buildDefaultDeviceId, resolveRepoPath, resolveSessionDefaults } from "@mobile-e2e-mcp/adapter-maestro";
-import { acquireLease, buildSessionRecordRelativePath, loadAccessProfile, loadSessionRecord, persistStartedSession, releaseLease } from "@mobile-e2e-mcp/core";
+import { acquireLease, buildSessionRecordRelativePath, loadSessionRecord, persistStartedSession, releaseLease } from "@mobile-e2e-mcp/core";
 import { REASON_CODES, type Session, type StartSessionInput, type ToolResult } from "@mobile-e2e-mcp/contracts";
 
 export async function startSession(input: StartSessionInput): Promise<ToolResult<Session>> {
@@ -8,38 +8,6 @@ export async function startSession(input: StartSessionInput): Promise<ToolResult
   const startedAt = new Date().toISOString();
   const profile = input.profile ?? null;
   const policyProfile = input.policyProfile ?? "sample-harness-default";
-  const accessProfile = await loadAccessProfile(repoRoot, policyProfile);
-  if (!accessProfile) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.configurationError,
-      sessionId,
-      durationMs: 0,
-      attempts: 1,
-      artifacts: [],
-      data: {
-        sessionId,
-        platform: input.platform,
-        deviceId: input.deviceId ?? buildDefaultDeviceId(input.platform),
-        appId: input.appId ?? buildDefaultAppId(input.platform),
-        policyProfile,
-        startedAt,
-        artifactsRoot: input.artifactsRoot ?? "artifacts/mcp-server/invalid-session",
-        profile,
-        phase: input.phase ?? "phase2",
-        sampleName: input.sampleName ?? "unknown",
-        capabilities: buildCapabilityProfile(input.platform, profile),
-        timeline: [
-          {
-            timestamp: startedAt,
-            type: "session_start_rejected",
-            detail: `Rejected unknown policy profile ${policyProfile}`,
-          },
-        ],
-      },
-      nextSuggestions: [`Unknown policy profile '${policyProfile}'. Use one of the configured access profiles before retrying start_session.`],
-    };
-  }
   const sessionDefaults = await resolveSessionDefaults({
     sessionId,
     platform: input.platform,

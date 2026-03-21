@@ -905,7 +905,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     name: "start_session",
     description: "Create a typed mobile execution session.",
     handler: startSession,
-    policy: { enforced: false, requiredScopes: ["none"] },
+    policy: { enforced: true, requiredScopes: ["none"] },
     session: { required: false },
     audit: { captureResultEvidence: false },
   }),
