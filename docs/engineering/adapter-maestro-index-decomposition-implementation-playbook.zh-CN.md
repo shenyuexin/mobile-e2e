@@ -34,6 +34,25 @@
 
 说明：本手册不强行规定单次 PR 的“绝对行数目标”，而要求**趋势必须持续下降**，禁止“拆分后回流”。
 
+### 2.1 本轮执行基线（2026-03-21）
+
+> 本基线用于 Phase A 的冻结证据，后续每个阶段结束都需要更新对比（至少记录 `index.ts` 的下降趋势）。
+
+| 文件 | 行数基线 |
+|---|---:|
+| `packages/adapter-maestro/src/index.ts` | 6110 |
+| `packages/adapter-maestro/src/ui-tools.ts` | 2197 |
+| `packages/adapter-maestro/src/device-runtime.ts` | 929 |
+| `packages/adapter-maestro/src/recording-runtime.ts` | 1008 |
+
+### 2.2 本轮冻结约束（Phase A）
+
+在本轮拆分完成前，`packages/adapter-maestro/src/index.ts` 执行以下强约束：
+
+1. 只允许**删减或迁移**低层逻辑，不允许新增平台命令构建、selector 算法、policy 判定、YAML 解析等 helper。
+2. 允许的改动仅限 facade 级薄组装：re-export、依赖注入入口、薄协调调用。
+3. 任何触达 `index.ts`/`ui-tools.ts`/`device-runtime.ts`/`recording-runtime.ts` 的阶段提交，都必须在 commit 说明中给出“是否发生回流”的明确结论。
+
 ---
 
 ## 3. 目标模块边界（拆分落点）
