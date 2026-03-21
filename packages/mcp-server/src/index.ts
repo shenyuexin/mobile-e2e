@@ -2,23 +2,28 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { resolveRepoPath } from "@mobile-e2e-mcp/adapter-maestro";
 import type {
-	ClassifyInterruptionInput,
-	DetectInterruptionInput,
-	PerformActionWithEvidenceInput,
-	Platform,
-	ResolveInterruptionInput,
-	ResumeInterruptedActionInput,
-	ToolResult,
+  ClassifyInterruptionInput,
+  DetectInterruptionInput,
+  PerformActionWithEvidenceInput,
+  Platform,
+  ResolveInterruptionInput,
+  ResumeInterruptedActionInput,
+  ToolResult,
 } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import {
-	appendSessionTimelineEvent,
-	loadSessionRecord,
-	recoverStaleLeases,
-	runExclusive,
+  appendSessionTimelineEvent,
+  loadSessionRecord,
+  recoverStaleLeases,
+  runExclusive,
 } from "@mobile-e2e-mcp/core";
 import { enforcePolicyForTool } from "./policy-guard.js";
-import { MobileE2EMcpServer } from "./server.js";
+import {
+  MobileE2EMcpServer,
+  type MobileE2EMcpToolContractMap,
+  type MobileE2EMcpToolName,
+  type MobileE2EMcpToolRegistry,
+} from "./server.js";
 import { captureJsConsoleLogs } from "./tools/capture-js-console-logs.js";
 import { captureJsNetworkEvents } from "./tools/capture-js-network-events.js";
 import { classifyInterruption } from "./tools/classify-interruption.js";
@@ -77,602 +82,875 @@ import { typeText } from "./tools/type-text.js";
 import { waitForUi } from "./tools/wait-for-ui.js";
 
 interface ActiveSessionCandidate {
-	sessionId: string;
-	session: NonNullable<
-		Awaited<ReturnType<typeof loadSessionRecord>>
-	>["session"];
+  sessionId: string;
+  session: NonNullable<
+    Awaited<ReturnType<typeof loadSessionRecord>>
+  >["session"];
+}
+
+type ToolName = MobileE2EMcpToolName;
+type ToolInput<TName extends ToolName> = MobileE2EMcpToolContractMap[TName]["input"];
+type ToolOutputData<TName extends ToolName> = MobileE2EMcpToolContractMap[TName]["outputData"];
+type ToolOutput<TName extends ToolName> = ToolResult<ToolOutputData<TName>>;
+type ToolHandler<TName extends ToolName> = (input: ToolInput<TName>) => Promise<ToolOutput<TName>>;
+type AnyToolHandler = { bivarianceHack(input: unknown): Promise<ToolResult> }["bivarianceHack"];
+
+type ToolPolicyRequirement =
+  | "none"
+  | "read"
+  | "write"
+  | "diagnostics"
+  | "interrupt"
+  | "interrupt-high-risk";
+
+interface ToolDescriptor {
+  name: ToolName;
+  description: string;
+  handler?: AnyToolHandler;
+  createHandler?: (registry: Partial<MobileE2EMcpToolRegistry>) => AnyToolHandler;
+  policy: {
+    enforced: boolean;
+    requiredScopes: readonly ToolPolicyRequirement[];
+  };
+  session: {
+    required: boolean;
+    requireResolvedSessionContext?: boolean;
+  };
+  audit: {
+    captureResultEvidence: boolean;
+  };
+  typing: {
+    inputType: string;
+    outputType: string;
+  };
+}
+
+type SessionScopedInput = {
+  sessionId?: string;
+  platform?: Platform;
+  deviceId?: string;
+  appId?: string;
+  runnerProfile?: string | null;
+};
+
+export type ToolListItem = {
+  name: ToolName;
+  description: string;
+};
+
+function defineToolDescriptor<TName extends ToolName>(
+  descriptor: Omit<ToolDescriptor, "typing"> & { name: TName },
+): ToolDescriptor {
+  return {
+    ...descriptor,
+    typing: {
+      inputType: "typed",
+      outputType: "typed_tool_result",
+    },
+  };
 }
 
 async function listActiveSessionCandidates(
-	repoRoot: string,
+  repoRoot: string,
 ): Promise<ActiveSessionCandidate[]> {
-	const sessionsDir = path.resolve(repoRoot, "artifacts", "sessions");
-	try {
-		const entries = await readdir(sessionsDir, { withFileTypes: true });
-		const candidates: ActiveSessionCandidate[] = [];
-		for (const entry of entries) {
-			if (!entry.isFile() || !entry.name.endsWith(".json")) {
-				continue;
-			}
-			const sessionId = entry.name.slice(0, -".json".length);
-			const record = await loadSessionRecord(repoRoot, sessionId);
-			if (!record || record.closed) {
-				continue;
-			}
-			candidates.push({ sessionId, session: record.session });
-		}
-		return candidates;
-	} catch {
-		return [];
-	}
+  const sessionsDir = path.resolve(repoRoot, "artifacts", "sessions");
+  try {
+    const entries = await readdir(sessionsDir, { withFileTypes: true });
+    const candidates: ActiveSessionCandidate[] = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) {
+        continue;
+      }
+      const sessionId = entry.name.slice(0, -".json".length);
+      const record = await loadSessionRecord(repoRoot, sessionId);
+      if (!record || record.closed) {
+        continue;
+      }
+      candidates.push({ sessionId, session: record.session });
+    }
+    return candidates;
+  } catch {
+    return [];
+  }
 }
 
 function pickImplicitSessionId(
-	input: {
-		platform?: Platform;
-		deviceId?: string;
-		appId?: string;
-		runnerProfile?: string | null;
-	},
-	candidates: ActiveSessionCandidate[],
+  input: {
+    platform?: Platform;
+    deviceId?: string;
+    appId?: string;
+    runnerProfile?: string | null;
+  },
+  candidates: ActiveSessionCandidate[],
 ): { selectedSessionId?: string; ambiguity: boolean } {
-	const filtered = candidates.filter((candidate) => {
-		if (input.platform && candidate.session.platform !== input.platform) {
-			return false;
-		}
-		if (input.deviceId && candidate.session.deviceId !== input.deviceId) {
-			return false;
-		}
-		if (input.appId && candidate.session.appId !== input.appId) {
-			return false;
-		}
-		if (
-			input.runnerProfile &&
-			candidate.session.profile !== input.runnerProfile
-		) {
-			return false;
-		}
-		return true;
-	});
+  const filtered = candidates.filter((candidate) => {
+    if (input.platform && candidate.session.platform !== input.platform) {
+      return false;
+    }
+    if (input.deviceId && candidate.session.deviceId !== input.deviceId) {
+      return false;
+    }
+    if (input.appId && candidate.session.appId !== input.appId) {
+      return false;
+    }
+    if (
+      input.runnerProfile
+      && candidate.session.profile !== input.runnerProfile
+    ) {
+      return false;
+    }
+    return true;
+  });
 
-	if (filtered.length === 1) {
-		return { selectedSessionId: filtered[0].sessionId, ambiguity: false };
-	}
-	if (filtered.length > 1) {
-		return { ambiguity: true };
-	}
-	if (candidates.length === 1) {
-		return { selectedSessionId: candidates[0].sessionId, ambiguity: false };
-	}
-	return { ambiguity: candidates.length > 1 };
+  if (filtered.length === 1) {
+    return { selectedSessionId: filtered[0].sessionId, ambiguity: false };
+  }
+  if (filtered.length > 1) {
+    return { ambiguity: true };
+  }
+  if (candidates.length === 1) {
+    return { selectedSessionId: candidates[0].sessionId, ambiguity: false };
+  }
+  return { ambiguity: candidates.length > 1 };
+}
+
+function withPolicy<TName extends ToolName>(
+  toolName: TName,
+  handler: ToolHandler<TName>,
+): ToolHandler<TName> {
+  return async (input: ToolInput<TName>): Promise<ToolOutput<TName>> => {
+    const denied = await enforcePolicyForTool(toolName, input);
+    if (denied) {
+      return denied as ToolOutput<TName>;
+    }
+    return handler(input);
+  };
+}
+
+function withPolicyAndAudit<TName extends ToolName>(
+  toolName: TName,
+  handler: ToolHandler<TName>,
+): ToolHandler<TName> {
+  return withPolicy(toolName, async (input: ToolInput<TName>) => {
+    const result = await handler(input);
+    await persistSessionEvidenceCapture({
+      toolName,
+      sessionId:
+        typeof input === "object" && input !== null && "sessionId" in input
+          ? ((input as { sessionId?: unknown }).sessionId as string | undefined)
+          : undefined,
+      result,
+    });
+    return result;
+  });
+}
+
+function withSessionExecution<TName extends ToolName>(
+  toolName: TName,
+  handler: ToolHandler<TName>,
+  options?: { requireResolvedSessionContext?: boolean },
+): ToolHandler<TName> {
+  return async (input: ToolInput<TName>): Promise<ToolOutput<TName>> => {
+    const asOutput = (result: ToolResult): ToolOutput<TName> =>
+      result as ToolOutput<TName>;
+    const sessionInput = input as SessionScopedInput;
+    let sessionId = sessionInput.sessionId;
+    const repoRoot = resolveRepoPath();
+
+    if (!sessionId) {
+      const activeCandidates = await listActiveSessionCandidates(repoRoot);
+      const picked = pickImplicitSessionId(sessionInput, activeCandidates);
+      if (picked.selectedSessionId) {
+        sessionId = picked.selectedSessionId;
+      } else if (
+        picked.ambiguity
+        && options?.requireResolvedSessionContext
+      ) {
+        return asOutput({
+          status: "failed",
+          reasonCode: REASON_CODES.configurationError,
+          sessionId: `session-auto-resolve-${Date.now()}`,
+          durationMs: 0,
+          attempts: 1,
+          artifacts: [],
+          data: {
+            activeSessionCount: activeCandidates.length,
+          },
+          nextSuggestions: [
+            "Multiple active sessions were found; pass sessionId explicitly to disambiguate.",
+            "Or provide platform/deviceId to narrow the session context.",
+          ],
+        });
+      }
+    }
+
+    if (!sessionId) {
+      return handler(input);
+    }
+
+    const staleRecovered = await recoverStaleLeases(repoRoot, 5 * 60 * 1000);
+    for (const lease of staleRecovered.recovered) {
+      await appendSessionTimelineEvent(repoRoot, lease.sessionId, {
+        timestamp: new Date().toISOString(),
+        type: "lease_recovered_stale",
+        detail: `Recovered stale lease for ${lease.platform}/${lease.deviceId}.`,
+      });
+    }
+    const sessionRecord = await loadSessionRecord(repoRoot, sessionId);
+    if (!sessionRecord || sessionRecord.closed) {
+      if (options?.requireResolvedSessionContext && !sessionInput.platform) {
+        return asOutput({
+          status: "failed",
+          reasonCode: REASON_CODES.configurationError,
+          sessionId,
+          durationMs: 0,
+          attempts: 1,
+          artifacts: [],
+          data: {
+            sessionFound: Boolean(sessionRecord),
+            sessionClosed: Boolean(sessionRecord?.closed),
+          },
+          nextSuggestions: [
+            "Start an active session first (start_session) before calling this lifecycle tool with sessionId-only arguments.",
+          ],
+        });
+      }
+      return handler(input);
+    }
+
+    if (sessionInput.platform && sessionInput.platform !== sessionRecord.session.platform) {
+      return asOutput({
+        status: "failed",
+        reasonCode: REASON_CODES.configurationError,
+        sessionId,
+        durationMs: 0,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          expectedPlatform: sessionRecord.session.platform,
+          receivedPlatform: sessionInput.platform,
+        },
+        nextSuggestions: [
+          "Use the same platform as the active session for session-bound tools.",
+        ],
+      });
+    }
+
+    if (sessionInput.deviceId && sessionInput.deviceId !== sessionRecord.session.deviceId) {
+      return asOutput({
+        status: "failed",
+        reasonCode: REASON_CODES.configurationError,
+        sessionId,
+        durationMs: 0,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          expectedDeviceId: sessionRecord.session.deviceId,
+          receivedDeviceId: sessionInput.deviceId,
+        },
+        nextSuggestions: [
+          "Use the same deviceId as the active session for session-bound tools.",
+        ],
+      });
+    }
+
+    if (sessionInput.appId && sessionInput.appId !== sessionRecord.session.appId) {
+      return asOutput({
+        status: "failed",
+        reasonCode: REASON_CODES.configurationError,
+        sessionId,
+        durationMs: 0,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          expectedAppId: sessionRecord.session.appId,
+          receivedAppId: sessionInput.appId,
+        },
+        nextSuggestions: [
+          "Use the same appId as the active session for session-bound tools.",
+        ],
+      });
+    }
+
+    if (
+      sessionRecord.session.profile
+      && sessionInput.runnerProfile
+      && sessionInput.runnerProfile !== sessionRecord.session.profile
+    ) {
+      return asOutput({
+        status: "failed",
+        reasonCode: REASON_CODES.configurationError,
+        sessionId,
+        durationMs: 0,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          expectedRunnerProfile: sessionRecord.session.profile,
+          receivedRunnerProfile: sessionInput.runnerProfile,
+        },
+        nextSuggestions: [
+          "Use the same runnerProfile as the active session for session-bound tools.",
+        ],
+      });
+    }
+
+    const normalizedInput = {
+      ...(input as Record<string, unknown>),
+      sessionId,
+      platform: sessionRecord.session.platform,
+      deviceId: sessionRecord.session.deviceId,
+      appId: sessionInput.appId ?? sessionRecord.session.appId,
+      runnerProfile:
+        sessionInput.runnerProfile ?? sessionRecord.session.profile ?? undefined,
+    } as ToolInput<TName>;
+
+    const exclusive = await runExclusive(
+      {
+        repoRoot,
+        sessionId,
+        platform: sessionRecord.session.platform,
+        deviceId: sessionRecord.session.deviceId,
+        toolName,
+      },
+      async () => handler(normalizedInput),
+    );
+
+    const result = exclusive.value;
+    if (result.status !== "success" && result.status !== "partial") {
+      return result;
+    }
+
+    const artifacts = [
+      ...result.artifacts,
+      ...staleRecovered.recovered.map(
+        (lease: { platform: string; deviceId: string }) =>
+          `artifacts/leases/${lease.platform}-${lease.deviceId}.json`,
+      ),
+    ];
+
+    const resultData =
+      typeof result.data === "object" && result.data !== null
+        ? (result.data as Record<string, unknown>)
+        : {};
+
+    return {
+      ...result,
+      artifacts: Array.from(new Set(artifacts)),
+      data: {
+        ...resultData,
+        queueWaitMs: exclusive.queueWaitMs,
+      } as unknown as ToolOutputData<TName>,
+    };
+  };
+}
+
+function composeToolHandler(
+  descriptor: ToolDescriptor,
+  registry: Partial<MobileE2EMcpToolRegistry>,
+): AnyToolHandler {
+  const base = descriptor.handler ?? descriptor.createHandler?.(registry);
+  if (!base) {
+    throw new Error(`Descriptor '${descriptor.name}' is missing a handler.`);
+  }
+
+  let wrapped = base;
+  if (descriptor.audit.captureResultEvidence) {
+    wrapped = withPolicyAndAudit(descriptor.name as ToolName, wrapped as ToolHandler<ToolName>) as AnyToolHandler;
+  } else if (descriptor.policy.enforced) {
+    wrapped = withPolicy(descriptor.name as ToolName, wrapped as ToolHandler<ToolName>) as AnyToolHandler;
+  }
+  if (descriptor.session.required) {
+    wrapped = withSessionExecution(descriptor.name as ToolName, wrapped as ToolHandler<ToolName>, {
+      requireResolvedSessionContext: descriptor.session.requireResolvedSessionContext,
+    }) as AnyToolHandler;
+  }
+  return wrapped;
+}
+
+const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
+  defineToolDescriptor({
+    name: "capture_js_console_logs",
+    description: "Capture one-shot React Native or Expo JS console events through the Metro inspector WebSocket.",
+    handler: captureJsConsoleLogs,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: "capture_js_network_events",
+    description: "Capture one-shot React Native or Expo JS network events through the Metro inspector WebSocket.",
+    handler: captureJsNetworkEvents,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: "compare_against_baseline",
+    description: "Compare the current action outcome against a previously successful local baseline.",
+    handler: compareAgainstBaseline,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "collect_debug_evidence",
+    description: "Capture AI-friendly summarized debug evidence from logs and crash signals, with optional diagnostics escalation.",
+    handler: collectDebugEvidence,
+    policy: { enforced: true, requiredScopes: ["diagnostics"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: "collect_diagnostics",
+    description: "Capture an Android bugreport bundle or an iOS simulator diagnostics bundle.",
+    handler: collectDiagnostics,
+    policy: { enforced: true, requiredScopes: ["diagnostics"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: "detect_interruption",
+    description: "Detect interruption signals from current state summary and UI evidence.",
+    handler: (input: DetectInterruptionInput) => detectInterruption(input),
+    policy: { enforced: true, requiredScopes: ["interrupt"] },
+    session: { required: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "classify_interruption",
+    description: "Classify interruption type and confidence from structured interruption signals.",
+    handler: (input: ClassifyInterruptionInput) => classifyInterruption(input),
+    policy: { enforced: true, requiredScopes: ["interrupt"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "describe_capabilities",
+    description: "Return the current platform capability profile before invoking platform-specific tools.",
+    handler: describeCapabilities,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "doctor",
+    description: "Check command availability and device readiness.",
+    handler: doctor,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "execute_intent",
+    description: "Execute a high-level intent by planning a bounded mobile action with evidence.",
+    handler: executeIntent,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "complete_task",
+    description: "Execute a bounded multi-step task plan and return per-step outcomes.",
+    handler: completeTask,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "start_record_session",
+    description: "Start passive Android recording for manual on-device interactions.",
+    handler: startRecordSession,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "get_record_session_status",
+    description: "Get passive recording session status, counts, and warnings.",
+    handler: getRecordSessionStatus,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "end_record_session",
+    description: "Stop passive recording, map captured events, and export replayable flow.",
+    handler: endRecordSession,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "cancel_record_session",
+    description: "Cancel an active passive recording session.",
+    handler: cancelRecordSession,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "export_session_flow",
+    description: "Export persisted session action records to a replayable Maestro flow YAML.",
+    handler: exportSessionFlow,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "record_task_flow",
+    description: "Export a task-oriented flow snapshot from persisted session actions.",
+    handler: recordTaskFlow,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "explain_last_failure",
+    description: "Explain the most recent action failure using deterministic attribution heuristics.",
+    handler: explainLastFailure,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "find_similar_failures",
+    description: "Find locally indexed failures that resemble the current failure signature.",
+    handler: findSimilarFailures,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "get_action_outcome",
+    description: "Load a previously recorded action outcome by actionId.",
+    handler: getActionOutcome,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "get_crash_signals",
+    description: "Capture recent Android crash or ANR evidence and inspect the iOS simulator crash reporter tree.",
+    handler: getCrashSignals,
+    policy: { enforced: true, requiredScopes: ["diagnostics"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: "get_logs",
+    description: "Capture recent Android logcat output or recent iOS simulator logs.",
+    handler: getLogs,
+    policy: { enforced: true, requiredScopes: ["diagnostics"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: "get_screen_summary",
+    description: "Capture a compact current-screen summary with actionable targets and blocking signals.",
+    handler: getScreenSummary,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "get_session_state",
+    description: "Return compact AI-first session state with latest screen, readiness, and recent failure signals.",
+    handler: getSessionState,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "inspect_ui",
+    description: "Capture a device UI hierarchy dump; iOS still relies on idb-backed hierarchy artifacts.",
+    handler: inspectUi,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "query_ui",
+    description: "Query Android or iOS hierarchy dumps by selector fields and return structured matches.",
+    handler: queryUi,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "resolve_ui_target",
+    description: "Resolve a UI selector to a single actionable Android or iOS target or report ambiguity.",
+    handler: resolveUiTarget,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "scroll_and_resolve_ui_target",
+    description: "Scroll Android or iOS UI containers while trying to resolve a selector to a single actionable target.",
+    handler: scrollAndResolveUiTarget,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "scroll_and_tap_element",
+    description: "Scroll Android or iOS UI containers until a target resolves, then tap the resolved element.",
+    handler: scrollAndTapElement,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "install_app",
+    description: "Install a native or flutter artifact onto a target device/simulator.",
+    handler: installApp,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "list_js_debug_targets",
+    description: "Discover React Native or Expo JS debug targets from the Metro inspector endpoint.",
+    handler: listJsDebugTargets,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "launch_app",
+    description: "Launch the selected app or Expo URL on a target device/simulator.",
+    handler: launchApp,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "list_devices",
+    description: "List Android devices and iOS simulators.",
+    handler: listDevices,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "measure_android_performance",
+    description: "Capture an Android Perfetto time window and return a lightweight AI-friendly performance summary.",
+    handler: measureAndroidPerformance,
+    policy: { enforced: true, requiredScopes: ["diagnostics"] },
+    session: { required: true },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: "measure_ios_performance",
+    description: "Capture an iOS xctrace time window and return a lightweight AI-friendly performance summary.",
+    handler: measureIosPerformance,
+    policy: { enforced: true, requiredScopes: ["diagnostics"] },
+    session: { required: true },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: "perform_action_with_evidence",
+    description: "Execute one bounded action and automatically capture pre/post state plus outcome evidence.",
+    createHandler: (registry) => {
+      const explainLastFailureHandler =
+        registry.explain_last_failure
+        ?? withPolicy("explain_last_failure", explainLastFailure);
+      const rankFailureCandidatesHandler =
+        registry.rank_failure_candidates
+        ?? withPolicy("rank_failure_candidates", rankFailureCandidates);
+      const suggestKnownRemediationHandler =
+        registry.suggest_known_remediation
+        ?? withPolicy("suggest_known_remediation", suggestKnownRemediation);
+      const recoverToKnownStateHandler =
+        registry.recover_to_known_state
+        ?? withSessionExecution(
+          "recover_to_known_state",
+          withPolicy("recover_to_known_state", recoverToKnownState),
+          { requireResolvedSessionContext: true },
+        );
+      const replayLastStablePathHandler =
+        registry.replay_last_stable_path
+        ?? withSessionExecution(
+          "replay_last_stable_path",
+          withPolicy("replay_last_stable_path", replayLastStablePath),
+          { requireResolvedSessionContext: true },
+        );
+      return async (input: PerformActionWithEvidenceInput) =>
+        performActionWithAutoRemediation(input, {
+          performAction: performActionWithEvidence,
+          explainLastFailure: explainLastFailureHandler,
+          rankFailureCandidates: rankFailureCandidatesHandler,
+          suggestKnownRemediation: suggestKnownRemediationHandler,
+          recoverToKnownState: recoverToKnownStateHandler,
+          replayLastStablePath: replayLastStablePathHandler,
+        });
+    },
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "rank_failure_candidates",
+    description: "Rank likely failure layers for the latest attributed action window.",
+    handler: rankFailureCandidates,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "record_screen",
+    description: "Record screen output on Android (adb) or iOS simulator (simctl) for a bounded duration.",
+    handler: recordScreen,
+    policy: { enforced: true, requiredScopes: ["diagnostics"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: "recover_to_known_state",
+    description: "Attempt a bounded deterministic recovery such as wait-ready or app relaunch.",
+    handler: recoverToKnownState,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "resolve_interruption",
+    description: "Resolve interruption with policy-aware signature matching and bounded actions.",
+    handler: (input: ResolveInterruptionInput) => resolveInterruption(input),
+    policy: { enforced: true, requiredScopes: ["interrupt", "interrupt-high-risk"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "resume_interrupted_action",
+    description: "Replay interrupted action from checkpoint with drift detection.",
+    handler: (input: ResumeInterruptedActionInput) => resumeInterruptedAction(input),
+    policy: { enforced: true, requiredScopes: ["interrupt"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "replay_last_stable_path",
+    description: "Replay the latest successful bounded action recorded for this session.",
+    handler: replayLastStablePath,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "reset_app_state",
+    description: "Reset app state using clear_data, uninstall_reinstall, or keychain_reset strategy.",
+    handler: resetAppState,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "take_screenshot",
+    description: "Capture a screenshot from a target device or simulator.",
+    handler: takeScreenshot,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "tap",
+    description: "Perform a coordinate tap on Android or on iOS simulators through idb.",
+    handler: tap,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "tap_element",
+    description: "Resolve a UI selector to a single Android or iOS target and tap only when the match is unambiguous.",
+    handler: tapElement,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "terminate_app",
+    description: "Terminate the selected app on a target device or simulator.",
+    handler: terminateApp,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "type_text",
+    description: "Perform direct text input on Android or on iOS simulators through idb.",
+    handler: typeText,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "type_into_element",
+    description: "Resolve a UI selector, focus the matched Android or iOS element, and type text.",
+    handler: typeIntoElement,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "wait_for_ui",
+    description: "Poll the Android or iOS hierarchy until a selector matches or timeout is reached.",
+    handler: waitForUi,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "start_session",
+    description: "Create a typed mobile execution session.",
+    handler: startSession,
+    policy: { enforced: false, requiredScopes: ["none"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "run_flow",
+    description: "Run the selected flow through the Maestro adapter.",
+    handler: runFlow,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "suggest_known_remediation",
+    description: "Suggest remediation based on similar failures and local successful baselines.",
+    handler: suggestKnownRemediation,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "end_session",
+    description: "Close a session and return final metadata.",
+    handler: endSession,
+    policy: { enforced: false, requiredScopes: ["none"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+];
+
+export function buildToolListMetadata(): ToolListItem[] {
+  return TOOL_DESCRIPTORS.map((descriptor) => ({
+    name: descriptor.name,
+    description: descriptor.description,
+  }));
 }
 
 export function createServer(): MobileE2EMcpServer {
-	const withPolicy = <TInput, TOutput>(
-		toolName: string,
-		handler: (input: TInput) => Promise<TOutput>,
-	) => {
-		return async (input: TInput): Promise<TOutput> => {
-			const denied = await enforcePolicyForTool(toolName, input);
-			if (denied) {
-				return denied as TOutput;
-			}
-			return handler(input);
-		};
-	};
-	const withPolicyAndAudit = <
-		TInput extends { sessionId?: string },
-		TOutput extends { artifacts: string[]; data: unknown },
-	>(
-		toolName: string,
-		handler: (input: TInput) => Promise<TOutput>,
-	) =>
-		withPolicy(toolName, async (input: TInput): Promise<TOutput> => {
-			const result = await handler(input);
-			await persistSessionEvidenceCapture({
-				toolName,
-				sessionId: input.sessionId,
-				result:
-					result as unknown as import("@mobile-e2e-mcp/contracts").ToolResult,
-			});
-			return result;
-		});
-	const withSessionExecution = <
-		TInput extends {
-			sessionId?: string;
-			platform?: Platform;
-			deviceId?: string;
-			appId?: string;
-			runnerProfile?: string | null;
-		},
-		TOutput extends ToolResult,
-	>(
-		toolName: string,
-		handler: (input: TInput) => Promise<TOutput>,
-		options?: { requireResolvedSessionContext?: boolean },
-	) => {
-		return async (input: TInput): Promise<TOutput> => {
-			const asOutput = (result: ToolResult): TOutput =>
-				result as unknown as TOutput;
-			let sessionId = input.sessionId;
-			const repoRoot = resolveRepoPath();
+  const registry: Record<ToolName, AnyToolHandler> = {} as Record<ToolName, AnyToolHandler>;
 
-			if (!sessionId) {
-				const activeCandidates = await listActiveSessionCandidates(repoRoot);
-				const picked = pickImplicitSessionId(input, activeCandidates);
-				if (picked.selectedSessionId) {
-					sessionId = picked.selectedSessionId;
-				} else if (
-					picked.ambiguity &&
-					options?.requireResolvedSessionContext
-				) {
-					return asOutput({
-						status: "failed",
-						reasonCode: REASON_CODES.configurationError,
-						sessionId: `session-auto-resolve-${Date.now()}`,
-						durationMs: 0,
-						attempts: 1,
-						artifacts: [],
-						data: {
-							activeSessionCount: activeCandidates.length,
-						},
-						nextSuggestions: [
-							"Multiple active sessions were found; pass sessionId explicitly to disambiguate.",
-							"Or provide platform/deviceId to narrow the session context.",
-						],
-					});
-				}
-			}
+  for (const descriptor of TOOL_DESCRIPTORS) {
+    registry[descriptor.name] = composeToolHandler(
+      descriptor,
+      registry as unknown as Partial<MobileE2EMcpToolRegistry>,
+    );
+  }
 
-			if (!sessionId) {
-				return handler(input);
-			}
-
-			const staleRecovered = await recoverStaleLeases(repoRoot, 5 * 60 * 1000);
-			for (const lease of staleRecovered.recovered) {
-				await appendSessionTimelineEvent(repoRoot, lease.sessionId, {
-					timestamp: new Date().toISOString(),
-					type: "lease_recovered_stale",
-					detail: `Recovered stale lease for ${lease.platform}/${lease.deviceId}.`,
-				});
-			}
-			const sessionRecord = await loadSessionRecord(repoRoot, sessionId);
-			if (!sessionRecord || sessionRecord.closed) {
-				if (options?.requireResolvedSessionContext && !input.platform) {
-					return asOutput({
-						status: "failed",
-						reasonCode: REASON_CODES.configurationError,
-						sessionId,
-						durationMs: 0,
-						attempts: 1,
-						artifacts: [],
-						data: {
-							sessionFound: Boolean(sessionRecord),
-							sessionClosed: Boolean(sessionRecord?.closed),
-						},
-						nextSuggestions: [
-							"Start an active session first (start_session) before calling this lifecycle tool with sessionId-only arguments.",
-						],
-					});
-				}
-				return handler(input);
-			}
-
-			if (input.platform && input.platform !== sessionRecord.session.platform) {
-				return asOutput({
-					status: "failed",
-					reasonCode: REASON_CODES.configurationError,
-					sessionId,
-					durationMs: 0,
-					attempts: 1,
-					artifacts: [],
-					data: {
-						expectedPlatform: sessionRecord.session.platform,
-						receivedPlatform: input.platform,
-					},
-					nextSuggestions: [
-						"Use the same platform as the active session for session-bound tools.",
-					],
-				});
-			}
-
-			if (input.deviceId && input.deviceId !== sessionRecord.session.deviceId) {
-				return asOutput({
-					status: "failed",
-					reasonCode: REASON_CODES.configurationError,
-					sessionId,
-					durationMs: 0,
-					attempts: 1,
-					artifacts: [],
-					data: {
-						expectedDeviceId: sessionRecord.session.deviceId,
-						receivedDeviceId: input.deviceId,
-					},
-					nextSuggestions: [
-						"Use the same deviceId as the active session for session-bound tools.",
-					],
-				});
-			}
-
-			if (input.appId && input.appId !== sessionRecord.session.appId) {
-				return asOutput({
-					status: "failed",
-					reasonCode: REASON_CODES.configurationError,
-					sessionId,
-					durationMs: 0,
-					attempts: 1,
-					artifacts: [],
-					data: {
-						expectedAppId: sessionRecord.session.appId,
-						receivedAppId: input.appId,
-					},
-					nextSuggestions: [
-						"Use the same appId as the active session for session-bound tools.",
-					],
-				});
-			}
-
-			if (
-				sessionRecord.session.profile &&
-				input.runnerProfile &&
-				input.runnerProfile !== sessionRecord.session.profile
-			) {
-				return asOutput({
-					status: "failed",
-					reasonCode: REASON_CODES.configurationError,
-					sessionId,
-					durationMs: 0,
-					attempts: 1,
-					artifacts: [],
-					data: {
-						expectedRunnerProfile: sessionRecord.session.profile,
-						receivedRunnerProfile: input.runnerProfile,
-					},
-					nextSuggestions: [
-						"Use the same runnerProfile as the active session for session-bound tools.",
-					],
-				});
-			}
-
-			const normalizedInput = {
-				...input,
-				sessionId,
-				platform: sessionRecord.session.platform,
-				deviceId: sessionRecord.session.deviceId,
-				appId: input.appId ?? sessionRecord.session.appId,
-				runnerProfile:
-					input.runnerProfile ?? sessionRecord.session.profile ?? undefined,
-			} as TInput;
-
-			const exclusive = await runExclusive(
-				{
-					repoRoot,
-					sessionId,
-					platform: sessionRecord.session.platform,
-					deviceId: sessionRecord.session.deviceId,
-					toolName,
-				},
-				async () => handler(normalizedInput),
-			);
-
-			const result = exclusive.value;
-			if (result.status !== "success" && result.status !== "partial") {
-				return result;
-			}
-
-			const artifacts = [
-				...result.artifacts,
-				...staleRecovered.recovered.map(
-					(lease: { platform: string; deviceId: string }) =>
-						`artifacts/leases/${lease.platform}-${lease.deviceId}.json`,
-				),
-			];
-
-			const resultData =
-				typeof result.data === "object" && result.data !== null
-					? (result.data as Record<string, unknown>)
-					: {};
-
-			return {
-				...result,
-				artifacts: Array.from(new Set(artifacts)),
-				data: {
-					...resultData,
-					queueWaitMs: exclusive.queueWaitMs,
-				},
-			};
-		};
-	};
-	const captureJsConsoleLogsHandler = withPolicyAndAudit(
-		"capture_js_console_logs",
-		captureJsConsoleLogs,
-	);
-	const captureJsNetworkEventsHandler = withPolicyAndAudit(
-		"capture_js_network_events",
-		captureJsNetworkEvents,
-	);
-	const compareAgainstBaselineHandler = withPolicy(
-		"compare_against_baseline",
-		compareAgainstBaseline,
-	);
-	const collectDebugEvidenceHandler = withSessionExecution(
-		"collect_debug_evidence",
-		withPolicyAndAudit("collect_debug_evidence", collectDebugEvidence),
-		{ requireResolvedSessionContext: true },
-	);
-	const collectDiagnosticsHandler = withSessionExecution(
-		"collect_diagnostics",
-		withPolicyAndAudit("collect_diagnostics", collectDiagnostics),
-		{ requireResolvedSessionContext: true },
-	);
-	const describeCapabilitiesHandler = withPolicy(
-		"describe_capabilities",
-		describeCapabilities,
-	);
-	const doctorHandler = withPolicy("doctor", doctor);
-	const executeIntentHandler = withSessionExecution(
-		"execute_intent",
-		withPolicy("execute_intent", executeIntent),
-		{ requireResolvedSessionContext: true },
-	);
-	const completeTaskHandler = withSessionExecution(
-		"complete_task",
-		withPolicy("complete_task", completeTask),
-		{ requireResolvedSessionContext: true },
-	);
-	const startRecordSessionHandler = withPolicy("start_record_session", startRecordSession);
-	const getRecordSessionStatusHandler = withPolicy("get_record_session_status", getRecordSessionStatus);
-	const endRecordSessionHandler = withPolicy("end_record_session", endRecordSession);
-	const cancelRecordSessionHandler = withPolicy("cancel_record_session", cancelRecordSession);
-	const exportSessionFlowHandler = withPolicy("export_session_flow", exportSessionFlow);
-	const recordTaskFlowHandler = withPolicy("record_task_flow", recordTaskFlow);
-	const detectInterruptionHandler = withSessionExecution(
-		"detect_interruption",
-		withPolicy("detect_interruption", (input: DetectInterruptionInput) =>
-			detectInterruption(input),
-		),
-	);
-	const classifyInterruptionHandler = withSessionExecution(
-		"classify_interruption",
-		withPolicy("classify_interruption", (input: ClassifyInterruptionInput) =>
-			classifyInterruption(input),
-		),
-		{ requireResolvedSessionContext: true },
-	);
-	const explainLastFailureHandler = withPolicy(
-		"explain_last_failure",
-		explainLastFailure,
-	);
-	const findSimilarFailuresHandler = withPolicy(
-		"find_similar_failures",
-		findSimilarFailures,
-	);
-	const getActionOutcomeHandler = withPolicy(
-		"get_action_outcome",
-		getActionOutcome,
-	);
-	const getCrashSignalsHandler = withSessionExecution(
-		"get_crash_signals",
-		withPolicyAndAudit("get_crash_signals", getCrashSignals),
-		{ requireResolvedSessionContext: true },
-	);
-	const getLogsHandler = withSessionExecution(
-		"get_logs",
-		withPolicyAndAudit("get_logs", getLogs),
-		{ requireResolvedSessionContext: true },
-	);
-	const getScreenSummaryHandler = withSessionExecution(
-		"get_screen_summary",
-		withPolicy("get_screen_summary", getScreenSummary),
-		{ requireResolvedSessionContext: true },
-	);
-	const getSessionStateHandler = withSessionExecution(
-		"get_session_state",
-		withPolicy("get_session_state", getSessionState),
-	);
-	const inspectUiHandler = withSessionExecution(
-		"inspect_ui",
-		withPolicy("inspect_ui", inspectUi),
-		{ requireResolvedSessionContext: true },
-	);
-	const queryUiHandler = withSessionExecution(
-		"query_ui",
-		withPolicy("query_ui", queryUi),
-		{ requireResolvedSessionContext: true },
-	);
-	const recoverToKnownStateHandler = withSessionExecution(
-		"recover_to_known_state",
-		withPolicy("recover_to_known_state", recoverToKnownState),
-		{ requireResolvedSessionContext: true },
-	);
-	const resolveUiTargetHandler = withSessionExecution(
-		"resolve_ui_target",
-		withPolicy("resolve_ui_target", resolveUiTarget),
-		{ requireResolvedSessionContext: true },
-	);
-	const replayLastStablePathHandler = withSessionExecution(
-		"replay_last_stable_path",
-		withPolicy("replay_last_stable_path", replayLastStablePath),
-		{ requireResolvedSessionContext: true },
-	);
-	const resolveInterruptionHandler = withSessionExecution(
-		"resolve_interruption",
-		withPolicy("resolve_interruption", (input: ResolveInterruptionInput) =>
-			resolveInterruption(input),
-		),
-		{ requireResolvedSessionContext: true },
-	);
-	const resumeInterruptedActionHandler = withSessionExecution(
-		"resume_interrupted_action",
-		withPolicy(
-			"resume_interrupted_action",
-			(input: ResumeInterruptedActionInput) => resumeInterruptedAction(input),
-		),
-		{ requireResolvedSessionContext: true },
-	);
-	const scrollAndResolveUiTargetHandler = withSessionExecution(
-		"scroll_and_resolve_ui_target",
-		withPolicy("scroll_and_resolve_ui_target", scrollAndResolveUiTarget),
-		{ requireResolvedSessionContext: true },
-	);
-	const scrollAndTapElementHandler = withSessionExecution(
-		"scroll_and_tap_element",
-		withPolicy("scroll_and_tap_element", scrollAndTapElement),
-		{ requireResolvedSessionContext: true },
-	);
-	const installAppHandler = withSessionExecution(
-		"install_app",
-		withPolicy("install_app", installApp),
-		{ requireResolvedSessionContext: true },
-	);
-	const listJsDebugTargetsHandler = withPolicy(
-		"list_js_debug_targets",
-		listJsDebugTargets,
-	);
-	const launchAppHandler = withSessionExecution(
-		"launch_app",
-		withPolicy("launch_app", launchApp),
-		{ requireResolvedSessionContext: true },
-	);
-	const listDevicesHandler = withPolicy("list_devices", listDevices);
-	const measureAndroidPerformanceHandler = withSessionExecution(
-		"measure_android_performance",
-		withPolicyAndAudit(
-			"measure_android_performance",
-			measureAndroidPerformance,
-		),
-	);
-	const measureIosPerformanceHandler = withSessionExecution(
-		"measure_ios_performance",
-		withPolicyAndAudit("measure_ios_performance", measureIosPerformance),
-	);
-	const rankFailureCandidatesHandler = withPolicy(
-		"rank_failure_candidates",
-		rankFailureCandidates,
-	);
-	const recordScreenHandler = withSessionExecution(
-		"record_screen",
-		withPolicyAndAudit("record_screen", recordScreen),
-		{ requireResolvedSessionContext: true },
-	);
-	const runFlowHandler = withSessionExecution(
-		"run_flow",
-		withPolicy("run_flow", runFlow),
-		{ requireResolvedSessionContext: true },
-	);
-	const resetAppStateHandler = withSessionExecution(
-		"reset_app_state",
-		withPolicy("reset_app_state", resetAppState),
-		{ requireResolvedSessionContext: true },
-	);
-	const takeScreenshotHandler = withSessionExecution(
-		"take_screenshot",
-		withPolicy("take_screenshot", takeScreenshot),
-		{ requireResolvedSessionContext: true },
-	);
-	const tapHandler = withSessionExecution("tap", withPolicy("tap", tap), {
-		requireResolvedSessionContext: true,
-	});
-	const tapElementHandler = withSessionExecution(
-		"tap_element",
-		withPolicy("tap_element", tapElement),
-		{ requireResolvedSessionContext: true },
-	);
-	const terminateAppHandler = withSessionExecution(
-		"terminate_app",
-		withPolicy("terminate_app", terminateApp),
-		{ requireResolvedSessionContext: true },
-	);
-	const typeTextHandler = withSessionExecution(
-		"type_text",
-		withPolicy("type_text", typeText),
-		{ requireResolvedSessionContext: true },
-	);
-	const typeIntoElementHandler = withSessionExecution(
-		"type_into_element",
-		withPolicy("type_into_element", typeIntoElement),
-		{ requireResolvedSessionContext: true },
-	);
-	const waitForUiHandler = withSessionExecution(
-		"wait_for_ui",
-		withPolicy("wait_for_ui", waitForUi),
-		{ requireResolvedSessionContext: true },
-	);
-	const suggestKnownRemediationHandler = withPolicy(
-		"suggest_known_remediation",
-		suggestKnownRemediation,
-	);
-	const performActionWithEvidenceHandler = withSessionExecution(
-		"perform_action_with_evidence",
-		withPolicy(
-			"perform_action_with_evidence",
-			(input: PerformActionWithEvidenceInput) =>
-				performActionWithAutoRemediation(input, {
-					performAction: performActionWithEvidence,
-					explainLastFailure: explainLastFailureHandler,
-					rankFailureCandidates: rankFailureCandidatesHandler,
-					suggestKnownRemediation: suggestKnownRemediationHandler,
-					recoverToKnownState: recoverToKnownStateHandler,
-					replayLastStablePath: replayLastStablePathHandler,
-				}),
-		),
-		{ requireResolvedSessionContext: true },
-	);
-
-	return new MobileE2EMcpServer({
-		capture_js_console_logs: captureJsConsoleLogsHandler,
-		capture_js_network_events: captureJsNetworkEventsHandler,
-		compare_against_baseline: compareAgainstBaselineHandler,
-		collect_debug_evidence: collectDebugEvidenceHandler,
-		collect_diagnostics: collectDiagnosticsHandler,
-		describe_capabilities: describeCapabilitiesHandler,
-		doctor: doctorHandler,
-		execute_intent: executeIntentHandler,
-		complete_task: completeTaskHandler,
-		start_record_session: startRecordSessionHandler,
-		get_record_session_status: getRecordSessionStatusHandler,
-		end_record_session: endRecordSessionHandler,
-		cancel_record_session: cancelRecordSessionHandler,
-		export_session_flow: exportSessionFlowHandler,
-		record_task_flow: recordTaskFlowHandler,
-		detect_interruption: detectInterruptionHandler,
-		classify_interruption: classifyInterruptionHandler,
-		explain_last_failure: explainLastFailureHandler,
-		find_similar_failures: findSimilarFailuresHandler,
-		get_action_outcome: getActionOutcomeHandler,
-		get_crash_signals: getCrashSignalsHandler,
-		get_logs: getLogsHandler,
-		get_screen_summary: getScreenSummaryHandler,
-		get_session_state: getSessionStateHandler,
-		inspect_ui: inspectUiHandler,
-		query_ui: queryUiHandler,
-		recover_to_known_state: recoverToKnownStateHandler,
-		resolve_interruption: resolveInterruptionHandler,
-		resume_interrupted_action: resumeInterruptedActionHandler,
-		resolve_ui_target: resolveUiTargetHandler,
-		replay_last_stable_path: replayLastStablePathHandler,
-		scroll_and_resolve_ui_target: scrollAndResolveUiTargetHandler,
-		scroll_and_tap_element: scrollAndTapElementHandler,
-		install_app: installAppHandler,
-		list_js_debug_targets: listJsDebugTargetsHandler,
-		launch_app: launchAppHandler,
-		list_devices: listDevicesHandler,
-		measure_android_performance: measureAndroidPerformanceHandler,
-		measure_ios_performance: measureIosPerformanceHandler,
-		perform_action_with_evidence: performActionWithEvidenceHandler,
-		rank_failure_candidates: rankFailureCandidatesHandler,
-		record_screen: recordScreenHandler,
-		start_session: async (input) => startSession(input),
-		reset_app_state: resetAppStateHandler,
-		run_flow: runFlowHandler,
-		take_screenshot: takeScreenshotHandler,
-		tap: tapHandler,
-		tap_element: tapElementHandler,
-		terminate_app: terminateAppHandler,
-		type_text: typeTextHandler,
-		type_into_element: typeIntoElementHandler,
-		wait_for_ui: waitForUiHandler,
-		suggest_known_remediation: suggestKnownRemediationHandler,
-		end_session: endSession,
-	});
+  return new MobileE2EMcpServer(registry as unknown as MobileE2EMcpToolRegistry);
 }

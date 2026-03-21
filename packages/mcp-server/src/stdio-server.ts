@@ -2,7 +2,7 @@ import process from "node:process";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { createServer } from "./index.js";
+import { buildToolListMetadata, createServer } from "./index.js";
 
 export interface StdioRequest {
   id?: string | number | null;
@@ -36,62 +36,7 @@ export function toErrorMessage(error: unknown): string {
 }
 
 export function buildToolList() {
-  return [
-    { name: "capture_js_console_logs", description: "Capture one-shot React Native or Expo JS console events through the Metro inspector WebSocket." },
-    { name: "capture_js_network_events", description: "Capture one-shot React Native or Expo JS network events through the Metro inspector WebSocket." },
-    { name: "compare_against_baseline", description: "Compare the current action outcome against a previously successful local baseline." },
-    { name: "collect_debug_evidence", description: "Capture AI-friendly summarized debug evidence from logs and crash signals, with optional diagnostics escalation." },
-    { name: "collect_diagnostics", description: "Capture an Android bugreport bundle or an iOS simulator diagnostics bundle." },
-    { name: "detect_interruption", description: "Detect interruption signals from current state summary and UI evidence." },
-    { name: "classify_interruption", description: "Classify interruption type and confidence from structured interruption signals." },
-    { name: "describe_capabilities", description: "Return the current platform capability profile before invoking platform-specific tools." },
-    { name: "doctor", description: "Check command availability and device readiness." },
-    { name: "execute_intent", description: "Execute a high-level intent by planning a bounded mobile action with evidence." },
-    { name: "complete_task", description: "Execute a bounded multi-step task plan and return per-step outcomes." },
-    { name: "start_record_session", description: "Start passive Android recording for manual on-device interactions." },
-    { name: "get_record_session_status", description: "Get passive recording session status, counts, and warnings." },
-    { name: "end_record_session", description: "Stop passive recording, map captured events, and export replayable flow." },
-    { name: "cancel_record_session", description: "Cancel an active passive recording session." },
-    { name: "export_session_flow", description: "Export persisted session action records to a replayable Maestro flow YAML." },
-    { name: "record_task_flow", description: "Export a task-oriented flow snapshot from persisted session actions." },
-    { name: "explain_last_failure", description: "Explain the most recent action failure using deterministic attribution heuristics." },
-    { name: "find_similar_failures", description: "Find locally indexed failures that resemble the current failure signature." },
-    { name: "get_action_outcome", description: "Load a previously recorded action outcome by actionId." },
-    { name: "get_crash_signals", description: "Capture recent Android crash or ANR evidence and inspect the iOS simulator crash reporter tree." },
-    { name: "get_logs", description: "Capture recent Android logcat output or recent iOS simulator logs." },
-    { name: "get_screen_summary", description: "Capture a compact current-screen summary with actionable targets and blocking signals." },
-    { name: "get_session_state", description: "Return compact AI-first session state with latest screen, readiness, and recent failure signals." },
-    { name: "inspect_ui", description: "Capture a device UI hierarchy dump; iOS still relies on idb-backed hierarchy artifacts." },
-    { name: "query_ui", description: "Query Android or iOS hierarchy dumps by selector fields and return structured matches." },
-    { name: "resolve_ui_target", description: "Resolve a UI selector to a single actionable Android or iOS target or report ambiguity." },
-    { name: "scroll_and_resolve_ui_target", description: "Scroll Android or iOS UI containers while trying to resolve a selector to a single actionable target." },
-    { name: "scroll_and_tap_element", description: "Scroll Android or iOS UI containers until a target resolves, then tap the resolved element." },
-    { name: "install_app", description: "Install a native or flutter artifact onto a target device/simulator." },
-    { name: "list_js_debug_targets", description: "Discover React Native or Expo JS debug targets from the Metro inspector endpoint." },
-    { name: "launch_app", description: "Launch the selected app or Expo URL on a target device/simulator." },
-    { name: "list_devices", description: "List Android devices and iOS simulators." },
-    { name: "measure_android_performance", description: "Capture an Android Perfetto time window and return a lightweight AI-friendly performance summary." },
-    { name: "measure_ios_performance", description: "Capture an iOS xctrace time window and return a lightweight AI-friendly performance summary." },
-    { name: "perform_action_with_evidence", description: "Execute one bounded action and automatically capture pre/post state plus outcome evidence." },
-    { name: "rank_failure_candidates", description: "Rank likely failure layers for the latest attributed action window." },
-    { name: "record_screen", description: "Record screen output on Android (adb) or iOS simulator (simctl) for a bounded duration." },
-    { name: "recover_to_known_state", description: "Attempt a bounded deterministic recovery such as wait-ready or app relaunch." },
-    { name: "resolve_interruption", description: "Resolve interruption with policy-aware signature matching and bounded actions." },
-    { name: "resume_interrupted_action", description: "Replay interrupted action from checkpoint with drift detection." },
-    { name: "replay_last_stable_path", description: "Replay the latest successful bounded action recorded for this session." },
-    { name: "reset_app_state", description: "Reset app state using clear_data, uninstall_reinstall, or keychain_reset strategy." },
-    { name: "take_screenshot", description: "Capture a screenshot from a target device or simulator." },
-    { name: "tap", description: "Perform a coordinate tap on Android or on iOS simulators through idb." },
-    { name: "tap_element", description: "Resolve a UI selector to a single Android or iOS target and tap only when the match is unambiguous." },
-    { name: "type_text", description: "Perform direct text input on Android or on iOS simulators through idb." },
-    { name: "type_into_element", description: "Resolve a UI selector, focus the matched Android or iOS element, and type text." },
-    { name: "terminate_app", description: "Terminate the selected app on a target device or simulator." },
-    { name: "wait_for_ui", description: "Poll the Android or iOS hierarchy until a selector matches or timeout is reached." },
-    { name: "start_session", description: "Create a typed mobile execution session." },
-    { name: "run_flow", description: "Run the selected flow through the Maestro adapter." },
-    { name: "suggest_known_remediation", description: "Suggest remediation based on similar failures and local successful baselines." },
-    { name: "end_session", description: "Close a session and return final metadata." },
-  ];
+  return buildToolListMetadata();
 }
 
 function normalizeInvokedToolName(rawToolName: string): string {
