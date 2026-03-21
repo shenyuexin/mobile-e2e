@@ -16,9 +16,21 @@ Core execution model:
 
 1. `repomix-output.xml` (global context snapshot)
 2. `README.md` or `README.zh-CN.md` (entry-level architecture + scripts)
-3. Live repo delta-check (`git ls-files` + targeted file reads)
+3. `docs/engineering/ai-first-capability-expansion-guideline.md` (mandatory capability-expansion guardrails)
+4. Live repo delta-check (`git ls-files` + targeted file reads)
 
 Do not treat `repomix-output.xml` as the only source of truth.
+
+### Mandatory activation rule for AI coding agents
+
+If your task adds or changes any of the following, you must read `docs/engineering/ai-first-capability-expansion-guideline.md` before planning or editing code:
+
+- MCP tools or tool contracts
+- adapter runtime, fallback, or platform support behavior
+- policy, session, evidence, diagnostics, recovery, or capability claims
+- README/docs text that changes support boundaries or maturity levels
+
+Do not rely on memory or prior sessions for these rules. Re-read the guideline in the current session before making changes.
 
 ## 3) Monorepo Map
 
@@ -61,6 +73,7 @@ pnpm mcp:stdio
 
 ## 7) Where to Go Deeper
 
+- `docs/engineering/ai-first-capability-expansion-guideline.md`
 - `docs/architecture/overview.md`
 - `docs/architecture/architecture.md`
 - `docs/architecture/capability-map.md`

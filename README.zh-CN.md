@@ -105,10 +105,13 @@
 建议 AI / 代码分析统一按以下顺序：
 
 1. **先读 `repomix-output.xml`**，快速建立全局架构与关键代码路径。
-2. **再核对实时仓库文件**（`git ls-files` + 定向读取）。
-3. 将 `repomix-output.xml` 作为**第一入口**，但不要当作唯一事实来源。
+2. **如果改动涉及 tools、contracts、adapter、policy/session/evidence 流程或支持边界文案，先读 `docs/engineering/ai-first-capability-expansion-guideline.md`。**
+3. **再核对实时仓库文件**（`git ls-files` + 定向读取）。
+4. 将 `repomix-output.xml` 作为**第一入口**，但不要当作唯一事实来源。
 
 原因：打包上下文可能遗漏部分文件（如二进制、忽略路径等），最终结论必须由真实仓库文件校验。
+
+额外 guardrail：如果你做的是 capability 扩展，而不是单点小修，不要凭上一轮 session 的记忆直接开改。请在当前 session 重新阅读工程规范，并按 contracts / core / adapter / MCP / docs / tests 的链路检查变更是否完整。
 
 ## Monorepo 结构速览
 

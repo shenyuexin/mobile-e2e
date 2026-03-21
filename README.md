@@ -127,10 +127,13 @@ pnpm mcp:stdio
 For AI/code-analysis workflows, use this order:
 
 1. **Read `repomix-output.xml` first** for global architecture and code-path context.
-2. **Delta-check live repo files** (`git ls-files` + targeted reads).
-3. Treat `repomix-output.xml` as the **primary entry point**, not the only source of truth.
+2. **Read `docs/engineering/ai-first-capability-expansion-guideline.md`** before changing tools, contracts, adapters, policy/session/evidence flows, or support-boundary docs.
+3. **Delta-check live repo files** (`git ls-files` + targeted reads).
+4. Treat `repomix-output.xml` as the **primary entry point**, not the only source of truth.
 
 Why: packed context may omit some files (binary assets, ignored paths, etc.), so final conclusions must be verified against live files.
+
+Agent guardrail: if you are extending capability surface rather than making a tiny local fix, do not start implementation from memory. Re-read the engineering guideline in the current session and map the change across contracts, core/governance, adapter runtime, MCP exposure, docs, and tests.
 
 ## Monorepo at a Glance
 

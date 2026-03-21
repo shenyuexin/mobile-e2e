@@ -23,6 +23,7 @@ pnpm test
 - Follow existing project structure and naming conventions.
 - Keep deterministic-first behavior and policy constraints intact.
 - Do not introduce secret material or local artifacts into commits.
+- If the change touches tools, contracts, adapter runtime, policy/session/evidence flows, platform support, or README capability claims, re-read `docs/engineering/ai-first-capability-expansion-guideline.md` in the current session before implementation.
 
 ## Commit and PR quality
 
@@ -38,4 +39,5 @@ If you are unsure where to place changes, read:
 
 - `AGENTS.md`
 - `README.md`
+- `docs/engineering/ai-first-capability-expansion-guideline.md`
 - `docs/architecture/architecture.md`
