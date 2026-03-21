@@ -263,6 +263,14 @@ import {
   setOcrFallbackTestHooksForTesting as setOcrFallbackTestHooksForTestingFromActionOrchestrator,
 } from "./action-orchestrator.js";
 import {
+  compareAgainstBaselineWithMaestro as compareAgainstBaselineWithMaestroFromActionOutcome,
+  explainLastFailureWithMaestro as explainLastFailureWithMaestroFromActionOutcome,
+  findSimilarFailuresWithMaestro as findSimilarFailuresWithMaestroFromActionOutcome,
+  getActionOutcomeWithMaestro as getActionOutcomeWithMaestroFromActionOutcome,
+  rankFailureCandidatesWithMaestro as rankFailureCandidatesWithMaestroFromActionOutcome,
+  suggestKnownRemediationWithMaestro as suggestKnownRemediationWithMaestroFromActionOutcome,
+} from "./action-outcome.js";
+import {
   buildInterruptionCheckpoint,
   classifyInterruptionWithMaestro as classifyInterruptionWithMaestroFromInterruptionTools,
   detectInterruptionWithMaestro as detectInterruptionWithMaestroFromInterruptionTools,
@@ -276,6 +284,15 @@ import {
   getSessionStateWithMaestro as getSessionStateWithMaestroFromSessionState,
   summarizeStateDelta,
 } from "./session-state.js";
+import {
+  recoverToKnownStateWithMaestro as recoverToKnownStateWithMaestroFromRecoveryTools,
+  replayLastStablePathWithMaestro as replayLastStablePathWithMaestroFromRecoveryTools,
+} from "./recovery-tools.js";
+import {
+  completeTaskWithMaestro as completeTaskWithMaestroFromTaskPlanner,
+  executeIntentPlanWithMaestro as executeIntentPlanWithMaestroFromTaskPlanner,
+  executeIntentWithMaestro as executeIntentWithMaestroFromTaskPlanner,
+} from "./task-planner.js";
 import { buildInterruptionEvent, decideInterruptionResolution } from "./interruption-resolver.js";
 import { buildInterruptionTimelineEvent, buildResumeCheckpoint, hasStateDrift, pickEventSource, summarizeInterruptionDetail } from "./interruption-orchestrator.js";
 import {
@@ -1177,78 +1194,12 @@ async function executeIntentWithMaestro(
   },
   action: ActionIntent,
 ): Promise<ToolResult<TapElementData | TypeIntoElementData | WaitForUiData | LaunchAppData | TerminateAppData>> {
-  if (action.actionType === "tap_element") {
-    return tapElementWithMaestro({
-      sessionId: params.sessionId,
-      platform: params.platform,
-      runnerProfile: params.runnerProfile,
-      harnessConfigPath: params.harnessConfigPath,
-      deviceId: params.deviceId,
-      resourceId: action.resourceId,
-      contentDesc: action.contentDesc,
-      text: action.text,
-      className: action.className,
-      clickable: action.clickable,
-      limit: action.limit,
-      dryRun: params.dryRun,
-    });
-  }
-  if (action.actionType === "type_into_element") {
-    return typeIntoElementWithMaestro({
-      sessionId: params.sessionId,
-      platform: params.platform,
-      runnerProfile: params.runnerProfile,
-      harnessConfigPath: params.harnessConfigPath,
-      deviceId: params.deviceId,
-      resourceId: action.resourceId,
-      contentDesc: action.contentDesc,
-      text: action.text,
-      className: action.className,
-      clickable: action.clickable,
-      limit: action.limit,
-      value: action.value ?? "",
-      dryRun: params.dryRun,
-    });
-  }
-  if (action.actionType === "wait_for_ui") {
-    return waitForUiWithMaestro({
-      sessionId: params.sessionId,
-      platform: params.platform,
-      runnerProfile: params.runnerProfile,
-      harnessConfigPath: params.harnessConfigPath,
-      deviceId: params.deviceId,
-      resourceId: action.resourceId,
-      contentDesc: action.contentDesc,
-      text: action.text,
-      className: action.className,
-      clickable: action.clickable,
-      limit: action.limit,
-      timeoutMs: action.timeoutMs,
-      intervalMs: action.intervalMs,
-      waitUntil: action.waitUntil,
-      dryRun: params.dryRun,
-    });
-  }
-  if (action.actionType === "launch_app") {
-    return launchAppWithMaestro({
-      sessionId: params.sessionId,
-      platform: params.platform,
-      runnerProfile: params.runnerProfile,
-      harnessConfigPath: params.harnessConfigPath,
-      deviceId: params.deviceId,
-      appId: action.appId ?? params.appId,
-      launchUrl: action.launchUrl,
-      dryRun: params.dryRun,
-    });
-  }
-  return terminateAppWithMaestro({
-    sessionId: params.sessionId,
-    platform: params.platform,
-    runnerProfile: params.runnerProfile,
-    harnessConfigPath: params.harnessConfigPath,
-    deviceId: params.deviceId,
-    appId: action.appId ?? params.appId,
-    dryRun: params.dryRun,
+  return executeIntentWithMaestroFromTaskPlanner(params, action, {
+    tapElementWithMaestro,
+    typeIntoElementWithMaestro,
+    waitForUiWithMaestro,
+    launchAppWithMaestro,
+    terminateAppWithMaestro,
   });
 }
 
@@ -1302,135 +1253,17 @@ function buildActionIntentFromStep(step: ExecuteIntentStepInput): { action: Acti
 export async function executeIntentPlanWithMaestro(
   input: ExecuteIntentInput,
 ): Promise<ToolResult<ExecuteIntentData>> {
-  const startTime = Date.now();
-  const planned = buildActionIntentFromStep(input);
-  const result = await performActionWithEvidenceWithMaestro({
-    sessionId: input.sessionId,
-    platform: input.platform,
-    runnerProfile: input.runnerProfile,
-    harnessConfigPath: input.harnessConfigPath,
-    deviceId: input.deviceId,
-    appId: input.appId,
-    dryRun: input.dryRun,
-    action: planned.action,
+  return executeIntentPlanWithMaestroFromTaskPlanner(input, {
+    performActionWithEvidenceWithMaestro,
   });
-
-  return {
-    status: result.status,
-    reasonCode: result.reasonCode,
-    sessionId: result.sessionId,
-    durationMs: Date.now() - startTime,
-    attempts: 1,
-    artifacts: result.artifacts,
-    data: {
-      intent: input.intent,
-      selectedAction: planned.action,
-      decision: planned.decision,
-      candidateActionTypes: planned.candidates,
-      outcome: result.data.outcome,
-      preStateSummary: result.data.preStateSummary,
-      postStateSummary: result.data.postStateSummary,
-      retryRecommendationTier: result.data.retryRecommendationTier,
-      actionabilityReview: result.data.actionabilityReview,
-    },
-    nextSuggestions: result.nextSuggestions,
-  };
 }
 
 export async function completeTaskWithMaestro(
   input: CompleteTaskInput,
 ): Promise<ToolResult<CompleteTaskData>> {
-  const startTime = Date.now();
-  const maxSteps = Math.max(1, Math.min(input.maxSteps ?? 8, 8));
-  const rawSteps: ExecuteIntentStepInput[] = input.steps && input.steps.length > 0 ? input.steps : [{ intent: input.goal }];
-  const selectedSteps = rawSteps.slice(0, maxSteps);
-  const plannedSteps: TaskStepPlan[] = selectedSteps.map((step: ExecuteIntentStepInput, index: number) => {
-    const planned = buildActionIntentFromStep(step);
-    return {
-      stepNumber: index + 1,
-      intent: step.intent,
-      selectedAction: planned.action,
-      decision: planned.decision,
-    };
+  return completeTaskWithMaestroFromTaskPlanner(input, {
+    performActionWithEvidenceWithMaestro,
   });
-
-  const outcomes: TaskStepOutcome[] = [];
-  const artifacts: string[] = [];
-  const stopOnFailure = input.stopOnFailure ?? true;
-  let finalStatus: ToolResult["status"] = "success";
-  let finalReasonCode: ReasonCode = REASON_CODES.ok;
-
-  for (let index = 0; index < selectedSteps.length; index += 1) {
-    const step = selectedSteps[index];
-    const result = await executeIntentPlanWithMaestro({
-      sessionId: input.sessionId,
-      intent: step.intent,
-      actionType: step.actionType,
-      resourceId: step.resourceId,
-      contentDesc: step.contentDesc,
-      text: step.text,
-      className: step.className,
-      clickable: step.clickable,
-      limit: step.limit,
-      value: step.value,
-      appId: step.appId ?? input.appId,
-      launchUrl: step.launchUrl,
-      timeoutMs: step.timeoutMs,
-      intervalMs: step.intervalMs,
-      waitUntil: step.waitUntil,
-      platform: input.platform,
-      runnerProfile: input.runnerProfile,
-      harnessConfigPath: input.harnessConfigPath,
-      deviceId: input.deviceId,
-      dryRun: input.dryRun,
-    });
-    artifacts.push(...result.artifacts);
-    outcomes.push({
-      stepNumber: index + 1,
-      intent: step.intent,
-      status: result.status,
-      reasonCode: result.reasonCode,
-      actionId: result.data.outcome.actionId,
-      artifacts: result.artifacts,
-      decision: result.data.decision,
-    });
-    if (result.status !== "success") {
-      finalStatus = result.status === "partial" ? "partial" : "failed";
-      finalReasonCode = result.reasonCode;
-      if (stopOnFailure) {
-        break;
-      }
-    }
-  }
-
-  const executedSteps = outcomes.length;
-  const completed = finalStatus === "success" && executedSteps === selectedSteps.length;
-  if (!completed && finalStatus === "success") {
-    finalStatus = "partial";
-    finalReasonCode = REASON_CODES.timeout;
-  }
-
-  return {
-    status: finalStatus,
-    reasonCode: finalReasonCode,
-    sessionId: input.sessionId,
-    durationMs: Date.now() - startTime,
-    attempts: 1,
-    artifacts: Array.from(new Set(artifacts)),
-    data: {
-      goal: input.goal,
-      plannedSteps,
-      outcomes,
-      completed,
-      executedSteps,
-      totalSteps: selectedSteps.length,
-    },
-    nextSuggestions: completed
-      ? []
-      : [
-        "Inspect the failed or partial step outcome and rerun complete_task with refined step selectors.",
-      ],
-  };
 }
 
 function buildDebugNarrative(params: {
@@ -1770,38 +1603,7 @@ export async function performActionWithEvidenceWithMaestro(
 export async function getActionOutcomeWithMaestro(
   input: GetActionOutcomeInput,
 ): Promise<ToolResult<GetActionOutcomeData>> {
-  const startTime = Date.now();
-  const repoRoot = resolveRepoPath();
-  const record = await loadActionRecord(repoRoot, input.actionId);
-  const found = Boolean(record) && (input.sessionId === undefined || record?.sessionId === input.sessionId);
-
-  return {
-    status: found ? "success" : "failed",
-    reasonCode: found ? REASON_CODES.ok : REASON_CODES.configurationError,
-    sessionId: input.sessionId ?? record?.sessionId ?? input.actionId,
-    durationMs: Date.now() - startTime,
-    attempts: 1,
-    artifacts: found ? [`artifacts/actions/${input.actionId}.json`] : [],
-    data: found
-      ? {
-        found: true,
-        actionId: input.actionId,
-        sessionId: record?.sessionId,
-        outcome: record?.outcome,
-        retryRecommendationTier: record?.retryRecommendationTier,
-        retryRecommendation: record?.retryRecommendation,
-        evidenceDelta: record?.evidenceDelta,
-        evidence: record?.evidence,
-        lowLevelStatus: record?.lowLevelStatus,
-        lowLevelReasonCode: record?.lowLevelReasonCode,
-      }
-      : {
-        found: false,
-        actionId: input.actionId,
-        sessionId: input.sessionId,
-      },
-    nextSuggestions: found ? [] : ["Use perform_action_with_evidence first, then retrieve the action record by actionId."],
-  };
+  return getActionOutcomeWithMaestroFromActionOutcome(input);
 }
 
 function buildFailureAttribution(params: {
@@ -1870,133 +1672,13 @@ function buildFailureAttribution(params: {
 export async function explainLastFailureWithMaestro(
   input: ExplainLastFailureInput,
 ): Promise<ToolResult<ExplainLastFailureData>> {
-  const startTime = Date.now();
-  const repoRoot = resolveRepoPath();
-  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
-  const lastActionEvent = sessionRecord?.session.timeline.filter((event) => event.type === "action_outcome_recorded").slice(-1)[0];
-  const fallbackActionRecord = !lastActionEvent?.actionId ? await loadLatestActionRecordForSession(repoRoot, input.sessionId) : undefined;
-  const resolvedActionId = lastActionEvent?.actionId ?? fallbackActionRecord?.actionId;
-
-  if (!resolvedActionId) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.configurationError,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: { found: false },
-      nextSuggestions: ["Run perform_action_with_evidence first so the session contains an attributable action window."],
-    };
-  }
-
-  const record = fallbackActionRecord ?? await loadActionRecord(repoRoot, resolvedActionId);
-  if (!record) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.configurationError,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-        data: { found: false, actionId: resolvedActionId },
-      nextSuggestions: ["The session references an actionId without a persisted action record; rerun the bounded action."],
-    };
-  }
-
-  const timelineWindow = sessionRecord ? await queryTimelineAroundAction(repoRoot, input.sessionId, resolvedActionId) : { surroundingEvents: [] };
-  const attribution = buildFailureAttribution({
-    outcome: record.outcome,
-    evidenceDelta: record.evidenceDelta,
-    surroundingEvents: timelineWindow.surroundingEvents,
-  });
-  await recordFailureSignature(repoRoot, {
-    actionId: resolvedActionId,
-    sessionId: input.sessionId,
-    signature: buildFailureSignature({
-      outcome: record.outcome,
-      attribution,
-      evidenceDelta: record.evidenceDelta,
-    }),
-    remediation: [attribution.recommendedRecovery, attribution.recommendedNextProbe].filter((value): value is string => Boolean(value)),
-    updatedAt: new Date().toISOString(),
-  });
-  const status = record.outcome.outcome === "success" ? "partial" : "success";
-
-  return {
-    status,
-    reasonCode: REASON_CODES.ok,
-    sessionId: input.sessionId,
-    durationMs: Date.now() - startTime,
-    attempts: 1,
-    artifacts: [`artifacts/actions/${resolvedActionId}.json`],
-    data: {
-      found: true,
-      actionId: resolvedActionId,
-      outcome: record.outcome,
-      retryRecommendationTier: record.retryRecommendationTier,
-      retryRecommendation: record.retryRecommendation,
-      attribution,
-    },
-    nextSuggestions: status === "success"
-      ? []
-      : prioritizeSuggestionBuckets(
-        [`Retry tier suggests: ${record.retryRecommendationTier ?? "inspect_only"}.`],
-        record.retryRecommendation?.suggestedAction ? [record.retryRecommendation.suggestedAction] : [],
-        buildActionPacketSignalSuggestions(record.actionabilityReview),
-        attribution.recommendedRecovery ? [attribution.recommendedRecovery] : [],
-        attribution.recommendedNextProbe ? [attribution.recommendedNextProbe] : [],
-      ),
-  };
+  return explainLastFailureWithMaestroFromActionOutcome(input);
 }
 
 export async function rankFailureCandidatesWithMaestro(
   input: RankFailureCandidatesInput,
 ): Promise<ToolResult<RankFailureCandidatesData>> {
-  const explained = await explainLastFailureWithMaestro({ sessionId: input.sessionId });
-  if (explained.status === "failed") {
-    return {
-      status: "failed",
-      reasonCode: explained.reasonCode,
-      sessionId: input.sessionId,
-      durationMs: explained.durationMs,
-      attempts: 1,
-      artifacts: explained.artifacts,
-      data: { found: false, candidates: [] },
-      nextSuggestions: explained.nextSuggestions,
-    };
-  }
-
-  const primary = explained.data.attribution;
-  const candidates: FailureAttribution[] = primary
-    ? [
-      primary,
-      {
-        ...primary,
-        affectedLayer: primary.affectedLayer === "unknown" ? "ui_state" : "unknown",
-        mostLikelyCause: primary.affectedLayer === "unknown" ? "No strong signal exists, but unchanged UI suggests a stale app state candidate." : "Unknown remains plausible because evidence is still incomplete.",
-      },
-    ]
-    : [];
-
-  return {
-    status: explained.status,
-    reasonCode: explained.reasonCode,
-    sessionId: input.sessionId,
-    durationMs: explained.durationMs,
-    attempts: 1,
-    artifacts: explained.artifacts,
-    data: {
-      found: Boolean(primary),
-      actionId: explained.data.actionId,
-      candidates,
-    },
-    nextSuggestions: prioritizeSuggestionBuckets(
-      explained.nextSuggestions,
-      primary?.recommendedRecovery ? [primary.recommendedRecovery] : [],
-      primary?.recommendedNextProbe ? [primary.recommendedNextProbe] : [],
-    ),
-  };
+  return rankFailureCandidatesWithMaestroFromActionOutcome(input);
 }
 
 function buildRecoveryTimelineEvent(summary: RecoverySummary, artifacts: string[]): SessionTimelineEvent {
@@ -2070,326 +1752,39 @@ function scoreSimilarFailure(left: FailureSignature, right: FailureSignature): n
 export async function recoverToKnownStateWithMaestro(
   input: RecoverToKnownStateInput,
 ): Promise<ToolResult<RecoverToKnownStateData>> {
-  const startTime = Date.now();
-  const repoRoot = resolveRepoPath();
-  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
-  const platform = input.platform ?? sessionRecord?.session.platform;
-  if (!platform) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.configurationError,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: { summary: { strategy: "none", recovered: false, note: "Platform could not be resolved for recovery." } },
-      nextSuggestions: ["Provide platform explicitly or start a session before invoking recover_to_known_state."],
-    };
-  }
-
-  const runnerProfile = input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE;
-  const before = await getSessionStateWithMaestro({
-    sessionId: input.sessionId,
-    platform,
-    runnerProfile,
-    harnessConfigPath: input.harnessConfigPath,
-    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
-    appId: input.appId ?? sessionRecord?.session.appId,
-    dryRun: input.dryRun,
+  return recoverToKnownStateWithMaestroFromRecoveryTools(input, {
+    getSessionStateWithMaestro,
+    launchAppWithMaestro,
+    performActionWithEvidenceWithMaestro,
   });
-  let strategy: RecoverySummary["strategy"] = "none";
-  let note = "State is already considered ready enough; no bounded recovery was required.";
-  let artifacts = [...before.artifacts];
-  let status: ToolResult["status"] = "success";
-  let reasonCode: ReasonCode = REASON_CODES.ok;
-
-  if (before.data.state.appPhase === "crashed" || before.data.state.blockingSignals.includes("error_state")) {
-    strategy = "relaunch_app";
-    const result = await launchAppWithMaestro({
-      sessionId: input.sessionId,
-      platform,
-      runnerProfile,
-      harnessConfigPath: input.harnessConfigPath,
-      deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
-      appId: input.appId ?? sessionRecord?.session.appId,
-      dryRun: input.dryRun,
-    });
-    artifacts = Array.from(new Set([...artifacts, ...result.artifacts]));
-    status = result.status;
-    reasonCode = result.reasonCode;
-    note = "Recovery relaunched the app because the session looked crashed or error-blocked.";
-  } else if (before.data.state.readiness === "waiting_network" || before.data.state.readiness === "waiting_ui" || before.data.state.appPhase === "loading") {
-    strategy = "wait_until_ready";
-    note = "Recovery re-sampled session state waiting for the screen to stabilize.";
-  }
-
-  const after = await getSessionStateWithMaestro({
-    sessionId: input.sessionId,
-    platform,
-    runnerProfile,
-    harnessConfigPath: input.harnessConfigPath,
-    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
-    appId: input.appId ?? sessionRecord?.session.appId,
-    dryRun: input.dryRun,
-  });
-  artifacts = Array.from(new Set([...artifacts, ...after.artifacts]));
-  const recovered = after.data.state.readiness === "ready" || after.data.state.appPhase === "ready";
-  const summary: RecoverySummary = {
-    strategy,
-    recovered,
-    note,
-    stateBefore: before.data.state,
-    stateAfter: after.data.state,
-  };
-
-  if (sessionRecord) {
-    await persistSessionState(repoRoot, input.sessionId, after.data.state, buildRecoveryTimelineEvent(summary, artifacts), artifacts);
-  }
-
-  return {
-    status,
-    reasonCode,
-    sessionId: input.sessionId,
-    durationMs: Date.now() - startTime,
-    attempts: 1,
-    artifacts,
-    data: { summary },
-    nextSuggestions: recovered ? [] : ["Recovery stopped at a deterministic boundary; inspect the latest state summary before escalating."],
-  };
 }
 
 export async function replayLastStablePathWithMaestro(
   input: ReplayLastStablePathInput,
 ): Promise<ToolResult<ReplayLastStablePathData>> {
-  const startTime = Date.now();
-  const repoRoot = resolveRepoPath();
-  const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
-  const platform = input.platform ?? sessionRecord?.session.platform;
-  if (!platform) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.configurationError,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: { summary: { strategy: "replay_last_successful_action", recovered: false, note: "Platform could not be resolved for replay." } },
-      nextSuggestions: ["Provide platform explicitly or start a session before invoking replay_last_stable_path."],
-    };
-  }
-
-  const stableRecord = (await listActionRecordsForSession(repoRoot, input.sessionId)).find((record: { outcome: ActionOutcomeSummary }) => record.outcome.outcome === "success");
-  if (!stableRecord) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.configurationError,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: { summary: { strategy: "replay_last_successful_action", recovered: false, note: "No stable successful action was recorded for this session." } },
-      nextSuggestions: ["Record at least one successful perform_action_with_evidence step before replaying a stable path."],
-    };
-  }
-
-  if (!canReplayPersistedAction(stableRecord)) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.unsupportedOperation,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: {
-        summary: {
-          strategy: "replay_last_successful_action",
-          recovered: false,
-          note: "The last successful action is considered too risky for bounded auto replay.",
-          replayedActionId: stableRecord.actionId,
-        },
-      },
-      nextSuggestions: ["Only low-side-effect actions can be replayed automatically; inspect the prior action manually instead."],
-    };
-  }
-
-  const replayed = await performActionWithEvidenceWithMaestro({
-    sessionId: input.sessionId,
-    platform,
-    runnerProfile: input.runnerProfile ?? sessionRecord?.session.profile ?? DEFAULT_RUNNER_PROFILE,
-    harnessConfigPath: input.harnessConfigPath,
-    deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
-    appId: input.appId ?? sessionRecord?.session.appId,
-    action: {
-      actionType: stableRecord.intent?.actionType ?? stableRecord.outcome.actionType,
-      resourceId: stableRecord.intent?.resourceId ?? stableRecord.outcome.postState?.screenId,
-      contentDesc: stableRecord.intent?.contentDesc,
-      text: stableRecord.intent?.text,
-      className: stableRecord.intent?.className,
-      clickable: stableRecord.intent?.clickable,
-      limit: stableRecord.intent?.limit,
-      value: stableRecord.intent?.value,
-      appId: stableRecord.intent?.appId,
-      launchUrl: stableRecord.intent?.launchUrl,
-      timeoutMs: stableRecord.intent?.timeoutMs,
-      intervalMs: stableRecord.intent?.intervalMs,
-      waitUntil: stableRecord.intent?.waitUntil,
-    },
-    dryRun: input.dryRun,
+  return replayLastStablePathWithMaestroFromRecoveryTools(input, {
+    getSessionStateWithMaestro,
+    launchAppWithMaestro,
+    performActionWithEvidenceWithMaestro,
   });
-  const summary: RecoverySummary = {
-    strategy: "replay_last_successful_action",
-    recovered: replayed.status !== "failed",
-    note: "Recovery replayed the last successful bounded action from local session history.",
-    stateBefore: stableRecord.outcome.preState,
-    stateAfter: replayed.data.postStateSummary,
-    replayedActionId: stableRecord.actionId,
-  };
-
-  return {
-    status: replayed.status,
-    reasonCode: replayed.reasonCode,
-    sessionId: input.sessionId,
-    durationMs: Date.now() - startTime,
-    attempts: 1,
-    artifacts: replayed.artifacts,
-    data: { summary, replayedOutcome: replayed.data.outcome },
-    nextSuggestions: replayed.nextSuggestions,
-  };
 }
 
 export async function findSimilarFailuresWithMaestro(
   input: FindSimilarFailuresInput,
 ): Promise<ToolResult<FindSimilarFailuresData>> {
-  const startTime = Date.now();
-  const repoRoot = resolveRepoPath();
-  const actionId = input.actionId ?? (await loadLatestActionRecordForSession(repoRoot, input.sessionId))?.actionId;
-  if (!actionId) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.configurationError,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: { found: false, similarFailures: [] },
-      nextSuggestions: ["Explain or record a failed action first so a failure signature exists."],
-    };
-  }
-
-  const explained = await explainLastFailureWithMaestro({ sessionId: input.sessionId });
-  const signature = explained.data.attribution && explained.data.outcome
-    ? buildFailureSignature({ outcome: explained.data.outcome, attribution: explained.data.attribution, evidenceDelta: (await loadActionRecord(repoRoot, actionId))?.evidenceDelta })
-    : undefined;
-  const failureIndex = await loadFailureIndex(repoRoot);
-  const similarFailures: SimilarFailure[] = signature
-    ? failureIndex
-      .filter((entry) => entry.actionId !== actionId)
-      .map((entry) => ({
-        actionId: entry.actionId,
-        sessionId: entry.sessionId,
-        signature: entry.signature,
-        matchScore: scoreSimilarFailure(signature, entry.signature),
-      }))
-      .filter((entry) => entry.matchScore > 0)
-      .sort((left, right) => right.matchScore - left.matchScore)
-      .slice(0, 5)
-    : [];
-
-  return {
-    status: "success",
-    reasonCode: REASON_CODES.ok,
-    sessionId: input.sessionId,
-    durationMs: Date.now() - startTime,
-    attempts: 1,
-    artifacts: [],
-    data: { found: Boolean(signature), actionId, signature, similarFailures },
-    nextSuggestions: similarFailures.length > 0 ? [] : ["No strong similar failures were indexed yet; build more local history or inspect the baseline diff next."],
-  };
+  return findSimilarFailuresWithMaestroFromActionOutcome(input);
 }
 
 export async function compareAgainstBaselineWithMaestro(
   input: CompareAgainstBaselineInput,
 ): Promise<ToolResult<CompareAgainstBaselineData>> {
-  const startTime = Date.now();
-  const repoRoot = resolveRepoPath();
-  const current = input.actionId ? await loadActionRecord(repoRoot, input.actionId) : await loadLatestActionRecordForSession(repoRoot, input.sessionId);
-  if (!current) {
-    return {
-      status: "failed",
-      reasonCode: REASON_CODES.configurationError,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: { found: false },
-      nextSuggestions: ["Record an action outcome before comparing it against a baseline."],
-    };
-  }
-
-  const baselines = await loadBaselineIndex(repoRoot);
-  const baseline = baselines.find((entry) => entry.actionType === current.outcome.actionType && entry.actionId !== current.actionId);
-  const differences: string[] = [];
-  if (baseline) {
-    if ((current.outcome.postState?.screenId ?? current.outcome.preState?.screenId) !== baseline.screenId) {
-      differences.push(`screen ${current.outcome.postState?.screenId ?? current.outcome.preState?.screenId ?? "unknown"} != ${baseline.screenId ?? "unknown"}`);
-    }
-    if (current.outcome.outcome !== "success") {
-      differences.push(`outcome ${current.outcome.outcome} differs from successful baseline`);
-    }
-  }
-
-  return {
-    status: "success",
-    reasonCode: REASON_CODES.ok,
-    sessionId: input.sessionId,
-    durationMs: Date.now() - startTime,
-    attempts: 1,
-    artifacts: [],
-    data: {
-      found: Boolean(baseline),
-      actionId: current.actionId,
-      comparison: {
-        baselineActionId: baseline?.actionId,
-        comparedActionId: current.actionId,
-        differences,
-        matched: differences.length === 0 && Boolean(baseline),
-      },
-    },
-    nextSuggestions: baseline ? [] : ["No successful baseline exists yet for this action type; create one by recording a successful bounded action."],
-  };
+  return compareAgainstBaselineWithMaestroFromActionOutcome(input);
 }
 
 export async function suggestKnownRemediationWithMaestro(
   input: SuggestKnownRemediationInput,
 ): Promise<ToolResult<SuggestKnownRemediationData>> {
-  const similar = await findSimilarFailuresWithMaestro({ sessionId: input.sessionId, actionId: input.actionId });
-  const baseline = await compareAgainstBaselineWithMaestro({ sessionId: input.sessionId, actionId: input.actionId });
-  const repoRoot = resolveRepoPath();
-  const failureIndex = await loadFailureIndex(repoRoot);
-  const actionId = similar.data.actionId ?? baseline.data.actionId;
-  const indexedRemediation = actionId ? failureIndex.find((entry) => entry.actionId === actionId)?.remediation ?? [] : [];
-  const remediation = uniqueNonEmpty([
-    ...indexedRemediation,
-    ...(similar.data.similarFailures.length > 0 ? ["This failure resembles previous incidents; inspect the closest matching signature before changing selectors."] : []),
-    ...(baseline.data.comparison?.differences.length ? ["Current action diverges from a successful baseline; inspect the listed differences first."] : []),
-  ], 5);
-
-  return {
-    status: "success",
-    reasonCode: REASON_CODES.ok,
-    sessionId: input.sessionId,
-    durationMs: 0,
-    attempts: 1,
-    artifacts: [],
-    data: {
-      found: remediation.length > 0,
-      actionId,
-      remediation,
-    },
-    nextSuggestions: remediation.length > 0
-      ? prioritizeSuggestionBuckets(remediation)
-      : ["No known remediation was indexed yet; explain the failure first to seed local memory."],
-  };
+  return suggestKnownRemediationWithMaestroFromActionOutcome(input);
 }
 
 function readSummaryLine(stdout?: string): string | undefined {
