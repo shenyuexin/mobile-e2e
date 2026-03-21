@@ -88,11 +88,7 @@ jobs:
           script: |
             mkdir -p artifacts/platform-smoke/android
             adb devices
-            maestro test \
-              --platform android \
-              --udid emulator-5554 \
-              --debug-output artifacts/platform-smoke/android/debug \
-              flows/samples/ci/android-settings-smoke.yaml
+            maestro test --platform android --udid emulator-5554 --debug-output artifacts/platform-smoke/android/debug flows/samples/ci/android-settings-smoke.yaml
 
       - name: Upload Android platform-smoke artifact
         if: always()
