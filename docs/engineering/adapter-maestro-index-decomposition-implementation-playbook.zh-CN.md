@@ -53,6 +53,17 @@
 2. 允许的改动仅限 facade 级薄组装：re-export、依赖注入入口、薄协调调用。
 3. 任何触达 `index.ts`/`ui-tools.ts`/`device-runtime.ts`/`recording-runtime.ts` 的阶段提交，都必须在 commit 说明中给出“是否发生回流”的明确结论。
 
+### 2.3 阶段收尾快照（2026-03-21）
+
+> 用于本轮 A-G 收尾验收。
+
+| 文件 | Phase A 基线 | 当前行数 | 变化 |
+|---|---:|---:|---:|
+| `packages/adapter-maestro/src/index.ts` | 6110 | 752 | -5358 |
+| `packages/adapter-maestro/src/ui-tools.ts` | 2197 | 2197 | 0 |
+| `packages/adapter-maestro/src/device-runtime.ts` | 929 | 929 | 0 |
+| `packages/adapter-maestro/src/recording-runtime.ts` | 1008 | 1008 | 0 |
+
 ---
 
 ## 3. 目标模块边界（拆分落点）
@@ -301,3 +312,23 @@ pnpm test
 3. 优先保留“边界正确 + 可验证”的结构，再继续推进。
 
 原则：宁可多几个小 PR，也不要一次性跨多簇导致不可验证。
+
+---
+
+## 9. 本轮执行记录（A-G 完结）
+
+按阶段映射的关键提交：
+
+- Phase A：`6b7371b`（playbook 落地）/ `c530283`（基线与冻结约束）
+- Phase B：`4410628`（doctor-runtime 抽离）
+- Phase C：`9937805`（session-state 抽离）
+- Phase D：`eab9384`（interruption-tools 抽离）
+- Phase E：`82431cb`（action-orchestrator 抽离）
+- Phase F：`7edf291`（task-planner + action-outcome + recovery-tools 分层）
+- Phase G：`5b0057c`（门禁文档固化）+ `30d50e9`（继续收敛 index facade）
+
+收尾结论：
+
+1. `index.ts` 已从 6110 行降至 752 行，职责以 facade 导出/薄组装为主。
+2. 关键能力簇已落到目标模块边界，且未出现 `adapter-maestro/src` 内反向 import `index.ts` 的依赖回流。
+3. 反劣化规则已在 engineering / architecture / PR template 三层入口固化。

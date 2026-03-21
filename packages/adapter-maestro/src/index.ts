@@ -399,33 +399,6 @@ export { buildInterruptionEvent, decideInterruptionResolution } from "./interrup
 export { buildInterruptionTimelineEvent, buildResumeCheckpoint, hasStateDrift, pickEventSource, summarizeInterruptionDetail } from "./interruption-orchestrator.js";
 export { classifyDoctorOutcome, isDoctorCriticalFailure } from "./doctor-runtime.js";
 
-const DEFAULT_GET_LOGS_LINES = 200;
-const DEFAULT_GET_CRASH_LINES = 120;
-const DEFAULT_DEBUG_PACKET_JS_TIMEOUT_MS = 1000;
-const DEFAULT_DEVICE_COMMAND_TIMEOUT_MS = 5000;
-const DEFAULT_RECORD_SCREEN_DURATION_MS = 15_000;
-const MAX_ANDROID_SCREENRECORD_DURATION_MS = 180_000;
-
-function sanitizeArtifactSegment(value: string): string {
-  const normalized = value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
-  return normalized.length > 0 ? normalized : "session";
-}
-
-function normalizeRecordDurationMs(value: number | undefined, platform: Platform): number {
-  const normalized = normalizePositiveInteger(value, DEFAULT_RECORD_SCREEN_DURATION_MS);
-  if (platform === "android") {
-    return Math.min(MAX_ANDROID_SCREENRECORD_DURATION_MS, normalized);
-  }
-  return normalized;
-}
-
-function normalizeRecordBitrateMbps(value: number | undefined): number | undefined {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return undefined;
-  }
-  return Number(value.toFixed(2));
-}
-
 export function buildLogSummary(content: string, query?: string): LogSummary {
   return buildLogSummaryWithSessionState(content, query);
 }
@@ -505,80 +478,6 @@ export function buildDiagnosisBriefing(params: {
 }): string[] {
   return buildDiagnosisBriefingFromDiagnosticsTools(params);
 }
-
-
-
-async function listRelativeFiles(rootPath: string): Promise<string[]> {
-  try {
-    const entries = await readdir(rootPath, { withFileTypes: true });
-    const output: string[] = [];
-
-    for (const entry of entries) {
-      const entryPath = path.join(rootPath, entry.name);
-      if (entry.isDirectory()) {
-        const nested = await listRelativeFiles(entryPath);
-        for (const item of nested) {
-          output.push(path.posix.join(entry.name, item));
-        }
-      } else {
-        output.push(entry.name);
-      }
-    }
-
-    return output.sort();
-  } catch {
-    return [];
-  }
-}
-
-interface RelativeFileEntry {
-  relativePath: string;
-  absolutePath: string;
-  mtimeMs: number;
-}
-
-async function listRelativeFileEntries(rootPath: string, prefix = ""): Promise<RelativeFileEntry[]> {
-  try {
-    const entries = await readdir(rootPath, { withFileTypes: true });
-    const output: RelativeFileEntry[] = [];
-
-    for (const entry of entries) {
-      const entryPath = path.join(rootPath, entry.name);
-      const relativePath = prefix ? path.posix.join(prefix, entry.name) : entry.name;
-      if (entry.isDirectory()) {
-        output.push(...(await listRelativeFileEntries(entryPath, relativePath)));
-      } else {
-        const metadata = await stat(entryPath);
-        output.push({ relativePath, absolutePath: entryPath, mtimeMs: metadata.mtimeMs });
-      }
-    }
-
-    return output.sort((left, right) => right.mtimeMs - left.mtimeMs);
-  } catch {
-    return [];
-  }
-}
-
-async function listArtifacts(rootPath: string, repoRoot: string): Promise<string[]> {
-  try {
-    const entries = await readdir(rootPath, { withFileTypes: true });
-    const files: string[] = [];
-
-    for (const entry of entries) {
-      const entryPath = path.join(rootPath, entry.name);
-      if (entry.isDirectory()) {
-        files.push(...(await listArtifacts(entryPath, repoRoot)));
-      } else {
-        files.push(toRelativePath(repoRoot, entryPath));
-      }
-    }
-
-    return files.sort();
-  } catch {
-    return [];
-  }
-}
-
 export async function describeCapabilitiesWithMaestro(
   input: DescribeCapabilitiesInput,
 ): Promise<ToolResult<DescribeCapabilitiesData>> {

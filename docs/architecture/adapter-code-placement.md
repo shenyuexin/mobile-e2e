@@ -100,7 +100,7 @@ Current role:
 
 - Tool-level orchestration entrypoint for adapter behavior.
 - Aggregates platform execution, dry-run envelopes, and structured tool results.
-- Still holds a large amount of runtime logic that should continue to move outward.
+- Primarily acts as a thin facade (tool exports + light composition), with runtime logic extracted into focused modules.
 
 Keep in `index.ts`:
 
