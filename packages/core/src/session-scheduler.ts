@@ -1,8 +1,8 @@
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Platform } from "@mobile-e2e-mcp/contracts";
-import { appendSessionTimelineEvent } from "./session-store.js";
 import { markBusy, markIdle, refreshHeartbeat } from "./execution-coordinator.js";
+import { appendSessionTimelineEvent } from "./session-record-store.js";
 
 function assertSafeSegment(input: string, label: string): void {
   if (!/^[A-Za-z0-9._:-]+$/.test(input)) {

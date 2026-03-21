@@ -2,7 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Platform } from "@mobile-e2e-mcp/contracts";
 import { buildDeviceLeaseRecordRelativePath, type DeviceLease, listLeases, loadLeaseByDevice, persistLease, removeLease } from "./device-lease-store.js";
-import { loadSessionRecord } from "./session-store.js";
+import { loadSessionRecord } from "./session-record-store.js";
 
 export interface AcquireLeaseInput {
   sessionId: string;

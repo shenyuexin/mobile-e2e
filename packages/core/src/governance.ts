@@ -1,9 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "yaml";
-import type { SessionTimelineEvent } from "@mobile-e2e-mcp/contracts";
-import type { InterruptionPolicyRuleV2 } from "@mobile-e2e-mcp/contracts";
-import type { PersistedSessionRecord } from "./session-store.js";
+import type {
+  InterruptionPolicyRuleV2,
+  SessionTimelineEvent,
+} from "@mobile-e2e-mcp/contracts";
+import type { PersistedSessionRecord } from "./session-record-store.js";
 
 export interface ArtifactRetentionProfile {
   screenshots?: string;
