@@ -20,7 +20,7 @@ export async function validatePolicyProfile(policyProfile: string | undefined): 
   }
 }
 
-export async function enforcePolicyForTool<TInput>(toolName: string, input: TInput): Promise<ToolResult | undefined> {
+export async function enforcePolicyForTool<TInput>(toolName: string, input: TInput): Promise<ToolResult<{ toolName: string; policyProfile: string }> | undefined> {
   if (toolName === "start_session" || toolName === "end_session") {
     return undefined;
   }

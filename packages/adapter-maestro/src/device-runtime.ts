@@ -16,6 +16,7 @@ import type {
   ReasonCode,
   RecordScreenData,
   RecordScreenInput,
+  ResetAppStateStrategy,
   RunnerProfile,
   ScreenshotData,
   ScreenshotInput,
@@ -144,6 +145,36 @@ export function resolveInstallArtifactPath(repoRoot: string, runnerProfile: Runn
   if (!spec) return undefined;
   const fromEnv = process.env[spec.envVar];
   return fromEnv ? fromEnv : path.resolve(repoRoot, spec.relativePath);
+}
+
+export function buildLaunchCommandWithRuntime(platform: Platform, params: {
+  runnerProfile: RunnerProfile;
+  deviceId: string;
+  appId: string;
+  launchUrl?: string;
+}): string[] {
+  return resolveDeviceRuntimePlatformHooks(platform).buildLaunchCommand(params);
+}
+
+export function buildInstallCommandWithRuntime(platform: Platform, params: {
+  deviceId: string;
+  artifactPath: string;
+}): string[] {
+  return resolveDeviceRuntimePlatformHooks(platform).buildInstallCommand(params);
+}
+
+export function buildResetPlanWithRuntime(platform: Platform, params: {
+  strategy: ResetAppStateStrategy;
+  deviceId: string;
+  appId: string;
+  artifactPath?: string;
+}): {
+  commandLabels: string[];
+  commands: string[][];
+  supportLevel: "full" | "partial";
+  unsupportedReason?: string;
+} {
+  return resolveDeviceRuntimePlatformHooks(platform).buildResetPlan(params);
 }
 
 function parseAdbDevices(stdout: string, includeUnavailable: boolean): DeviceInfo[] {

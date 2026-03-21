@@ -20,6 +20,34 @@ async function resolveAndroidAppPid(repoRoot: string, deviceId: string, appId: s
 export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
   return {
     platform: "android",
+    buildLaunchCommand: ({ runnerProfile, deviceId, appId, launchUrl }) => (
+      runnerProfile === "phase1"
+        ? ["adb", "-s", deviceId, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", launchUrl ?? "", appId]
+        : ["adb", "-s", deviceId, "shell", "monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1"]
+    ),
+    buildInstallCommand: ({ deviceId, artifactPath }) => ["adb", "-s", deviceId, "install", "-r", artifactPath],
+    buildResetPlan: ({ strategy, deviceId, appId, artifactPath }) => {
+      if (strategy === "clear_data") {
+        return {
+          commandLabels: ["clear_data"],
+          commands: [["adb", "-s", deviceId, "shell", "pm", "clear", appId]],
+          supportLevel: "full" as const,
+        };
+      }
+      if (strategy === "uninstall_reinstall") {
+        return {
+          commandLabels: ["uninstall", "install"],
+          commands: [["adb", "-s", deviceId, "uninstall", appId], ["adb", "-s", deviceId, "install", "-r", artifactPath ?? ""]],
+          supportLevel: "full" as const,
+        };
+      }
+      return {
+        commandLabels: [],
+        commands: [],
+        supportLevel: "partial" as const,
+        unsupportedReason: "keychain_reset is only available for iOS simulators in this baseline implementation.",
+      };
+    },
     buildTerminateCommand: (deviceId, appId) => ["adb", "-s", deviceId, "shell", "am", "force-stop", appId],
     buildScreenshotCommand: (deviceId) => ["adb", "-s", deviceId, "exec-out", "screencap", "-p"],
     screenshotUsesStdoutCapture: true,

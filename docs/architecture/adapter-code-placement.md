@@ -227,12 +227,15 @@ Typical new features:
 Primary home:
 
 - `packages/adapter-maestro/src/ui-runtime.ts`
+- `packages/adapter-maestro/src/ui-runtime-platform.ts`
+- `packages/adapter-maestro/src/ui-runtime-android.ts`
+- `packages/adapter-maestro/src/ui-runtime-ios.ts`
 
 Should own:
 
 - Android UI dump capture
 - iOS hierarchy capture
-- `adb`/`idb` command builders for tap, type, swipe
+- platform hook command builders for tap/type/swipe and runtime preflight
 - reusable runtime helpers for inspect/query/resolve/wait/scroll flows
 
 Typical new features:
@@ -245,6 +248,7 @@ Why split this out:
 
 - it is currently the largest execution-heavy cluster inside `index.ts`
 - it mixes command building, retries, and platform-specific side effects
+- the platform hooks isolate runtime command branching so tool orchestration can stay focused on result shaping
 
 ### D. UI Tool Orchestration
 
@@ -352,9 +356,9 @@ When adding a new adapter feature, update all relevant layers together:
 
 ## 7. Near-Term Refactor Order
 
-Current baseline already applies the highest-value split for UI and device capability families (`ui-tools.ts`, `ui-runtime.ts`, and `device-runtime-*` hooks).
+Current baseline includes `device-runtime-*` hooks and now also `ui-runtime-*` platform hooks, but boundaries are still in progress.
 
-Near-term extraction priority should focus on remaining orchestration hot spots that are still in `index.ts`, rather than re-opening these completed boundaries.
+Near-term extraction priority should continue moving remaining cross-platform orchestration branches out of `index.ts` and large tool orchestration files where practical.
 
 ## 8. Decision Rule
 

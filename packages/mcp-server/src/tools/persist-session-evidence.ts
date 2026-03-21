@@ -20,7 +20,7 @@ function readExecutionEvidenceArray(value: unknown): ExecutionEvidence[] {
   return value.filter((item): item is ExecutionEvidence => isRecord(item) && typeof item.path === "string");
 }
 
-function extractArtifactRefs(result: ToolResult): string[] {
+function extractArtifactRefs(result: ToolResult<unknown>): string[] {
   const refs = [...result.artifacts];
   if (isRecord(result.data)) {
     if (typeof result.data.outputPath === "string" && result.data.outputPath.length > 0) {
@@ -58,7 +58,7 @@ function buildLayer(toolName: string): TimelineEventLayer {
   return "runtime";
 }
 
-function buildEvidenceEvent(toolName: string, result: ToolResult, artifactRefs: string[], stateSummary?: StateSummary): SessionTimelineEvent {
+function buildEvidenceEvent(toolName: string, result: ToolResult<unknown>, artifactRefs: string[], stateSummary?: StateSummary): SessionTimelineEvent {
   const statusSummary = `${toolName} ${result.status}`;
   return {
     timestamp: new Date().toISOString(),
@@ -75,7 +75,7 @@ function buildEvidenceEvent(toolName: string, result: ToolResult, artifactRefs: 
 export async function persistSessionEvidenceCapture(params: {
   toolName: string;
   sessionId?: string;
-  result: ToolResult;
+  result: ToolResult<unknown>;
 }): Promise<void> {
   if (!params.sessionId) {
     return;

@@ -93,7 +93,7 @@ type ToolInput<TName extends ToolName> = MobileE2EMcpToolContractMap[TName]["inp
 type ToolOutputData<TName extends ToolName> = MobileE2EMcpToolContractMap[TName]["outputData"];
 type ToolOutput<TName extends ToolName> = ToolResult<ToolOutputData<TName>>;
 type ToolHandler<TName extends ToolName> = (input: ToolInput<TName>) => Promise<ToolOutput<TName>>;
-type AnyToolHandler = { bivarianceHack(input: unknown): Promise<ToolResult> }["bivarianceHack"];
+type AnyToolHandler = { bivarianceHack(input: unknown): Promise<ToolResult<unknown>> }["bivarianceHack"];
 
 type ToolPolicyRequirement =
   | "none"
@@ -221,7 +221,7 @@ function withPolicy<TName extends ToolName>(
   return async (input: ToolInput<TName>): Promise<ToolOutput<TName>> => {
     const denied = await enforcePolicyForTool(toolName, input);
     if (denied) {
-      return denied as ToolOutput<TName>;
+      return denied as unknown as ToolOutput<TName>;
     }
     return handler(input);
   };
@@ -251,7 +251,7 @@ function withSessionExecution<TName extends ToolName>(
   options?: { requireResolvedSessionContext?: boolean },
 ): ToolHandler<TName> {
   return async (input: ToolInput<TName>): Promise<ToolOutput<TName>> => {
-    const asOutput = (result: ToolResult): ToolOutput<TName> =>
+    const asOutput = (result: ToolResult<unknown>): ToolOutput<TName> =>
       result as ToolOutput<TName>;
     const sessionInput = input as SessionScopedInput;
     let sessionId = sessionInput.sessionId;

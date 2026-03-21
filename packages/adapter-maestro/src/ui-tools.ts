@@ -61,15 +61,12 @@ import {
   type IosUiSnapshot,
   type IosUiSnapshotFailure,
   buildAndroidUiDumpCommands,
-  buildIdbCommand,
-  buildIosSwipeCommand,
-  buildIosUiDescribeCommand,
   captureAndroidUiSnapshot,
   captureIosUiSnapshot,
   isAndroidUiSnapshotFailure,
   isIosUiSnapshotFailure,
-  probeIdbAvailability,
 } from "./ui-runtime.js";
+import { resolveUiRuntimePlatformHooks } from "./ui-runtime-platform.js";
 import {
   buildExecutionEvidence,
   buildFailureReason,
@@ -138,6 +135,7 @@ export async function inspectUiWithMaestroTool(input: InspectUiInput): Promise<T
   }
   const repoRoot = resolveRepoPath();
   const platform = input.platform;
+  const runtimeHooks = resolveUiRuntimePlatformHooks(platform);
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const selection = await loadHarnessSelection(repoRoot, platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
   const deviceId = input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(platform);
@@ -147,7 +145,7 @@ export async function inspectUiWithMaestroTool(input: InspectUiInput): Promise<T
   if (platform === "ios") {
     const iosRelativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "ui-dumps", input.sessionId, `${platform}-${runnerProfile}.json`);
     const iosAbsoluteOutputPath = path.resolve(repoRoot, iosRelativeOutputPath);
-    const idbCommand = buildIosUiDescribeCommand(deviceId);
+    const idbCommand = runtimeHooks.buildHierarchyCapturePreviewCommand(deviceId);
 
     if (input.dryRun) {
       return {
@@ -162,17 +160,17 @@ export async function inspectUiWithMaestroTool(input: InspectUiInput): Promise<T
       };
     }
 
-    const idbProbe = await probeIdbAvailability(repoRoot);
+    const idbProbe = await runtimeHooks.probeRuntimeAvailability?.(repoRoot);
     if (!idbProbe || idbProbe.exitCode !== 0) {
       return {
         status: "partial",
-        reasonCode: REASON_CODES.configurationError,
+        reasonCode: runtimeHooks.probeFailureReasonCode,
         sessionId: input.sessionId,
         durationMs: Date.now() - startTime,
         attempts: 1,
         artifacts: [],
         data: { dryRun: false, runnerProfile, outputPath: iosRelativeOutputPath, command: idbCommand, exitCode: idbProbe?.exitCode ?? null, supportLevel: "partial", platformSupportNote: "iOS inspect_ui depends on idb availability in the local environment." },
-        nextSuggestions: ["iOS inspect_ui in this repo requires idb. Install idb-companion and fb-idb, then retry inspect_ui."],
+        nextSuggestions: [runtimeHooks.probeUnavailableSuggestion("inspect_ui")],
       };
     }
 
@@ -298,6 +296,7 @@ export async function queryUiWithMaestroTool(input: QueryUiInput): Promise<ToolR
   }
   const repoRoot = resolveRepoPath();
   const platform = input.platform;
+  const runtimeHooks = resolveUiRuntimePlatformHooks(platform);
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const selection = await loadHarnessSelection(repoRoot, platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
   const deviceId = input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(platform);
@@ -334,7 +333,7 @@ export async function queryUiWithMaestroTool(input: QueryUiInput): Promise<ToolR
 
   if (platform === "ios") {
     const iosRelativeOutputPath = input.outputPath ?? path.posix.join("artifacts", "ui-dumps", input.sessionId, `${platform}-${runnerProfile}.json`);
-    const idbCommand = buildIosUiDescribeCommand(deviceId);
+    const idbCommand = runtimeHooks.buildHierarchyCapturePreviewCommand(deviceId);
 
     if (input.dryRun) {
       return {
@@ -538,6 +537,7 @@ export async function resolveUiTargetWithMaestroTool(input: ResolveUiTargetInput
   }
   const repoRoot = resolveRepoPath();
   const platform = input.platform;
+  const runtimeHooks = resolveUiRuntimePlatformHooks(platform);
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const query = normalizeQueryUiSelector({
     resourceId: input.resourceId,
@@ -575,7 +575,7 @@ export async function resolveUiTargetWithMaestroTool(input: ResolveUiTargetInput
 
   if (platform === "ios") {
     const deviceId = input.deviceId ?? DEFAULT_IOS_SIMULATOR_UDID;
-    const idbCommand = buildIosUiDescribeCommand(deviceId);
+    const idbCommand = runtimeHooks.buildHierarchyCapturePreviewCommand(deviceId);
     if (input.dryRun) {
       return {
         status: "partial",
@@ -796,6 +796,7 @@ export async function waitForUiWithMaestroTool(input: WaitForUiInput): Promise<T
   }
   const repoRoot = resolveRepoPath();
   const platform = input.platform;
+  const runtimeHooks = resolveUiRuntimePlatformHooks(platform);
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const query = normalizeQueryUiSelector({
     resourceId: input.resourceId,
@@ -838,7 +839,7 @@ export async function waitForUiWithMaestroTool(input: WaitForUiInput): Promise<T
 
   if (platform === "ios") {
     const deviceId = input.deviceId ?? DEFAULT_IOS_SIMULATOR_UDID;
-    const idbCommand = buildIosUiDescribeCommand(deviceId);
+    const idbCommand = runtimeHooks.buildHierarchyCapturePreviewCommand(deviceId);
     if (input.dryRun) {
       return {
         status: "partial",
@@ -1157,13 +1158,12 @@ export async function tapWithMaestroTool(input: TapInput): Promise<ToolResult<Ta
     };
   }
   const repoRoot = resolveRepoPath();
+  const runtimeHooks = resolveUiRuntimePlatformHooks(input.platform);
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
   const deviceId = input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(input.platform);
 
-  const command = input.platform === "ios"
-    ? buildIdbCommand(["ui", "tap", String(input.x), String(input.y), "--udid", deviceId])
-    : ["adb", "-s", deviceId, "shell", "input", "tap", String(input.x), String(input.y)];
+  const command = runtimeHooks.buildTapCommand(deviceId, input.x, input.y);
   if (input.dryRun) {
     return {
       status: "success",
@@ -1173,22 +1173,22 @@ export async function tapWithMaestroTool(input: TapInput): Promise<ToolResult<Ta
       attempts: 1,
       artifacts: [],
       data: { dryRun: true, runnerProfile, x: input.x, y: input.y, command, exitCode: 0 },
-      nextSuggestions: [input.platform === "ios" ? "Run tap without dryRun to perform the actual iOS simulator coordinate tap through idb." : "Run tap without dryRun to perform the actual Android coordinate tap."],
+      nextSuggestions: [runtimeHooks.tapDryRunSuggestion],
     };
   }
 
-  if (input.platform === "ios") {
-    const idbProbe = await probeIdbAvailability(repoRoot);
+  if (runtimeHooks.requiresProbe) {
+    const idbProbe = await runtimeHooks.probeRuntimeAvailability?.(repoRoot);
     if (!idbProbe || idbProbe.exitCode !== 0) {
       return {
         status: "partial",
-        reasonCode: REASON_CODES.configurationError,
+        reasonCode: runtimeHooks.probeFailureReasonCode,
         sessionId: input.sessionId,
         durationMs: Date.now() - startTime,
         attempts: 1,
         artifacts: [],
         data: { dryRun: false, runnerProfile, x: input.x, y: input.y, command, exitCode: idbProbe?.exitCode ?? null },
-        nextSuggestions: ["iOS tap requires idb. Install fb-idb and idb_companion, or set IDB_CLI_PATH/IDB_COMPANION_PATH before retrying."],
+        nextSuggestions: [runtimeHooks.probeUnavailableSuggestion("tap")],
       };
     }
   }
@@ -1202,7 +1202,7 @@ export async function tapWithMaestroTool(input: TapInput): Promise<ToolResult<Ta
     attempts: 1,
     artifacts: [],
     data: { dryRun: false, runnerProfile, x: input.x, y: input.y, command, exitCode: execution.exitCode },
-    nextSuggestions: execution.exitCode === 0 ? [] : [input.platform === "ios" ? "Check the selected simulator coordinates and idb companion availability before retrying tap." : "Check Android device state and coordinates before retrying tap."],
+    nextSuggestions: execution.exitCode === 0 ? [] : [runtimeHooks.tapFailureSuggestion],
   };
 }
 
@@ -1221,38 +1221,37 @@ export async function typeTextWithMaestroTool(input: TypeTextInput): Promise<Too
     };
   }
   const repoRoot = resolveRepoPath();
+  const runtimeHooks = resolveUiRuntimePlatformHooks(input.platform);
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const selection = await loadHarnessSelection(repoRoot, input.platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
   const deviceId = input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(input.platform);
 
-  const command = input.platform === "ios"
-    ? buildIdbCommand(["ui", "text", input.text, "--udid", deviceId])
-    : ["adb", "-s", deviceId, "shell", "input", "text", input.text.replaceAll(" ", "%s")];
+  const command = runtimeHooks.buildTypeTextCommand(deviceId, input.text);
   if (input.dryRun) {
     return {
-      status: input.platform === "ios" ? "success" : "partial",
-      reasonCode: input.platform === "ios" ? REASON_CODES.ok : REASON_CODES.unsupportedOperation,
+      status: runtimeHooks.platform === "ios" ? "success" : "partial",
+      reasonCode: runtimeHooks.platform === "ios" ? REASON_CODES.ok : REASON_CODES.unsupportedOperation,
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
       data: { dryRun: true, runnerProfile, text: input.text, command, exitCode: 0 },
-      nextSuggestions: [input.platform === "ios" ? "Run type_text without dryRun to perform iOS simulator text entry through idb." : "Run type_text without dryRun to perform Android text entry."],
+      nextSuggestions: [runtimeHooks.typeTextDryRunSuggestion],
     };
   }
 
-  if (input.platform === "ios") {
-    const idbProbe = await probeIdbAvailability(repoRoot);
+  if (runtimeHooks.requiresProbe) {
+    const idbProbe = await runtimeHooks.probeRuntimeAvailability?.(repoRoot);
     if (!idbProbe || idbProbe.exitCode !== 0) {
       return {
         status: "partial",
-        reasonCode: REASON_CODES.configurationError,
+        reasonCode: runtimeHooks.probeFailureReasonCode,
         sessionId: input.sessionId,
         durationMs: Date.now() - startTime,
         attempts: 1,
         artifacts: [],
         data: { dryRun: false, runnerProfile, text: input.text, command, exitCode: idbProbe?.exitCode ?? null },
-        nextSuggestions: ["iOS type_text requires idb. Install fb-idb and idb_companion, or set IDB_CLI_PATH/IDB_COMPANION_PATH before retrying."],
+        nextSuggestions: [runtimeHooks.probeUnavailableSuggestion("type_text")],
       };
     }
   }
@@ -1266,7 +1265,7 @@ export async function typeTextWithMaestroTool(input: TypeTextInput): Promise<Too
     attempts: 1,
     artifacts: [],
     data: { dryRun: false, runnerProfile, text: input.text, command, exitCode: execution.exitCode },
-    nextSuggestions: execution.exitCode === 0 ? [] : [input.platform === "ios" ? "Check the selected simulator, focused element, and idb companion availability before retrying type_text." : "Check Android device state and focused input field before retrying type_text."],
+    nextSuggestions: execution.exitCode === 0 ? [] : [runtimeHooks.typeTextFailureSuggestion],
   };
 }
 
@@ -1657,6 +1656,7 @@ export async function scrollAndResolveUiTargetWithMaestroTool(input: ScrollAndRe
   }
   const platform = input.platform;
   const repoRoot = resolveRepoPath();
+  const runtimeHooks = resolveUiRuntimePlatformHooks(platform);
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const query = normalizeQueryUiSelector({
     resourceId: input.resourceId,
@@ -1701,7 +1701,7 @@ export async function scrollAndResolveUiTargetWithMaestroTool(input: ScrollAndRe
   if (platform === "ios") {
     const deviceId = input.deviceId ?? DEFAULT_IOS_SIMULATOR_UDID;
     const previewSwipe = buildScrollSwipeCoordinates([], swipeDirection, swipeDurationMs);
-    const previewSwipeCommand = buildIosSwipeCommand(deviceId, previewSwipe);
+    const previewSwipeCommand = runtimeHooks.buildSwipeCommand(deviceId, previewSwipe);
 
     if (input.dryRun) {
       return {
@@ -1720,7 +1720,7 @@ export async function scrollAndResolveUiTargetWithMaestroTool(input: ScrollAndRe
           swipeDirection,
           swipeDurationMs,
           swipesPerformed: 0,
-          commandHistory: [buildIosUiDescribeCommand(deviceId), previewSwipeCommand],
+          commandHistory: [runtimeHooks.buildHierarchyCapturePreviewCommand(deviceId), previewSwipeCommand],
           exitCode: 0,
           result: { query, totalMatches: 0, matches: [] },
           resolution: buildNonExecutedUiTargetResolution(query, "full"),
@@ -1827,7 +1827,7 @@ export async function scrollAndResolveUiTargetWithMaestroTool(input: ScrollAndRe
       }
 
       const swipe = buildScrollSwipeCoordinates(lastSnapshot.nodes, swipeDirection, swipeDurationMs);
-      const swipeCommand = buildIosSwipeCommand(deviceId, swipe);
+      const swipeCommand = runtimeHooks.buildSwipeCommand(deviceId, swipe);
       commandHistory.push(swipeCommand);
       const swipeExecution = await executeRunner(swipeCommand, repoRoot, process.env);
       if (swipeExecution.exitCode !== 0) {
@@ -1867,7 +1867,7 @@ export async function scrollAndResolveUiTargetWithMaestroTool(input: ScrollAndRe
   const deviceId = input.deviceId ?? selection.deviceId ?? DEFAULT_ANDROID_DEVICE_ID;
   const { dumpCommand, readCommand } = buildAndroidUiDumpCommands(deviceId);
   const previewSwipe = buildScrollSwipeCoordinates([], swipeDirection, swipeDurationMs);
-  const previewSwipeCommand = ["adb", "-s", deviceId, "shell", "input", "swipe", String(previewSwipe.start.x), String(previewSwipe.start.y), String(previewSwipe.end.x), String(previewSwipe.end.y), String(previewSwipe.durationMs)];
+  const previewSwipeCommand = runtimeHooks.buildSwipeCommand(deviceId, previewSwipe);
 
   if (input.dryRun) {
     return {
@@ -2020,7 +2020,7 @@ export async function scrollAndResolveUiTargetWithMaestroTool(input: ScrollAndRe
     }
 
     const swipe = buildScrollSwipeCoordinates(lastSnapshot.nodes, swipeDirection, swipeDurationMs);
-    const swipeCommand = ["adb", "-s", deviceId, "shell", "input", "swipe", String(swipe.start.x), String(swipe.start.y), String(swipe.end.x), String(swipe.end.y), String(swipe.durationMs)];
+    const swipeCommand = runtimeHooks.buildSwipeCommand(deviceId, swipe);
     commandHistory.push(swipeCommand);
     const swipeExecution = await executeRunner(swipeCommand, repoRoot, process.env);
     if (swipeExecution.exitCode !== 0) {

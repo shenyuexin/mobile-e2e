@@ -191,6 +191,9 @@ import {
 import {
   collectHarnessChecks,
   collectDiagnosticsWithRuntime,
+  buildInstallCommandWithRuntime,
+  buildLaunchCommandWithRuntime,
+  buildResetPlanWithRuntime,
   getCrashSignalsWithRuntime,
   getLogsWithRuntime,
   getInstallArtifactSpec,
@@ -4639,10 +4642,17 @@ export async function resetAppStateWithMaestro(input: ResetAppStateInput): Promi
   const appId = input.appId ?? selection.appId;
   const strategy: ResetAppStateStrategy = input.strategy ?? "clear_data";
   const artifactPath = resolveInstallArtifactPath(repoRoot, runnerProfile, input.artifactPath);
-  const commandLabels: string[] = [];
-  const commands: string[][] = [];
+  const targetAppId = appId ?? "";
+  const resetPlan = buildResetPlanWithRuntime(platform, {
+    strategy,
+    deviceId,
+    appId: targetAppId,
+    artifactPath,
+  });
+  const commandLabels = [...resetPlan.commandLabels];
+  const commands = [...resetPlan.commands];
 
-  if (strategy === "keychain_reset" && platform === "android") {
+  if (resetPlan.unsupportedReason) {
     return {
       status: "partial",
       reasonCode: REASON_CODES.unsupportedOperation,
@@ -4659,9 +4669,9 @@ export async function resetAppStateWithMaestro(input: ResetAppStateInput): Promi
         commandLabels,
         commands,
         exitCode: null,
-        supportLevel: "partial",
+        supportLevel: resetPlan.supportLevel,
       },
-      nextSuggestions: ["keychain_reset is only available for iOS simulators in this baseline implementation."],
+      nextSuggestions: [resetPlan.unsupportedReason],
     };
   }
 
@@ -4687,17 +4697,7 @@ export async function resetAppStateWithMaestro(input: ResetAppStateInput): Promi
       nextSuggestions: ["Provide appId or configure app_id in harness config before calling reset_app_state."],
     };
   }
-  const targetAppId = appId ?? "";
-
-  if (strategy === "clear_data") {
-    if (platform === "android") {
-      commandLabels.push("clear_data");
-      commands.push(["adb", "-s", deviceId, "shell", "pm", "clear", targetAppId]);
-    } else {
-      commandLabels.push("clear_data");
-      commands.push(["xcrun", "simctl", "uninstall", deviceId, targetAppId]);
-    }
-  } else if (strategy === "uninstall_reinstall") {
+  if (strategy === "uninstall_reinstall") {
     if (!artifactPath || !existsSync(artifactPath)) {
       return {
         status: "failed",
@@ -4720,20 +4720,9 @@ export async function resetAppStateWithMaestro(input: ResetAppStateInput): Promi
         nextSuggestions: ["Provide a valid artifactPath or set runner-specific artifact environment variable before uninstall_reinstall."],
       };
     }
-    commandLabels.push("uninstall", "install");
-    if (platform === "android") {
-      commands.push(["adb", "-s", deviceId, "uninstall", targetAppId]);
-      commands.push(["adb", "-s", deviceId, "install", "-r", artifactPath]);
-    } else {
-      commands.push(["xcrun", "simctl", "uninstall", deviceId, targetAppId]);
-      commands.push(["xcrun", "simctl", "install", deviceId, artifactPath]);
-    }
-  } else {
-    commandLabels.push("keychain_reset");
-    commands.push(["xcrun", "simctl", "keychain", deviceId, "reset"]);
   }
 
-  const supportLevel: "full" | "partial" = platform === "ios" && strategy === "keychain_reset" ? "partial" : "full";
+  const supportLevel: "full" | "partial" = resetPlan.supportLevel;
 
   if (input.dryRun) {
     return {
@@ -5876,14 +5865,12 @@ export async function launchAppWithMaestro(input: LaunchAppInput): Promise<ToolR
   const appId = input.appId ?? selection.appId;
   const launchUrl = input.launchUrl ?? selection.launchUrl;
 
-  const launchCommand =
-    runnerProfile === "phase1"
-      ? platform === "android"
-        ? ["adb", "-s", deviceId, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", launchUrl ?? "", appId]
-        : ["xcrun", "simctl", "openurl", deviceId, launchUrl ?? ""]
-      : platform === "android"
-        ? ["adb", "-s", deviceId, "shell", "monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1"]
-        : ["xcrun", "simctl", "launch", deviceId, appId];
+  const launchCommand = buildLaunchCommandWithRuntime(platform, {
+    runnerProfile,
+    deviceId,
+    appId,
+    launchUrl,
+  });
 
   if (runnerProfile === "phase1" && !launchUrl) {
     return {
@@ -5968,10 +5955,10 @@ export async function installAppWithMaestro(input: InstallAppInput): Promise<Too
 
   const artifactPath = resolveInstallArtifactPath(repoRoot, runnerProfile, input.artifactPath);
   const selection = await loadHarnessSelection(repoRoot, platform, runnerProfile, input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH);
-  const installCommand =
-    platform === "android"
-      ? ["adb", "-s", input.deviceId ?? selection.deviceId ?? DEFAULT_ANDROID_DEVICE_ID, "install", "-r", artifactPath ?? ""]
-      : ["xcrun", "simctl", "install", input.deviceId ?? selection.deviceId ?? DEFAULT_IOS_SIMULATOR_UDID, artifactPath ?? ""];
+  const installCommand = buildInstallCommandWithRuntime(platform, {
+    deviceId: input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(platform),
+    artifactPath: artifactPath ?? "",
+  });
 
   const spec = getInstallArtifactSpec(runnerProfile);
   const exists = artifactPath ? existsSync(artifactPath) : false;

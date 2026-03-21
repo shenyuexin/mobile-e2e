@@ -55,6 +55,33 @@ async function runIdbPreflight(repoRoot: string): Promise<void> {
 export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
   return {
     platform: "ios",
+    buildLaunchCommand: ({ runnerProfile, deviceId, appId, launchUrl }) => (
+      runnerProfile === "phase1"
+        ? ["xcrun", "simctl", "openurl", deviceId, launchUrl ?? ""]
+        : ["xcrun", "simctl", "launch", deviceId, appId]
+    ),
+    buildInstallCommand: ({ deviceId, artifactPath }) => ["xcrun", "simctl", "install", deviceId, artifactPath],
+    buildResetPlan: ({ strategy, deviceId, appId, artifactPath }) => {
+      if (strategy === "clear_data") {
+        return {
+          commandLabels: ["clear_data"],
+          commands: [["xcrun", "simctl", "uninstall", deviceId, appId]],
+          supportLevel: "full" as const,
+        };
+      }
+      if (strategy === "uninstall_reinstall") {
+        return {
+          commandLabels: ["uninstall", "install"],
+          commands: [["xcrun", "simctl", "uninstall", deviceId, appId], ["xcrun", "simctl", "install", deviceId, artifactPath ?? ""]],
+          supportLevel: "full" as const,
+        };
+      }
+      return {
+        commandLabels: ["keychain_reset"],
+        commands: [["xcrun", "simctl", "keychain", deviceId, "reset"]],
+        supportLevel: "partial" as const,
+      };
+    },
     buildTerminateCommand: (deviceId, appId) => ["xcrun", "simctl", "terminate", deviceId, appId],
     buildScreenshotCommand: (deviceId, absoluteOutputPath) => ["xcrun", "simctl", "io", deviceId, "screenshot", absoluteOutputPath],
     screenshotUsesStdoutCapture: false,

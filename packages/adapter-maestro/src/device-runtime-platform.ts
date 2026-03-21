@@ -1,4 +1,4 @@
-import type { Platform } from "@mobile-e2e-mcp/contracts";
+import type { Platform, ResetAppStateStrategy, RunnerProfile } from "@mobile-e2e-mcp/contracts";
 import { createAndroidDeviceRuntimeHooks } from "./device-runtime-android.js";
 import { createIosDeviceRuntimeHooks } from "./device-runtime-ios.js";
 
@@ -48,6 +48,27 @@ export interface CrashSignalExecutionResult {
 
 export interface DeviceRuntimePlatformHooks {
   platform: Platform;
+  buildLaunchCommand: (params: {
+    runnerProfile: RunnerProfile;
+    deviceId: string;
+    appId: string;
+    launchUrl?: string;
+  }) => string[];
+  buildInstallCommand: (params: {
+    deviceId: string;
+    artifactPath: string;
+  }) => string[];
+  buildResetPlan: (params: {
+    strategy: ResetAppStateStrategy;
+    deviceId: string;
+    appId: string;
+    artifactPath?: string;
+  }) => {
+    commandLabels: string[];
+    commands: string[][];
+    supportLevel: "full" | "partial";
+    unsupportedReason?: string;
+  };
   buildTerminateCommand: (deviceId: string, appId: string) => string[];
   buildScreenshotCommand: (deviceId: string, absoluteOutputPath: string) => string[];
   screenshotUsesStdoutCapture: boolean;

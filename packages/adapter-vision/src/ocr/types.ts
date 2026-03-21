@@ -20,30 +20,11 @@ export type OcrFallbackActionType = "tap" | "assertText" | "longPress" | "delete
 export type OcrFallbackBlockReason = "disabled" | "deterministic_not_failed" | "semantic_not_failed" | "action_not_allowed" | "action_blocked" | "screenshot_stale" | "loading" | "transition" | "too_many_candidates" | "retry_limit" | "low_confidence";
 export type OcrProviderErrorCode = "unsupported_platform" | "execution_failed" | "invalid_response";
 
-export interface OcrCropBounds {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
-
-export type OcrInput = Omit<ContractOcrInput, "crop"> & {
-  crop?: OcrCropBounds;
-};
-
-export type OcrBounds = ContractOcrBounds & {
-  width: number;
-  height: number;
-  center: { x: number; y: number };
-};
-
-export type OcrTextBlock = Omit<ContractOcrTextBlock, "bounds"> & {
-  bounds: OcrBounds;
-};
-
-export type OcrOutput = Omit<ContractOcrOutput, "blocks"> & {
-  blocks: OcrTextBlock[];
-};
+export type OcrCropBounds = ContractOcrBounds;
+export type OcrInput = ContractOcrInput;
+export type OcrBounds = ContractOcrBounds;
+export type OcrTextBlock = ContractOcrTextBlock;
+export type OcrOutput = ContractOcrOutput;
 
 export interface OcrProvider {
   readonly providerName: string;
@@ -60,17 +41,15 @@ export interface RankedOcrCandidate {
   rankScore: number;
 }
 
-export type ResolveTextTargetInput = Omit<ContractResolveTextTargetInput, "blocks"> & {
-  blocks: OcrTextBlock[];
+export type ResolveTextTargetInput = ContractResolveTextTargetInput & {
   minFuzzyScore?: number;
   ambiguityThreshold?: number;
 };
 
-export type ResolveTextTargetResult = Omit<ContractResolveTextTargetResult, "bestCandidate" | "candidates"> & {
+export type ResolveTextTargetResult = Omit<ContractResolveTextTargetResult, "candidates"> & {
   status: OcrResolveStatus;
   targetText: string;
   normalizedTargetText: string;
-  bestCandidate?: OcrTextBlock;
   candidates: RankedOcrCandidate[];
   rejectionReason?: "empty_target" | "no_match" | "ambiguous";
 };
@@ -138,9 +117,10 @@ export interface VerifyOcrActionResult {
   failureReasons: string[];
 }
 
-export type OcrEvidence = ContractOcrEvidence & {
+export type OcrEvidence = Omit<ContractOcrEvidence, "postVerificationResult"> & {
   resolutionStrategy: OcrResolutionStrategy;
   verificationResult: OcrVerificationStatus;
+  postVerificationResult?: ContractOcrEvidence["postVerificationResult"];
 };
 
 export class OcrProviderError extends Error {
@@ -164,19 +144,11 @@ export function clampOcrConfidence(value: number | undefined): number {
 }
 
 export function buildOcrBounds(bounds: OcrCropBounds): OcrBounds {
-  const width = Math.max(0, bounds.right - bounds.left);
-  const height = Math.max(0, bounds.bottom - bounds.top);
   return {
     left: bounds.left,
     top: bounds.top,
     right: bounds.right,
     bottom: bounds.bottom,
-    width,
-    height,
-    center: {
-      x: bounds.left + width / 2,
-      y: bounds.top + height / 2,
-    },
   };
 }
 
