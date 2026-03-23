@@ -51,8 +51,19 @@ jobs:
             --debug-output artifacts/platform-smoke/ios/debug \
             flows/samples/ci/ios-settings-smoke.yaml
 
-      - name: Upload iOS platform-smoke artifact
+      - name: Detect iOS platform-smoke artifact files
         if: always()
+        id: detect-ios-artifacts
+        run: |
+          if [ -d artifacts/platform-smoke/ios ] && [ -n "$(find artifacts/platform-smoke/ios -type f -print -quit)" ]; then
+            echo "has_files=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_files=false" >> "$GITHUB_OUTPUT"
+            echo "- iOS artifacts: none generated in this run (upload skipped)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload iOS platform-smoke artifact
+        if: always() && steps.detect-ios-artifacts.outputs.has_files == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: platform-smoke-ios-${{ github.run_id }}
@@ -67,6 +78,7 @@ jobs:
             echo "- Status: **${{ job.status }}**"
             echo "- Flow: \`flows/samples/ci/ios-settings-smoke.yaml\`"
             echo "- Artifact: \`platform-smoke-ios-${{ github.run_id }}\`"
+            echo "- Artifact files detected: \`${{ steps.detect-ios-artifacts.outputs.has_files }}\`"
             echo "- Boundary: validates CI simulator + Maestro baseline; not a substitute for showcase real-device acceptance runs."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -98,8 +110,19 @@ jobs:
             adb devices
             maestro test --platform android --udid emulator-5554 --debug-output artifacts/platform-smoke/android/debug flows/samples/ci/android-settings-smoke.yaml
 
-      - name: Upload Android platform-smoke artifact
+      - name: Detect Android platform-smoke artifact files
         if: always()
+        id: detect-android-artifacts
+        run: |
+          if [ -d artifacts/platform-smoke/android ] && [ -n "$(find artifacts/platform-smoke/android -type f -print -quit)" ]; then
+            echo "has_files=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_files=false" >> "$GITHUB_OUTPUT"
+            echo "- Android artifacts: none generated in this run (upload skipped)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Android platform-smoke artifact
+        if: always() && steps.detect-android-artifacts.outputs.has_files == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: platform-smoke-android-${{ github.run_id }}
@@ -114,5 +137,6 @@ jobs:
             echo "- Status: **${{ job.status }}**"
             echo "- Flow: \`flows/samples/ci/android-settings-smoke.yaml\`"
             echo "- Artifact: \`platform-smoke-android-${{ github.run_id }}\`"
+            echo "- Artifact files detected: \`${{ steps.detect-android-artifacts.outputs.has_files }}\`"
             echo "- Boundary: validates CI emulator + Maestro baseline; not a substitute for showcase real-device acceptance runs."
           } >> "$GITHUB_STEP_SUMMARY"
