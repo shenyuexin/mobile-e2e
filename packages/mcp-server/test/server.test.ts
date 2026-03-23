@@ -523,7 +523,7 @@ test("server invoke blocks replay_last_stable_path for high-risk persisted actio
     });
 
     assert.equal(result.status, "failed");
-    assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
+    assert.equal(result.reasonCode, "REPLAY_REFUSED_HIGH_RISK_BOUNDARY");
   } finally {
     await cleanupSessionArtifact(sessionId);
   }

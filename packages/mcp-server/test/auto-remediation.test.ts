@@ -25,8 +25,8 @@ function buildBasePerformActionResult(params: {
   status: ToolResult<PerformActionWithEvidenceData>["status"];
   actionId: string;
   actionType?: PerformActionWithEvidenceInput["action"]["actionType"];
-  appPhase?: "loading" | "crashed" | "unknown" | "ready";
-  readiness?: "waiting_ui" | "waiting_network" | "unknown" | "ready" | "interrupted";
+  appPhase?: "loading" | "crashed" | "unknown" | "ready" | "blocked";
+  readiness?: "waiting_ui" | "waiting_network" | "degraded_success" | "backend_failed_terminal" | "offline_terminal" | "unknown" | "ready" | "interrupted";
   failureCategory?: NonNullable<PerformActionWithEvidenceData["outcome"]["failureCategory"]>;
   targetQuality?: NonNullable<PerformActionWithEvidenceData["outcome"]["targetQuality"]>;
   actionabilityReview?: string[];
@@ -348,6 +348,70 @@ test("performActionWithAutoRemediation directly recovers waiting-state failures 
     assert.equal(result.data.autoRemediation?.attempted, true);
     assert.equal(result.data.autoRemediation?.selectedRecovery, "wait_until_ready");
     assert.equal(result.data.autoRemediation?.stopReason, "recovered");
+  } finally {
+    await cleanupSessionArtifacts(sessionId);
+  }
+});
+
+test("performActionWithAutoRemediation stops early on backend-terminal readiness", async () => {
+  const sessionId = `auto-remediation-backend-terminal-${Date.now()}`;
+  const server = createServer();
+  let recoverCalled = false;
+
+  try {
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
+    const result = await performActionWithAutoRemediation(
+      {
+        sessionId,
+        platform: "android",
+        dryRun: true,
+        autoRemediate: true,
+        action: { actionType: "tap_element", contentDesc: "Checkout" },
+      },
+      {
+        performAction: async () => buildBasePerformActionResult({ sessionId, status: "failed", actionId: "auto-backend-terminal", appPhase: "blocked", readiness: "backend_failed_terminal" }),
+        explainLastFailure: async () => { throw new Error("explain should not run"); },
+        rankFailureCandidates: async () => { throw new Error("rank should not run"); },
+        suggestKnownRemediation: async () => { throw new Error("suggest should not run"); },
+        recoverToKnownState: async () => { recoverCalled = true; throw new Error("recover should not run"); },
+        replayLastStablePath: async () => { throw new Error("replay should not run"); },
+      },
+    );
+
+    assert.equal(result.data.autoRemediation?.stopReason, "backend_terminal");
+    assert.equal(recoverCalled, false);
+  } finally {
+    await cleanupSessionArtifacts(sessionId);
+  }
+});
+
+test("performActionWithAutoRemediation stops early on offline-terminal readiness", async () => {
+  const sessionId = `auto-remediation-offline-terminal-${Date.now()}`;
+  const server = createServer();
+  let recoverCalled = false;
+
+  try {
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
+    const result = await performActionWithAutoRemediation(
+      {
+        sessionId,
+        platform: "android",
+        dryRun: true,
+        autoRemediate: true,
+        action: { actionType: "tap_element", contentDesc: "Retry" },
+      },
+      {
+        performAction: async () => buildBasePerformActionResult({ sessionId, status: "failed", actionId: "auto-offline-terminal", appPhase: "blocked", readiness: "offline_terminal" }),
+        explainLastFailure: async () => { throw new Error("explain should not run"); },
+        rankFailureCandidates: async () => { throw new Error("rank should not run"); },
+        suggestKnownRemediation: async () => { throw new Error("suggest should not run"); },
+        recoverToKnownState: async () => { recoverCalled = true; throw new Error("recover should not run"); },
+        replayLastStablePath: async () => { throw new Error("replay should not run"); },
+      },
+    );
+
+    assert.equal(result.data.autoRemediation?.stopReason, "offline_terminal");
+    assert.equal(recoverCalled, false);
   } finally {
     await cleanupSessionArtifacts(sessionId);
   }
