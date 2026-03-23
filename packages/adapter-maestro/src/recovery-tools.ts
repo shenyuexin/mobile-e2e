@@ -1,6 +1,7 @@
 import {
   type ActionIntent,
   type ActionOutcomeSummary,
+  type CheckpointDecisionTrace,
   type PerformActionWithEvidenceData,
   type GetSessionStateData,
   type LaunchAppData,
@@ -89,6 +90,29 @@ function canReplayPersistedAction(record: PersistedActionRecord): boolean {
   }
 
   return ["wait_for_ui", "launch_app", "terminate_app"].includes(record.outcome.actionType);
+}
+
+function buildCheckpointDecision(record: PersistedActionRecord | undefined): CheckpointDecisionTrace {
+  if (!record) {
+    return {
+      checkpointCandidate: false,
+      replayRecommended: false,
+      replayRefused: true,
+      replayRefusalReason: "checkpoint_unavailable",
+      stableBoundaryReason: "No successful action checkpoint is available for this session.",
+    };
+  }
+  const highRisk = isHighRiskReplayIntent(record.intent);
+  return {
+    checkpointCandidate: true,
+    checkpointActionId: record.actionId,
+    replayRecommended: !highRisk,
+    replayRefused: highRisk,
+    replayRefusalReason: highRisk ? "replay_refused_high_risk_boundary" : undefined,
+    stableBoundaryReason: highRisk
+      ? "Checkpoint exists but belongs to a high-risk/non-idempotent path."
+      : "Checkpoint is low-risk and replay-safe for bounded remediation.",
+  };
 }
 
 export async function recoverToKnownStateWithMaestro(
@@ -205,15 +229,24 @@ export async function replayLastStablePathWithMaestro(
   }
 
   const stableRecord = (await listActionRecordsForSession(repoRoot, input.sessionId)).find((record: { outcome: ActionOutcomeSummary }) => record.outcome.outcome === "success");
+  const checkpointDecision = buildCheckpointDecision(stableRecord);
   if (!stableRecord) {
     return {
       status: "failed",
-      reasonCode: REASON_CODES.configurationError,
+      reasonCode: REASON_CODES.checkpointUnavailable,
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
       artifacts: [],
-      data: { summary: { strategy: "replay_last_successful_action", recovered: false, note: "No stable successful action was recorded for this session." } },
+      data: {
+        summary: {
+          strategy: "replay_last_successful_action",
+          recovered: false,
+          note: "No stable successful action was recorded for this session.",
+          stopReasonCode: REASON_CODES.checkpointUnavailable,
+          checkpointDecision,
+        },
+      },
       nextSuggestions: ["Record at least one successful perform_action_with_evidence step before replaying a stable path."],
     };
   }
@@ -221,7 +254,7 @@ export async function replayLastStablePathWithMaestro(
   if (!canReplayPersistedAction(stableRecord)) {
     return {
       status: "failed",
-      reasonCode: REASON_CODES.unsupportedOperation,
+      reasonCode: REASON_CODES.replayRefusedHighRiskBoundary,
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
@@ -232,6 +265,8 @@ export async function replayLastStablePathWithMaestro(
           recovered: false,
           note: "The last successful action is considered too risky for bounded auto replay.",
           replayedActionId: stableRecord.actionId,
+          stopReasonCode: REASON_CODES.replayRefusedHighRiskBoundary,
+          checkpointDecision,
         },
       },
       nextSuggestions: ["Only low-side-effect actions can be replayed automatically; inspect the prior action manually instead."],
@@ -269,6 +304,8 @@ export async function replayLastStablePathWithMaestro(
     stateBefore: stableRecord.outcome.preState,
     stateAfter: replayed.data.postStateSummary,
     replayedActionId: stableRecord.actionId,
+    stopReasonCode: replayed.reasonCode,
+    checkpointDecision,
   };
 
   return {
