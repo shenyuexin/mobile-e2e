@@ -13,7 +13,10 @@ import type {
 	ActionOutcomeSummary,
 	EvidenceDeltaSummary,
 	ExecutionEvidence,
+	CheckpointDecisionTrace,
+	PostActionVerificationTrace,
 	ReasonCode,
+	RetryDecisionTrace,
 	RetryRecommendation,
 	ToolStatus,
 } from "@mobile-e2e-mcp/contracts";
@@ -32,6 +35,9 @@ export interface PersistedActionRecord {
 		| "refresh_context"
 		| "recover_first";
 	retryRecommendation?: RetryRecommendation;
+	retryDecisionTrace?: RetryDecisionTrace;
+	postActionVerificationTrace?: PostActionVerificationTrace;
+	checkpointDecisionTrace?: CheckpointDecisionTrace;
 	actionabilityReview?: string[];
 	evidenceDelta: EvidenceDeltaSummary;
 	evidence: ExecutionEvidence[];

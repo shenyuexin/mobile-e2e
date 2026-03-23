@@ -1,6 +1,7 @@
 export {
 	buildActionRecordRelativePath,
 	listActionRecordsForSession,
+	listActionRecordsForSession as listReplayCheckpointCandidatesForSession,
 	loadActionRecord,
 	loadLatestActionRecordForSession,
 	persistActionRecord,

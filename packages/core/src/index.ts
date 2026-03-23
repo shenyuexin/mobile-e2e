@@ -58,6 +58,8 @@ export {
 } from "./governance.js";
 export {
   isToolAllowedByProfile,
+  isReplayAllowedByPolicy,
+  evaluateNetworkRetryPolicy,
   loadAccessPolicyConfig,
   loadAccessProfile,
   loadInterruptionPolicyConfig,
@@ -67,6 +69,7 @@ export {
 export type {
   AccessPolicyConfig,
   AccessProfile,
+  NetworkRetryPolicyDecision,
   InterruptionPolicyConfig,
   InterruptionResolutionPlan,
 } from "./policy-engine.js";

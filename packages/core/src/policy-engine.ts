@@ -31,6 +31,12 @@ export interface InterruptionResolutionPlan {
   selectedSlot?: InterruptionActionSlot;
 }
 
+export interface NetworkRetryPolicyDecision {
+  retryable: boolean;
+  terminal: boolean;
+  reason: string;
+}
+
 const DEFAULT_ACCESS_POLICY_PATH = "configs/policies/access-profiles.yaml";
 const DEFAULT_INTERRUPTION_POLICY_DIR = "configs/policies/interruption";
 
@@ -289,4 +295,24 @@ export function isToolAllowedByProfile(profile: AccessProfile, toolName: string)
   }
 
   return scopes.every((scope) => profile.allow.includes(scope));
+}
+
+export function evaluateNetworkRetryPolicy(readiness: string | undefined): NetworkRetryPolicyDecision {
+  if (readiness === "offline_terminal") {
+    return { retryable: false, terminal: true, reason: "offline_terminal" };
+  }
+  if (readiness === "backend_failed_terminal") {
+    return { retryable: false, terminal: true, reason: "backend_failed_terminal" };
+  }
+  if (readiness === "waiting_network" || readiness === "degraded_success") {
+    return { retryable: true, terminal: false, reason: readiness };
+  }
+  return { retryable: false, terminal: false, reason: readiness ?? "unknown" };
+}
+
+export function isReplayAllowedByPolicy(profile: AccessProfile, highRisk: boolean): boolean {
+  if (highRisk) {
+    return false;
+  }
+  return profile.allow.includes("tap") || profile.allow.includes("swipe");
 }
