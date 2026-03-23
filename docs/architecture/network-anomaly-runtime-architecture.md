@@ -69,6 +69,8 @@ The runtime should treat network-driven states as first-class readiness inputs.
 - `offline_terminal`
 - `unknown`
 
+Implementation note (current baseline): runtime readiness now materializes these classes in session-state summaries and uses them for bounded retry/early-stop decisions in orchestration and remediation paths.
+
 ### 3.2 Semantics
 
 #### `waiting_network`
@@ -185,6 +187,8 @@ Network anomaly handling should eventually distinguish at least these classes:
 - offline terminal failure
 - network-induced degraded success
 - network ambiguity unresolved
+
+Current baseline addition: terminal backend/offline and retry-exhausted network waiting reason codes are now emitted through action/remediation flows and covered in server/runtime tests.
 
 These codes should help future orchestration decide whether:
 

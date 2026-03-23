@@ -351,6 +351,8 @@ At minimum, this typically requires:
 
 Current baseline already includes evidence-rich action envelopes, interruption handling, and bounded recovery helpers.
 
+Current baseline addition: action orchestration emits `retryDecisionTrace`, `postActionVerificationTrace`, and checkpoint decision markers; retry-exhausted-without-state-change is reason-coded and auditable in session timeline.
+
 ### Partial support
 
 Retry quality is currently partial because many decisions are still action-local rather than task-state aware, and checkpoint/replay semantics remain conservative.

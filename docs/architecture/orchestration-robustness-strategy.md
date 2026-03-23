@@ -101,6 +101,8 @@ Current baseline capabilities already visible in the repo include:
 
 These tools establish an AI-first structure where actions and failures are machine-consumable rather than plain command output.
 
+Implementation note (current baseline): bounded retry decisions now persist explicit retry decision traces, checkpoint decision traces, and terminal network stop markers in action/session evidence packets.
+
 ### 4.2 Interruption and recovery architecture already exists
 
 The current architecture docs and codebase already define and implement a bounded interruption closure around:
@@ -125,6 +127,8 @@ The repo already includes:
 - JS network summaries inside debug evidence
 
 This is a meaningful foundation, but it does **not** yet equal mature network-aware remediation across Android, iOS, React Native, and Flutter runtime paths.
+
+Current baseline addition: orchestration now distinguishes retryable network waiting vs terminal backend/offline states for bounded stop behavior in remediation paths.
 
 ### 4.4 Validation reality must stay explicit
 
