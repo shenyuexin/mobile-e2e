@@ -6,7 +6,10 @@ export type RunnerProfile = "phase1" | "native_android" | "native_ios" | "flutte
 export type CapabilitySupportLevel = "full" | "partial" | "unsupported";
 export type ExecutionEvidenceKind = "ui_dump" | "screenshot" | "screen_recording" | "log" | "crash_signal" | "diagnostics_bundle" | "debug_summary" | "performance_trace" | "performance_summary" | "performance_export";
 export type AppPhase = "launching" | "ready" | "loading" | "blocked" | "backgrounded" | "crashed" | "authentication" | "detail" | "catalog" | "empty" | "unknown";
-export type StateReadiness = "ready" | "waiting_network" | "waiting_ui" | "interrupted" | "unknown";
+export type StateReadiness = "ready" | "waiting_network" | "waiting_ui" | "degraded_success" | "backend_failed_terminal" | "offline_terminal" | "interrupted" | "unknown";
+export type OrchestrationStepState = "ready_to_execute" | "recoverable_waiting" | "partial_progress" | "degraded_but_continue_safe" | "checkpoint_candidate" | "replay_recommended" | "terminal_stop";
+export type EvidenceConfidence = "strong" | "moderate" | "weak" | "none";
+export type RetryBackoffClass = "none" | "short_ui_settle" | "bounded_wait_ready" | "reason_aware_retry";
 export type TimelineEventLayer = "session" | "ui" | "state" | "action" | "log" | "crash" | "network" | "runtime" | "performance" | "environment" | "unknown";
 export type EvidenceCompletenessLevel = "complete" | "partial" | "minimal" | "missing";
 export type ActionResolutionStrategy = "deterministic" | "semantic" | "ocr" | "cv";
@@ -269,6 +272,10 @@ export interface ActionOutcomeSummary {
   stateChanged: boolean;
   fallbackUsed: boolean;
   retryCount: number;
+  stepState?: OrchestrationStepState;
+  evidenceConfidence?: EvidenceConfidence;
+  networkReadinessClass?: "retryable_waiting" | "degraded_success" | "terminal_backend_failed" | "terminal_offline" | "unknown";
+  postconditionMet?: boolean;
   targetQuality?: "high" | "medium" | "low";
   failureCategory?: "selector_missing" | "selector_ambiguous" | "blocked" | "waiting" | "no_state_change" | "transport" | "unsupported";
   confidence?: number;
@@ -290,6 +297,31 @@ export interface RecoverySummary {
   stateBefore?: StateSummary;
   stateAfter?: StateSummary;
   replayedActionId?: string;
+  stopReasonCode?: ReasonCode;
+  checkpointDecision?: CheckpointDecisionTrace;
+}
+export interface RetryDecisionTrace {
+  stepState: OrchestrationStepState;
+  evidenceConfidence: EvidenceConfidence;
+  retryAllowed: boolean;
+  maxAttempts: number;
+  attemptIndex: number;
+  backoffClass: RetryBackoffClass;
+  stateChangeRequired: boolean;
+  stopReason?: string;
+}
+export interface PostActionVerificationTrace {
+  postconditionMet: boolean;
+  attempts: number;
+  verificationSignals: string[];
+}
+export interface CheckpointDecisionTrace {
+  checkpointCandidate: boolean;
+  checkpointActionId?: string;
+  replayRecommended: boolean;
+  replayRefused: boolean;
+  replayRefusalReason?: string;
+  stableBoundaryReason?: string;
 }
 export type AutoRemediationStopReason =
   | "not_requested"
@@ -307,6 +339,9 @@ export type AutoRemediationStopReason =
   | "audit_unavailable"
   | "already_attempted"
   | "high_risk_replay"
+  | "retry_exhausted_no_state_change"
+  | "backend_terminal"
+  | "offline_terminal"
   | "recovery_failed"
   | "recovery_not_recovered"
   | "recovered";
@@ -915,6 +950,10 @@ export interface PerformActionWithEvidenceData {
   postActionRefreshAttempted?: boolean;
   retryRecommendationTier?: "none" | "inspect_only" | "refine_selector" | "wait_then_retry" | "refresh_context" | "recover_first";
   retryRecommendation?: RetryRecommendation;
+  retryDecisionTrace?: RetryDecisionTrace;
+  postActionVerificationTrace?: PostActionVerificationTrace;
+  checkpointDecisionTrace?: CheckpointDecisionTrace;
+  timelineDecisionMarkers?: string[];
   actionabilityReview?: string[];
   lowLevelStatus: ToolStatus;
   lowLevelReasonCode: ReasonCode;
@@ -995,6 +1034,9 @@ export interface GetActionOutcomeData {
   outcome?: ActionOutcomeSummary;
   retryRecommendationTier?: PerformActionWithEvidenceData["retryRecommendationTier"];
   retryRecommendation?: RetryRecommendation;
+  retryDecisionTrace?: RetryDecisionTrace;
+  postActionVerificationTrace?: PostActionVerificationTrace;
+  checkpointDecisionTrace?: CheckpointDecisionTrace;
   evidenceDelta?: EvidenceDeltaSummary;
   evidence?: ExecutionEvidence[];
   lowLevelStatus?: ToolStatus;
