@@ -2,11 +2,13 @@ import {
   type ActionIntent,
   type ActionOutcomeSummary,
   type EvidenceDeltaSummary,
+  type EvidenceConfidence,
   type GetScreenSummaryData,
   type LogSummary,
   type OcrEvidence,
   type PerformActionWithEvidenceData,
   type PerformActionWithEvidenceInput,
+  type PostActionVerificationTrace,
   type Platform,
   type ReasonCode,
   REASON_CODES,
@@ -15,10 +17,13 @@ import {
   type ResumeInterruptedActionData,
   type ResumeInterruptedActionInput,
   type RunnerProfile,
+  type RetryBackoffClass,
+  type RetryDecisionTrace,
   type SessionTimelineEvent,
   type ScreenshotData,
   type ScreenshotInput,
   type StateSummary,
+  type OrchestrationStepState,
   type TapData,
   type TapInput,
   type ToolResult,
@@ -128,6 +133,102 @@ function buildActionOutcomeConfidence(status: ToolResult["status"], stateChanged
   if (status === "success") return 0.7;
   if (status === "partial") return 0.45;
   return 0.2;
+}
+
+function classifyNetworkReadiness(postState: StateSummary): ActionOutcomeSummary["networkReadinessClass"] {
+  if (postState.readiness === "backend_failed_terminal") return "terminal_backend_failed";
+  if (postState.readiness === "offline_terminal") return "terminal_offline";
+  if (postState.readiness === "degraded_success") return "degraded_success";
+  if (postState.readiness === "waiting_network") return "retryable_waiting";
+  return "unknown";
+}
+
+function classifyStepState(params: {
+  finalStatus: ToolResult["status"];
+  stateChanged: boolean;
+  postState: StateSummary;
+  failureCategory?: ActionOutcomeSummary["failureCategory"];
+}): OrchestrationStepState {
+  if (params.postState.readiness === "backend_failed_terminal" || params.postState.readiness === "offline_terminal") {
+    return "terminal_stop";
+  }
+  if (params.finalStatus === "success" && params.stateChanged) {
+    return "checkpoint_candidate";
+  }
+  if (params.finalStatus === "partial" && params.stateChanged) {
+    return "partial_progress";
+  }
+  if (params.failureCategory === "blocked") {
+    return "replay_recommended";
+  }
+  if (params.postState.readiness === "waiting_network" || params.postState.readiness === "waiting_ui") {
+    return "recoverable_waiting";
+  }
+  if (params.postState.readiness === "degraded_success") {
+    return "degraded_but_continue_safe";
+  }
+  if (params.finalStatus === "success") {
+    return "ready_to_execute";
+  }
+  return "terminal_stop";
+}
+
+function computeEvidenceConfidence(params: {
+  stateChanged: boolean;
+  preState: StateSummary;
+  postState: StateSummary;
+  evidenceDelta: EvidenceDeltaSummary;
+}): EvidenceConfidence {
+  if (params.stateChanged && params.preState.screenId !== params.postState.screenId) {
+    return "strong";
+  }
+  if (params.stateChanged || params.preState.readiness !== params.postState.readiness) {
+    return "moderate";
+  }
+  if ((params.evidenceDelta.networkDeltaSummary ?? "").length > 0 || (params.evidenceDelta.runtimeDeltaSummary ?? "").length > 0) {
+    return "weak";
+  }
+  return "none";
+}
+
+function retryBackoffClassForStep(stepState: OrchestrationStepState): RetryBackoffClass {
+  if (stepState === "recoverable_waiting") return "bounded_wait_ready";
+  if (stepState === "partial_progress") return "reason_aware_retry";
+  if (stepState === "degraded_but_continue_safe") return "short_ui_settle";
+  return "none";
+}
+
+function shouldRetryStep(params: {
+  stepState: OrchestrationStepState;
+  evidenceConfidence: EvidenceConfidence;
+  attemptIndex: number;
+  maxAttempts: number;
+}): boolean {
+  const retryableStep = params.stepState === "recoverable_waiting" || params.stepState === "partial_progress" || params.stepState === "degraded_but_continue_safe";
+  if (!retryableStep) return false;
+  if (params.attemptIndex >= params.maxAttempts) return false;
+  if (params.evidenceConfidence === "none" && params.attemptIndex > 1) return false;
+  return true;
+}
+
+function buildPostActionVerificationTrace(params: {
+  stepState: OrchestrationStepState;
+  stateChanged: boolean;
+  preState: StateSummary;
+  postState: StateSummary;
+  attempts: number;
+}): PostActionVerificationTrace {
+  const signals = uniqueNonEmpty([
+    params.stateChanged ? "state_changed" : "state_unchanged",
+    params.preState.screenId !== params.postState.screenId ? "screen_shift_detected" : undefined,
+    params.preState.readiness !== params.postState.readiness ? `readiness:${params.preState.readiness}->${params.postState.readiness}` : undefined,
+    params.stepState,
+  ], 6);
+  return {
+    postconditionMet: params.stateChanged || params.stepState === "checkpoint_candidate" || params.stepState === "ready_to_execute",
+    attempts: params.attempts,
+    verificationSignals: signals,
+  };
 }
 
 function summarizeStateDelta(previous: StateSummary | undefined, current: StateSummary): string[] {
@@ -749,11 +850,20 @@ function buildActionEvidenceDelta(params: {
   const runtimeSignalsBefore = mergeSignalSummaries(params.preLogSummary, params.preCrashSummary).map((item) => item.sample);
   const runtimeSignalsAfter = mergeSignalSummaries(params.postLogSummary, params.postCrashSummary).map((item) => item.sample);
   const newSignals = runtimeSignalsAfter.filter((item) => !runtimeSignalsBefore.includes(item));
+  const networkDeltaSummary = params.preState && params.postState && params.preState.readiness !== params.postState.readiness
+    ? `Network/readiness changed: ${params.preState.readiness} -> ${params.postState.readiness}`
+    : params.postState?.readiness === "waiting_network"
+      ? "Network/readiness remains in waiting_network state."
+      : params.postState?.readiness === "backend_failed_terminal"
+        ? "Network/readiness is terminal: backend_failed_terminal."
+        : params.postState?.readiness === "offline_terminal"
+          ? "Network/readiness is terminal: offline_terminal."
+          : undefined;
   return {
     uiDiffSummary: summarizeStateTransition(params.preState, params.postState),
     logDeltaSummary: newSignals.length > 0 ? `New runtime signals: ${newSignals.slice(0, 3).join(" | ")}` : "No new high-confidence runtime signals after action.",
     runtimeDeltaSummary: newSignals.length > 0 ? newSignals.slice(0, 3).join(" | ") : "No new runtime delta detected.",
-    networkDeltaSummary: undefined,
+    networkDeltaSummary,
   };
 }
 
@@ -911,8 +1021,8 @@ export async function performActionWithEvidenceWithMaestro(
     })
     : undefined;
 
-  const finalStatus = ocrFallbackResult?.attempted ? ocrFallbackResult.status : lowLevelResult.status;
-  const finalReasonCode = ocrFallbackResult?.attempted ? ocrFallbackResult.reasonCode : lowLevelResult.reasonCode;
+  let actionStatus = ocrFallbackResult?.attempted ? ocrFallbackResult.status : lowLevelResult.status;
+  let actionReasonCode = ocrFallbackResult?.attempted ? ocrFallbackResult.reasonCode : lowLevelResult.reasonCode;
   const fallbackUsed = Boolean(ocrFallbackResult?.used);
   const postStateResult = ocrFallbackResult?.postStateResult ?? await getScreenSummaryWithMaestro({
     sessionId: input.sessionId,
@@ -937,17 +1047,121 @@ export async function performActionWithEvidenceWithMaestro(
     postCrashSummary: postStateResult.data.crashSummary,
   });
   let failureCategory = classifyActionFailureCategory({
-    finalStatus,
-    finalReasonCode,
+    finalStatus: actionStatus,
+    finalReasonCode: actionReasonCode,
     preStateSummary,
     postStateSummary,
     lowLevelResult,
     stateChanged,
     targetResolution,
   });
+  let stepState = classifyStepState({
+    finalStatus: actionStatus,
+    stateChanged,
+    postState: postStateSummary,
+    failureCategory,
+  });
+  let evidenceConfidence = computeEvidenceConfidence({
+    stateChanged,
+    preState: preStateSummary,
+    postState: postStateSummary,
+    evidenceDelta,
+  });
+  const maxRetryAttempts = stepState === "recoverable_waiting" || stepState === "partial_progress" ? 3 : stepState === "degraded_but_continue_safe" ? 2 : 1;
+  let retryAttemptIndex = 1;
+  let retryStopReason: string | undefined;
+
+  while (shouldRetryStep({ stepState, evidenceConfidence, attemptIndex: retryAttemptIndex, maxAttempts: maxRetryAttempts })) {
+    const retryPostStateResult = await getScreenSummaryWithMaestro({
+      sessionId: input.sessionId,
+      platform,
+      runnerProfile,
+      harnessConfigPath: input.harnessConfigPath,
+      deviceId: input.deviceId ?? sessionRecord?.session.deviceId,
+      appId: input.appId ?? sessionRecord?.session.appId,
+      includeDebugSignals: input.includeDebugSignals ?? true,
+      dryRun: input.dryRun,
+    });
+    retryAttemptIndex += 1;
+    postStateSummary = retryPostStateResult.data.screenSummary;
+    stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
+    evidenceDelta = buildActionEvidenceDelta({
+      preState: preStateSummary,
+      postState: postStateSummary,
+      preLogSummary: preStateResult.data.logSummary,
+      postLogSummary: retryPostStateResult.data.logSummary,
+      preCrashSummary: preStateResult.data.crashSummary,
+      postCrashSummary: retryPostStateResult.data.crashSummary,
+    });
+    failureCategory = classifyActionFailureCategory({
+      finalStatus: actionStatus,
+      finalReasonCode: actionReasonCode,
+      preStateSummary,
+      postStateSummary,
+      lowLevelResult,
+      stateChanged,
+      targetResolution,
+    });
+    stepState = classifyStepState({
+      finalStatus: actionStatus,
+      stateChanged,
+      postState: postStateSummary,
+      failureCategory,
+    });
+    evidenceConfidence = computeEvidenceConfidence({
+      stateChanged,
+      preState: preStateSummary,
+      postState: postStateSummary,
+      evidenceDelta,
+    });
+    if (stateChanged || stepState === "checkpoint_candidate") {
+      break;
+    }
+  }
+
+  if (!stateChanged && retryAttemptIndex >= maxRetryAttempts && (stepState === "recoverable_waiting" || stepState === "partial_progress" || stepState === "degraded_but_continue_safe")) {
+    retryStopReason = "retry_budget_exhausted_without_state_change";
+    actionStatus = "failed";
+    actionReasonCode = postStateSummary.readiness === "waiting_network"
+      ? REASON_CODES.networkWaitRetryExhausted
+      : REASON_CODES.retryExhaustedNoStateChange;
+  }
+
+  if (postStateSummary.readiness === "backend_failed_terminal") {
+    actionStatus = "failed";
+    actionReasonCode = REASON_CODES.networkBackendTerminal;
+    stepState = "terminal_stop";
+    retryStopReason = "backend_terminal_stop_early";
+  }
+  if (postStateSummary.readiness === "offline_terminal") {
+    actionStatus = "failed";
+    actionReasonCode = REASON_CODES.networkOfflineTerminal;
+    stepState = "terminal_stop";
+    retryStopReason = "offline_terminal_stop_early";
+  }
+
+  const retryDecisionTrace: RetryDecisionTrace = {
+    stepState,
+    evidenceConfidence,
+    retryAllowed: shouldRetryStep({ stepState, evidenceConfidence, attemptIndex: retryAttemptIndex, maxAttempts: maxRetryAttempts }),
+    maxAttempts: maxRetryAttempts,
+    attemptIndex: retryAttemptIndex,
+    backoffClass: retryBackoffClassForStep(stepState),
+    stateChangeRequired: true,
+    stopReason: retryStopReason,
+  };
+
+  const postActionVerificationTrace = buildPostActionVerificationTrace({
+    stepState,
+    stateChanged,
+    preState: preStateSummary,
+    postState: postStateSummary,
+    attempts: retryAttemptIndex,
+  });
+
   let postActionRefreshAttempted = false;
   let refreshedPostStateSummary: StateSummary | undefined;
-  if (shouldAttemptPostActionRefresh({ failureCategory, finalStatus, stateChanged })) {
+  if (shouldAttemptPostActionRefresh({ failureCategory, finalStatus: actionStatus, stateChanged })) {
     postActionRefreshAttempted = true;
     const refreshedPostStateResult = await getScreenSummaryWithMaestro({
       sessionId: input.sessionId,
@@ -972,8 +1186,8 @@ export async function performActionWithEvidenceWithMaestro(
         postCrashSummary: refreshedPostStateResult.data.crashSummary,
       });
       failureCategory = classifyActionFailureCategory({
-        finalStatus,
-        finalReasonCode,
+        finalStatus: actionStatus,
+        finalReasonCode: actionReasonCode,
         preStateSummary,
         postStateSummary,
         lowLevelResult,
@@ -991,12 +1205,16 @@ export async function performActionWithEvidenceWithMaestro(
     postState: postStateSummary,
     stateChanged,
     fallbackUsed,
-    retryCount: ocrFallbackResult?.retryCount ?? 0,
-    targetQuality: classifyTargetQuality({ failureCategory, finalStatus, fallbackUsed, stateChanged }),
+    retryCount: (ocrFallbackResult?.retryCount ?? 0) + Math.max(0, retryAttemptIndex - 1),
+    stepState,
+    evidenceConfidence,
+    networkReadinessClass: classifyNetworkReadiness(postStateSummary),
+    postconditionMet: postActionVerificationTrace.postconditionMet,
+    targetQuality: classifyTargetQuality({ failureCategory, finalStatus: actionStatus, fallbackUsed, stateChanged }),
     failureCategory,
-    confidence: ocrFallbackResult?.ocrEvidence?.ocrConfidence ?? buildActionOutcomeConfidence(finalStatus, stateChanged),
+    confidence: ocrFallbackResult?.ocrEvidence?.ocrConfidence ?? buildActionOutcomeConfidence(actionStatus, stateChanged),
     ocrEvidence: ocrFallbackResult?.ocrEvidence,
-    outcome: finalStatus === "success" ? "success" : finalStatus === "partial" ? "partial" : "failed",
+    outcome: actionStatus === "success" ? "success" : actionStatus === "partial" ? "partial" : "failed",
   };
 
   const evidence = [...(preStateResult.data.evidence ?? []), ...(postStateResult.data.evidence ?? [])];
@@ -1041,8 +1259,8 @@ export async function performActionWithEvidenceWithMaestro(
     preStateSummary,
     postStateSummary,
     latestKnownState: sessionRecord?.session.latestStateSummary,
-    lowLevelStatus: finalStatus,
-    lowLevelReasonCode: finalReasonCode,
+    lowLevelStatus: actionStatus,
+    lowLevelReasonCode: actionReasonCode,
     targetResolution,
     stateChanged,
   });
@@ -1060,7 +1278,7 @@ export async function performActionWithEvidenceWithMaestro(
   }
 
   const retryRecommendationTier = classifyRetryRecommendationTier({
-    finalStatus,
+    finalStatus: actionStatus,
     stateChanged,
     postActionRefreshAttempted,
     actionabilityReview,
@@ -1080,11 +1298,13 @@ export async function performActionWithEvidenceWithMaestro(
     outcome,
     retryRecommendationTier,
     retryRecommendation,
+    retryDecisionTrace,
+    postActionVerificationTrace,
     actionabilityReview,
     evidenceDelta,
     evidence,
-    lowLevelStatus: finalStatus,
-    lowLevelReasonCode: finalReasonCode,
+    lowLevelStatus: actionStatus,
+    lowLevelReasonCode: actionReasonCode,
     updatedAt: new Date().toISOString(),
   });
   let allArtifacts = persistedAction.relativePath ? [persistedAction.relativePath, ...artifacts] : artifacts;
@@ -1101,12 +1321,12 @@ export async function performActionWithEvidenceWithMaestro(
     dryRun: input.dryRun,
   });
 
-  let finalToolStatus = finalStatus;
-  let finalToolReasonCode = finalReasonCode;
+  let finalToolStatus = actionStatus;
+  let finalToolReasonCode = actionReasonCode;
   let finalOutcome = outcome;
   let finalActionabilityReview = [...actionabilityReview];
-  let finalLowLevelStatus = finalStatus;
-  let finalLowLevelReasonCode = finalReasonCode;
+  let finalLowLevelStatus = actionStatus;
+  let finalLowLevelReasonCode = actionReasonCode;
 
   allArtifacts = Array.from(new Set([...allArtifacts, ...postActionInterruption.artifacts]));
 
@@ -1152,7 +1372,7 @@ export async function performActionWithEvidenceWithMaestro(
     }
   }
 
-  if (finalToolStatus !== finalStatus || finalToolReasonCode !== finalReasonCode) {
+  if (finalToolStatus !== actionStatus || finalToolReasonCode !== actionReasonCode) {
     const persistedAfterInterruption = await persistActionRecord(repoRoot, {
       actionId,
       sessionId: input.sessionId,
@@ -1160,6 +1380,8 @@ export async function performActionWithEvidenceWithMaestro(
       outcome: finalOutcome,
       retryRecommendationTier,
       retryRecommendation,
+      retryDecisionTrace,
+      postActionVerificationTrace,
       actionabilityReview: finalActionabilityReview,
       evidenceDelta,
       evidence,
@@ -1188,6 +1410,13 @@ export async function performActionWithEvidenceWithMaestro(
       postActionRefreshAttempted: postActionRefreshAttempted || undefined,
       retryRecommendationTier,
       retryRecommendation,
+      retryDecisionTrace,
+      postActionVerificationTrace,
+      timelineDecisionMarkers: uniqueNonEmpty([
+        `step_state:${stepState}`,
+        retryDecisionTrace.stopReason,
+        postActionInterruption.data.status !== "not_needed" ? `post_interruption:${postActionInterruption.data.status}` : undefined,
+      ], 6),
       actionabilityReview: finalActionabilityReview,
       lowLevelStatus: finalLowLevelStatus,
       lowLevelReasonCode: finalLowLevelReasonCode,

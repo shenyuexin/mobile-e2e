@@ -44,6 +44,14 @@ export interface TaskPlannerDeps {
   terminateAppWithMaestro: (input: TerminateAppInput) => Promise<ToolResult<TerminateAppData>>;
 }
 
+function isTerminalOutcome(data: ExecuteIntentData): boolean {
+  const readiness = data.postStateSummary?.readiness;
+  if (readiness === "backend_failed_terminal" || readiness === "offline_terminal") {
+    return true;
+  }
+  return data.outcome.failureCategory === "blocked" && data.postStateSummary?.readiness !== "ready";
+}
+
 export async function executeIntentWithMaestro(
   params: {
     sessionId: string;
@@ -282,6 +290,11 @@ export async function completeTaskWithMaestro(
       if (stopOnFailure) {
         break;
       }
+    }
+    if (isTerminalOutcome(result.data)) {
+      finalStatus = "failed";
+      finalReasonCode = result.reasonCode;
+      break;
     }
   }
 

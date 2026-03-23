@@ -87,6 +87,18 @@ function buildFailureAttribution(params: {
     candidateCauses.push(mostLikelyCause);
     recommendedNextProbe = "Inspect the latest screen summary for blocking dialog text and action buttons.";
     recommendedRecovery = "Dismiss the interruption or grant the required permission, then replay the bounded action.";
+  } else if (postState?.readiness === "offline_terminal") {
+    affectedLayer = "network";
+    mostLikelyCause = "Runtime entered offline_terminal readiness state.";
+    candidateCauses.push(mostLikelyCause);
+    recommendedNextProbe = "Capture connectivity and network diagnostics before retrying.";
+    recommendedRecovery = "Stop optimistic retries and wait for connectivity recovery.";
+  } else if (postState?.readiness === "backend_failed_terminal") {
+    affectedLayer = "backend";
+    mostLikelyCause = "Runtime entered backend_failed_terminal readiness state.";
+    candidateCauses.push(mostLikelyCause);
+    recommendedNextProbe = "Inspect backend status/error payload evidence for the failing request path.";
+    recommendedRecovery = "Stop optimistic retries and surface terminal backend failure.";
   } else if ((delta?.runtimeDeltaSummary ?? "").toLowerCase().includes("crash") || (delta?.runtimeDeltaSummary ?? "").toLowerCase().includes("anr")) {
     affectedLayer = "crash";
     mostLikelyCause = delta?.runtimeDeltaSummary ?? "Crash-like runtime signal detected after the action.";
@@ -184,6 +196,9 @@ export async function getActionOutcomeWithMaestro(
         retryRecommendation: record?.retryRecommendation,
         evidenceDelta: record?.evidenceDelta,
         evidence: record?.evidence,
+        retryDecisionTrace: record?.retryDecisionTrace,
+        postActionVerificationTrace: record?.postActionVerificationTrace,
+        checkpointDecisionTrace: record?.checkpointDecisionTrace,
         lowLevelStatus: record?.lowLevelStatus,
         lowLevelReasonCode: record?.lowLevelReasonCode,
       }

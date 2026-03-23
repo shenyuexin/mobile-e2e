@@ -184,7 +184,25 @@ export function buildStateSummaryFromSignals(params: {
   const hasInterruption = blockingSignals.includes("permission_prompt") || blockingSignals.includes("dialog_actions");
   const hasNetworkInstability = blockingSignals.includes("network_instability") || Boolean(topLog && (topLog.includes("network") || topLog.includes("http") || topLog.includes("timeout")));
   const hasErrorState = blockingSignals.includes("error_state") || Boolean(topLog && (topLog.includes("failed") || topLog.includes("error") || topLog.includes("exception")));
+  const hasOfflineSignal = Boolean(
+    topLog
+    && (topLog.includes("offline")
+      || topLog.includes("no internet")
+      || topLog.includes("network is unreachable")
+      || topLog.includes("dns")),
+  ) || visibleTexts.some((value) => {
+    const normalized = value.toLowerCase();
+    return normalized.includes("offline") || normalized.includes("no internet") || normalized.includes("connection lost");
+  });
+  const hasBackendTerminal = hasErrorState
+    && !hasLoading
+    && Boolean(topLog && (topLog.includes("http 5") || topLog.includes("server error") || topLog.includes("service unavailable") || topLog.includes("backend")));
   const hasEmptyState = blockingSignals.includes("empty_state") || pageHints.includes("empty");
+  const hasDegradedSuccess = hasNetworkInstability
+    && !hasLoading
+    && !hasOfflineSignal
+    && !hasBackendTerminal
+    && (params.uiSummary?.clickableNodes ?? 0) > 0;
   const appPhase = hasCrash
     ? "crashed"
     : hasInterruption || hasErrorState
@@ -204,8 +222,14 @@ export function buildStateSummaryFromSignals(params: {
           : "unknown";
   const readiness = hasInterruption
     ? "interrupted"
+    : hasOfflineSignal
+      ? "offline_terminal"
+      : hasBackendTerminal
+        ? "backend_failed_terminal"
     : hasLoading
       ? (hasNetworkInstability || recentFailures.some((value) => value.toLowerCase().includes("http")) ? "waiting_network" : "waiting_ui")
+      : hasDegradedSuccess
+        ? "degraded_success"
       : hasNetworkInstability
         ? "waiting_network"
       : appPhase === "ready"
@@ -217,6 +241,9 @@ export function buildStateSummaryFromSignals(params: {
     hasLoading ? "loading_indicator" : undefined,
     hasInterruption ? "interruption_signal" : undefined,
     hasNetworkInstability ? "network_instability" : undefined,
+    hasOfflineSignal ? "offline_terminal_signal" : undefined,
+    hasBackendTerminal ? "backend_terminal_signal" : undefined,
+    hasDegradedSuccess ? "degraded_success_signal" : undefined,
     hasErrorState ? "error_state" : undefined,
     hasEmptyState ? "empty_state" : undefined,
     ...pageHints.map((hint) => `page_hint:${hint}`),
