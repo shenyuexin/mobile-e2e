@@ -8,6 +8,12 @@ This checklist is the implementation companion for:
 
 Use it to implement orchestration robustness in a deterministic-first, policy-aware, evidence-rich way.
 
+## Implementation status snapshot
+
+- Status: completed
+- Completion basis: contracts/core/adapter/server implementation + unit/smoke/ci verification chain
+- Latest verification baseline: `pnpm build`, `pnpm typecheck`, `pnpm test:unit`, `pnpm test:smoke`, `pnpm test:ci`
+
 ---
 
 ## 0) Target and Done Definition
