@@ -100,6 +100,19 @@ function buildMetadataStop(auto: {
 }
 
 function classifyMetadataDrivenStop(base: ToolResult<PerformActionWithEvidenceData>): { stopReason: AutoRemediationResult["stopReason"]; stopDetail: string } | undefined {
+  const readiness = base.data.postStateSummary?.readiness;
+  if (readiness === "backend_failed_terminal") {
+    return {
+      stopReason: "backend_terminal",
+      stopDetail: "The runtime detected a backend-terminal state, so optimistic auto-remediation is refused.",
+    };
+  }
+  if (readiness === "offline_terminal") {
+    return {
+      stopReason: "offline_terminal",
+      stopDetail: "The runtime detected an offline-terminal state, so optimistic auto-remediation is refused.",
+    };
+  }
   const failureCategory = base.data.outcome.failureCategory;
   if (failureCategory === "selector_missing") {
     return {
@@ -123,6 +136,12 @@ function classifyMetadataDrivenStop(base: ToolResult<PerformActionWithEvidenceDa
     return {
       stopReason: "low_target_quality",
       stopDetail: "The target quality is too low for bounded remediation to safely continue.",
+    };
+  }
+  if (base.reasonCode === REASON_CODES.retryExhaustedNoStateChange || base.reasonCode === REASON_CODES.networkWaitRetryExhausted) {
+    return {
+      stopReason: "retry_exhausted_no_state_change",
+      stopDetail: "Retry budget was exhausted without meaningful state change, so bounded remediation stops.",
     };
   }
   return undefined;
