@@ -152,7 +152,17 @@ export async function recoverToKnownStateWithMaestro(
   let status: ToolResult["status"] = "success";
   let reasonCode: ReasonCode = REASON_CODES.ok;
 
-  if (before.data.state.appPhase === "crashed" || before.data.state.blockingSignals.includes("error_state")) {
+  if (before.data.state.readiness === "backend_failed_terminal") {
+    strategy = "none";
+    status = "failed";
+    reasonCode = REASON_CODES.networkBackendTerminal;
+    note = "Recovery stopped early because the session state is backend-terminal.";
+  } else if (before.data.state.readiness === "offline_terminal") {
+    strategy = "none";
+    status = "failed";
+    reasonCode = REASON_CODES.networkOfflineTerminal;
+    note = "Recovery stopped early because the session state is offline-terminal.";
+  } else if (before.data.state.appPhase === "crashed" || before.data.state.blockingSignals.includes("error_state")) {
     strategy = "relaunch_app";
     const result = await deps.launchAppWithMaestro({
       sessionId: input.sessionId,

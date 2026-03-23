@@ -231,6 +231,37 @@ function buildPostActionVerificationTrace(params: {
   };
 }
 
+function buildCheckpointDecisionTraceForAction(params: {
+  actionId: string;
+  stepState: OrchestrationStepState;
+  failureCategory?: ActionOutcomeSummary["failureCategory"];
+  stateChanged: boolean;
+}): PerformActionWithEvidenceData["checkpointDecisionTrace"] {
+  if (params.stepState === "checkpoint_candidate" && params.stateChanged) {
+    return {
+      checkpointCandidate: true,
+      checkpointActionId: params.actionId,
+      replayRecommended: false,
+      replayRefused: false,
+      stableBoundaryReason: "Action produced a meaningful state change and can anchor future replay boundaries.",
+    };
+  }
+  if (params.stepState === "replay_recommended" || params.failureCategory === "blocked") {
+    return {
+      checkpointCandidate: false,
+      replayRecommended: true,
+      replayRefused: false,
+      stableBoundaryReason: "Current step is blocked or drifted; replay from a known checkpoint is preferred over local retry.",
+    };
+  }
+  return {
+    checkpointCandidate: false,
+    replayRecommended: false,
+    replayRefused: false,
+    stableBoundaryReason: "No explicit checkpoint/replay decision was required for this action outcome.",
+  };
+}
+
 function summarizeStateDelta(previous: StateSummary | undefined, current: StateSummary): string[] {
   if (!previous) return [];
   return uniqueNonEmpty([
@@ -1158,6 +1189,12 @@ export async function performActionWithEvidenceWithMaestro(
     postState: postStateSummary,
     attempts: retryAttemptIndex,
   });
+  const checkpointDecisionTrace = buildCheckpointDecisionTraceForAction({
+    actionId,
+    stepState,
+    failureCategory,
+    stateChanged,
+  });
 
   let postActionRefreshAttempted = false;
   let refreshedPostStateSummary: StateSummary | undefined;
@@ -1245,6 +1282,24 @@ export async function performActionWithEvidenceWithMaestro(
   const persistedSessionState = sessionRecord
     ? await persistSessionState(repoRoot, input.sessionId, postStateSummary, actionEvent, artifacts)
     : undefined;
+  const retryTimelineMarkers = uniqueNonEmpty([
+    `step_state:${stepState}`,
+    `evidence_confidence:${evidenceConfidence}`,
+    retryStopReason,
+  ], 6);
+  if (sessionRecord && retryTimelineMarkers.length > 0) {
+    await persistSessionState(repoRoot, input.sessionId, postStateSummary, {
+      timestamp: new Date().toISOString(),
+      type: "action_retry_decision",
+      eventType: "retry_decision",
+      actionId,
+      layer: "action",
+      detail: retryTimelineMarkers.join("; "),
+      summary: retryDecisionTrace.retryAllowed ? "retry_allowed" : "retry_stopped",
+      artifactRefs: artifacts,
+      stateSummary: postStateSummary,
+    }, artifacts);
+  }
   if (outcome.outcome === "success") {
     await recordBaselineEntry(repoRoot, {
       actionId,
@@ -1300,6 +1355,7 @@ export async function performActionWithEvidenceWithMaestro(
     retryRecommendation,
     retryDecisionTrace,
     postActionVerificationTrace,
+    checkpointDecisionTrace,
     actionabilityReview,
     evidenceDelta,
     evidence,
@@ -1382,6 +1438,7 @@ export async function performActionWithEvidenceWithMaestro(
       retryRecommendation,
       retryDecisionTrace,
       postActionVerificationTrace,
+      checkpointDecisionTrace,
       actionabilityReview: finalActionabilityReview,
       evidenceDelta,
       evidence,
@@ -1412,11 +1469,11 @@ export async function performActionWithEvidenceWithMaestro(
       retryRecommendation,
       retryDecisionTrace,
       postActionVerificationTrace,
+      checkpointDecisionTrace,
       timelineDecisionMarkers: uniqueNonEmpty([
-        `step_state:${stepState}`,
-        retryDecisionTrace.stopReason,
+        ...retryTimelineMarkers,
         postActionInterruption.data.status !== "not_needed" ? `post_interruption:${postActionInterruption.data.status}` : undefined,
-      ], 6),
+      ], 8),
       actionabilityReview: finalActionabilityReview,
       lowLevelStatus: finalLowLevelStatus,
       lowLevelReasonCode: finalLowLevelReasonCode,

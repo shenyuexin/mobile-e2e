@@ -263,11 +263,17 @@ export function requiredPolicyScopesForTool(toolName: string): string[] {
   if (["tap", "tap_element", "launch_app", "terminate_app"].includes(toolName)) {
     return ["tap"];
   }
+  if (toolName === "perform_action_with_evidence") {
+    return ["tap", "type", "swipe"];
+  }
   if (["type_text", "type_into_element"].includes(toolName)) {
     return ["type"];
   }
   if (["scroll_and_resolve_ui_target", "scroll_and_tap_element"].includes(toolName)) {
     return ["swipe"];
+  }
+  if (["recover_to_known_state", "replay_last_stable_path"].includes(toolName)) {
+    return ["tap"];
   }
   if (toolName === "install_app") {
     return ["install"];
