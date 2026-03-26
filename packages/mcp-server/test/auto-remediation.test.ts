@@ -82,7 +82,8 @@ function buildBasePerformActionResult(params: {
             required: true,
             reason: params.manualHandoffReason ?? "unknown",
             summary: "Manual operator intervention is required.",
-            blocking: true,
+            suggestedOperatorActions: ["Complete the required operator step manually."],
+            resumeHints: ["Resume the bounded flow after the protected step is cleared."],
           }
           : undefined,
       },
@@ -135,6 +136,8 @@ test("performActionWithAutoRemediation short-circuits when the action already su
 
     assert.equal(result.data.autoRemediation?.stopReason, "action_succeeded");
     assert.equal(result.data.autoRemediation?.attempted, false);
+    assert.equal(result.data.autoRemediation?.stateMachineStatus, "ready_to_execute");
+    assert.equal(result.data.autoRemediation?.stateMachineTrace?.includes("stop_reason:action_succeeded"), true);
   } finally {
     await cleanupSessionArtifacts(sessionId);
   }
@@ -309,6 +312,80 @@ test("performActionWithAutoRemediation blocks high-risk replay suggestions", asy
     );
 
     assert.equal(result.data.autoRemediation?.stopReason, "high_risk_replay");
+    assert.equal(result.data.autoRemediation?.stateMachineStatus, "terminal_stop");
+    assert.equal(result.data.autoRemediation?.stateMachineTrace?.includes("stop_reason:high_risk_replay"), true);
+  } finally {
+    await cleanupSessionArtifacts(sessionId);
+  }
+});
+
+test("performActionWithAutoRemediation replays when checkpoint drift suggests a safer stable path", async () => {
+  const sessionId = `auto-remediation-drift-replay-${Date.now()}`;
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", { sessionId, platform: "android", deviceId: buildTestDeviceId(sessionId), profile: "phase1" });
+    const result = await performActionWithAutoRemediation(
+      {
+        sessionId,
+        platform: "android",
+        dryRun: true,
+        autoRemediate: true,
+        action: { actionType: "tap_element", contentDesc: "View products" },
+      },
+      {
+        performAction: async () => buildBasePerformActionResult({ sessionId, status: "failed", actionId: "auto-drift-replay", appPhase: "ready", readiness: "ready" }),
+        compareAgainstBaseline: async () => ({
+          status: "success",
+          reasonCode: REASON_CODES.ok,
+          sessionId,
+          durationMs: 1,
+          attempts: 1,
+          artifacts: [],
+          data: {
+            found: true,
+            actionId: "auto-drift-replay",
+            comparison: {
+              baselineActionId: "stable-boundary",
+              comparedActionId: "auto-drift-replay",
+              differences: ["screen login != catalog"],
+              matched: false,
+              divergenceSignals: ["screen_mismatch"],
+              replayValue: "medium",
+              checkpointDivergence: "screen_mismatch",
+            },
+          },
+          nextSuggestions: [],
+        }),
+        explainLastFailure: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-drift-replay", attribution: buildAttribution("ui_state") }, nextSuggestions: [] }),
+        rankFailureCandidates: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-drift-replay", candidates: [buildAttribution("ui_state")] }, nextSuggestions: [] }),
+        suggestKnownRemediation: async () => ({ status: "success", reasonCode: REASON_CODES.ok, sessionId, durationMs: 1, attempts: 1, artifacts: [], data: { found: true, actionId: "auto-drift-replay", remediation: [] }, nextSuggestions: [] }),
+        recoverToKnownState: async () => { throw new Error("recover should not run"); },
+        replayLastStablePath: async () => ({
+          status: "success",
+          reasonCode: REASON_CODES.ok,
+          sessionId,
+          durationMs: 1,
+          attempts: 1,
+          artifacts: ["artifacts/recovery/replay.txt"],
+          data: {
+            summary: {
+              strategy: "replay_last_successful_action",
+              recovered: true,
+              note: "Replayed the last stable action after checkpoint drift.",
+              replayedActionId: "stable-boundary",
+              replayValue: "medium",
+              checkpointDivergence: "screen_mismatch",
+            },
+          },
+          nextSuggestions: [],
+        }),
+      },
+    );
+
+    assert.equal(result.data.autoRemediation?.selectedRecovery, "replay_last_successful_action");
+    assert.equal(result.data.autoRemediation?.stateMachineStatus, "replay_recommended");
+    assert.equal(result.data.autoRemediation?.stateMachineTrace?.includes("selected_recovery:replay_last_successful_action"), true);
   } finally {
     await cleanupSessionArtifacts(sessionId);
   }
@@ -405,6 +482,9 @@ test("performActionWithAutoRemediation directly recovers waiting-state failures 
     assert.equal(result.data.autoRemediation?.attempted, true);
     assert.equal(result.data.autoRemediation?.selectedRecovery, "wait_until_ready");
     assert.equal(result.data.autoRemediation?.stopReason, "recovered");
+    assert.equal(result.data.autoRemediation?.stateMachineStatus, "recoverable_waiting");
+    assert.equal(result.data.autoRemediation?.stateMachineTrace?.includes("waiting_state_detected"), true);
+    assert.equal(result.data.autoRemediation?.stateMachineTrace?.includes("selected_recovery:wait_until_ready"), true);
   } finally {
     await cleanupSessionArtifacts(sessionId);
   }
@@ -507,6 +587,8 @@ test("performActionWithAutoRemediation stops when retry budget is exhausted with
     );
 
     assert.equal(result.data.autoRemediation?.stopReason, "retry_exhausted_no_state_change");
+    assert.equal(result.data.autoRemediation?.stateMachineStatus, "terminal_stop");
+    assert.equal(result.data.autoRemediation?.stateMachineTrace?.includes("retry_stop:retry_exhausted_no_state_change"), true);
     assert.equal(recoverCalled, false);
   } finally {
     await cleanupSessionArtifacts(sessionId);

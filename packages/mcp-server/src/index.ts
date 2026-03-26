@@ -765,6 +765,9 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
       const explainLastFailureHandler =
         registry.explain_last_failure
         ?? withPolicy("explain_last_failure", explainLastFailure);
+      const compareAgainstBaselineHandler =
+        registry.compare_against_baseline
+        ?? withPolicy("compare_against_baseline", compareAgainstBaseline);
       const rankFailureCandidatesHandler =
         registry.rank_failure_candidates
         ?? withPolicy("rank_failure_candidates", rankFailureCandidates);
@@ -788,6 +791,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
       return async (input: PerformActionWithEvidenceInput) =>
         performActionWithAutoRemediation(input, {
           performAction: performActionWithEvidence,
+          compareAgainstBaseline: compareAgainstBaselineHandler,
           explainLastFailure: explainLastFailureHandler,
           rankFailureCandidates: rankFailureCandidatesHandler,
           suggestKnownRemediation: suggestKnownRemediationHandler,
