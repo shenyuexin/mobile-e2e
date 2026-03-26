@@ -10,6 +10,9 @@ export interface PersistedFailureIndexEntry {
 	causalSignals?: string[];
 	replayValue?: ReplayValue;
 	checkpointDivergence?: CheckpointDivergence;
+	fallbackUsed?: boolean;
+	evidenceFingerprint?: string;
+	baselineRelation?: "same_checkpoint" | "drifted_checkpoint" | "unknown";
 	remediation?: string[];
 	updatedAt: string;
 }
@@ -23,6 +26,9 @@ export interface PersistedBaselineIndexEntry {
 	progressMarker?: ActionProgressMarker;
 	stateChangeCategory?: StateChangeCategory;
 	replayValue?: ReplayValue;
+	fallbackUsed?: boolean;
+	evidenceFingerprint?: string;
+	baselineRelation?: "same_checkpoint" | "drifted_checkpoint" | "unknown";
 	updatedAt: string;
 }
 
