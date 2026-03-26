@@ -395,6 +395,8 @@ export interface AutoRemediationResult {
   recovered: boolean;
   stopReason: AutoRemediationStopReason;
   stopDetail: string;
+  stateMachineStatus?: OrchestrationStepState;
+  stateMachineTrace?: string[];
   stateBefore?: StateSummary;
   stateAfter?: StateSummary;
   artifactRefs: string[];
