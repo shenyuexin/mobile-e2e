@@ -3,10 +3,14 @@ import test from "node:test";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import {
   buildActionEvidenceDelta,
+  buildPostActionVerificationTrace,
   buildRetryRecommendation,
   buildRetryRecommendations,
+  classifyActionProgressMarker,
   classifyActionFailureCategory,
+  classifyPostconditionStatus,
   classifyRetryRecommendationTier,
+  classifyStateChangeCategory,
   classifyStepState,
   computeEvidenceConfidence,
   readResolutionSignal,
@@ -203,4 +207,76 @@ test("shouldRetryStep stops low-confidence retries after the second attempt", ()
     }),
     false,
   );
+});
+
+test("classifyActionProgressMarker marks successful actions without visible progress as ambiguous", () => {
+  const progressMarker = classifyActionProgressMarker({
+    finalStatus: "success",
+    stateChanged: false,
+    postconditionStatus: "unknown",
+  });
+
+  assert.equal(progressMarker, "ambiguous");
+});
+
+test("classifyPostconditionStatus keeps wait_for_ui success without state change as met", () => {
+  const postconditionStatus = classifyPostconditionStatus({
+    actionType: "wait_for_ui",
+    finalStatus: "success",
+    stateChanged: false,
+    stepState: "ready_to_execute",
+    postState: {
+      appPhase: "ready",
+      readiness: "ready",
+      blockingSignals: [],
+    },
+  });
+
+  assert.equal(postconditionStatus, "met");
+});
+
+test("classifyStateChangeCategory reports no_material_change when state is unchanged", () => {
+  const stateChangeCategory = classifyStateChangeCategory({
+    stateChanged: false,
+    preState: {
+      appPhase: "ready",
+      readiness: "ready",
+      blockingSignals: [],
+      screenId: "catalog",
+      screenTitle: "Catalog",
+    },
+    postState: {
+      appPhase: "ready",
+      readiness: "ready",
+      blockingSignals: [],
+      screenId: "catalog",
+      screenTitle: "Catalog",
+    },
+  });
+
+  assert.equal(stateChangeCategory, "no_material_change");
+});
+
+test("buildPostActionVerificationTrace keeps unsupported partial dry-runs as not_met", () => {
+  const trace = buildPostActionVerificationTrace({
+    actionType: "tap_element",
+    finalStatus: "partial",
+    stepState: "terminal_stop",
+    stateChanged: false,
+    preState: {
+      appPhase: "unknown",
+      readiness: "unknown",
+      blockingSignals: [],
+    },
+    postState: {
+      appPhase: "unknown",
+      readiness: "unknown",
+      blockingSignals: [],
+    },
+    attempts: 1,
+  });
+
+  assert.equal(trace.postconditionMet, false);
+  assert.equal(trace.postconditionStatus, "not_met");
+  assert.equal(trace.progressMarker, "none");
 });

@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { REASON_CODES, type GetScreenSummaryData, type StateSummary, type ToolResult } from "@mobile-e2e-mcp/contracts";
 import { MacVisionOcrProvider, OcrService, type MacVisionExecutionResult } from "@mobile-e2e-mcp/adapter-vision";
+import { persistActionRecord, recordBaselineEntry, recordFailureSignature } from "@mobile-e2e-mcp/core";
 import {
   calculateViewportOverlap,
   buildNonExecutedUiTargetResolution,
@@ -765,6 +766,12 @@ test("collectDebugEvidenceWithMaestro aggregates structured evidence in dry-run 
   assert.equal(result.data.evidence?.some((item) => item.kind === "log"), true);
   assert.equal(result.data.evidence?.some((item) => item.kind === "crash_signal"), true);
   assert.equal(result.data.evidence?.some((item) => item.kind === "diagnostics_bundle"), true);
+  assert.equal(result.data.diagnosisPacket?.strongestSuspectLayer, "environment");
+  assert.equal(result.data.diagnosisPacket?.confidence, "moderate");
+  assert.equal(typeof result.data.diagnosisPacket?.strongestCausalSignal, "string");
+  assert.equal(typeof result.data.diagnosisPacket?.recommendedNextProbe, "string");
+  assert.equal(typeof result.data.diagnosisPacket?.recommendedRecovery, "string");
+  assert.equal(result.data.diagnosisPacket?.escalationThreshold, "if_summary_inconclusive");
 });
 
 test("collectDebugEvidenceWithMaestro carries custom metro base url into auto discovery metadata", async () => {
@@ -868,6 +875,12 @@ test("performActionWithEvidenceWithMaestro records dry-run action outcome", asyn
   assert.equal(typeof result.data.outcome.actionId, "string");
   assert.equal(typeof result.data.evidenceDelta.uiDiffSummary, "string");
   assert.equal(result.data.outcome.failureCategory, "unsupported");
+  assert.equal(result.data.outcome.progressMarker, "none");
+  assert.equal(result.data.outcome.postconditionStatus, "not_met");
+  assert.equal(result.data.outcome.stateChangeCategory, "no_material_change");
+  assert.equal(result.data.outcome.stateChangeConfidence, "weak");
+  assert.equal(result.data.postActionVerificationTrace?.postconditionStatus, "not_met");
+  assert.equal(result.data.postActionVerificationTrace?.progressMarker, "none");
   assert.equal(result.data.postActionRefreshAttempted, undefined);
   assert.equal(Array.isArray(result.data.actionabilityReview), true);
   assert.equal(result.data.actionabilityReview?.some((item) => item.startsWith("post_action_refresh_")), false);
@@ -1620,6 +1633,32 @@ test("findSimilarFailuresWithMaestro returns indexed similar failures", async ()
   assert.equal(result.data.found, true);
 });
 
+test("findSimilarFailuresWithMaestro surfaces matched signals and replay value from indexed memory", async () => {
+  const sessionId = `similar-failures-rich-${Date.now()}`;
+  await recordFailureSignature(repoRoot, {
+    actionId: `seeded-similar-${Date.now()}`,
+    sessionId: `seeded-session-${Date.now()}`,
+    signature: {
+      actionType: "tap_element",
+      screenId: "catalog",
+      affectedLayer: "ui_locator",
+      readiness: "ready",
+      progressMarker: "none",
+      stateChangeCategory: "no_material_change",
+    },
+    causalSignals: ["selector_unchanged", "state_unchanged"],
+    replayValue: "low",
+    updatedAt: new Date().toISOString(),
+  });
+  await performActionWithEvidenceWithMaestro({ sessionId, platform: "android", dryRun: true, action: { actionType: "tap_element", contentDesc: "View products" } });
+  const result = await findSimilarFailuresWithMaestro({ sessionId });
+
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.similarFailures.length >= 1, true);
+  assert.equal(result.data.similarFailures[0]?.matchedSignals?.includes("action_type"), true);
+  assert.equal(result.data.similarFailures[0]?.replayValue, "low");
+});
+
 test("compareAgainstBaselineWithMaestro compares against successful baseline", async () => {
   const sessionId = "baseline-compare-dry-run";
   await performActionWithEvidenceWithMaestro({ sessionId, platform: "android", dryRun: true, action: { actionType: "launch_app", appId: "host.exp.exponent" } });
@@ -1627,6 +1666,77 @@ test("compareAgainstBaselineWithMaestro compares against successful baseline", a
 
   assert.equal(result.reasonCode, "OK");
   assert.equal(typeof result.data.found, "boolean");
+});
+
+test("compareAgainstBaselineWithMaestro reports divergence metadata for drifted checkpoints", async () => {
+  const sessionId = `baseline-divergence-${Date.now()}`;
+  const baselineActionId = `baseline-stable-${Date.now()}`;
+  const currentActionId = `baseline-current-${Date.now()}`;
+
+  await persistActionRecord(repoRoot, {
+    actionId: baselineActionId,
+    sessionId,
+    intent: { actionType: "launch_app", appId: "host.exp.exponent" },
+    outcome: {
+      actionId: baselineActionId,
+      actionType: "launch_app",
+      resolutionStrategy: "deterministic",
+      preState: { appPhase: "launching", readiness: "waiting_ui", blockingSignals: [], screenId: "splash" },
+      postState: { appPhase: "ready", readiness: "ready", blockingSignals: [], screenId: "catalog" },
+      stateChanged: true,
+      fallbackUsed: false,
+      retryCount: 0,
+      progressMarker: "full",
+      stateChangeCategory: "screen_transition",
+      outcome: "success",
+    },
+    evidenceDelta: {},
+    evidence: [],
+    lowLevelStatus: "success",
+    lowLevelReasonCode: REASON_CODES.ok,
+    updatedAt: new Date().toISOString(),
+  });
+  await recordBaselineEntry(repoRoot, {
+    actionId: baselineActionId,
+    sessionId,
+    actionType: "launch_app",
+    screenId: "catalog",
+    readiness: "ready",
+    progressMarker: "full",
+    stateChangeCategory: "screen_transition",
+    replayValue: "high",
+    updatedAt: new Date().toISOString(),
+  });
+  await persistActionRecord(repoRoot, {
+    actionId: currentActionId,
+    sessionId,
+    intent: { actionType: "launch_app", appId: "host.exp.exponent" },
+    outcome: {
+      actionId: currentActionId,
+      actionType: "launch_app",
+      resolutionStrategy: "deterministic",
+      preState: { appPhase: "launching", readiness: "waiting_ui", blockingSignals: [], screenId: "splash" },
+      postState: { appPhase: "ready", readiness: "ready", blockingSignals: [], screenId: "login" },
+      stateChanged: true,
+      fallbackUsed: false,
+      retryCount: 0,
+      progressMarker: "partial",
+      stateChangeCategory: "screen_transition",
+      outcome: "partial",
+    },
+    evidenceDelta: {},
+    evidence: [],
+    lowLevelStatus: "partial",
+    lowLevelReasonCode: REASON_CODES.unsupportedOperation,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const result = await compareAgainstBaselineWithMaestro({ sessionId, actionId: currentActionId });
+
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.comparison?.checkpointDivergence, "screen_mismatch");
+  assert.equal(result.data.comparison?.replayValue, "low");
+  assert.equal(result.data.comparison?.divergenceSignals?.includes("screen_mismatch"), true);
 });
 
 test("suggestKnownRemediationWithMaestro returns remediation hints", async () => {

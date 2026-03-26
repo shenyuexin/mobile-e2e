@@ -1,13 +1,16 @@
 import type {
   ActionOutcomeSummary,
+  ActionProgressMarker,
   EvidenceConfidence,
   EvidenceDeltaSummary,
   LogSummary,
   OrchestrationStepState,
   PerformActionWithEvidenceData,
+  PostconditionStatus,
   PostActionVerificationTrace,
   ReasonCode,
   RetryBackoffClass,
+  StateChangeCategory,
   StateSummary,
   ToolResult,
 } from "@mobile-e2e-mcp/contracts";
@@ -36,9 +39,71 @@ export function uniqueNonEmpty(values: Array<string | undefined>, limit = 8): st
 
 export function buildActionOutcomeConfidence(status: ToolResult["status"], stateChanged: boolean): number {
   if (status === "success" && stateChanged) return 0.95;
-  if (status === "success") return 0.7;
+  if (status === "success") return 0.55;
   if (status === "partial") return 0.45;
   return 0.2;
+}
+
+export function classifyStateChangeCategory(params: {
+  stateChanged: boolean;
+  preState: StateSummary;
+  postState: StateSummary;
+}): StateChangeCategory {
+  if (!params.stateChanged) {
+    return "no_material_change";
+  }
+  if (params.preState.screenId !== params.postState.screenId) {
+    return "screen_transition";
+  }
+  if (params.preState.screenTitle !== params.postState.screenTitle) {
+    return "screen_title_transition";
+  }
+  if (params.preState.readiness !== params.postState.readiness) {
+    return "readiness_transition";
+  }
+  if (JSON.stringify(params.preState.blockingSignals ?? []) !== JSON.stringify(params.postState.blockingSignals ?? [])) {
+    return "blocking_signal_transition";
+  }
+  return "same_screen_delta";
+}
+
+export function classifyPostconditionStatus(params: {
+  actionType: ActionOutcomeSummary["actionType"];
+  finalStatus: ToolResult["status"];
+  stateChanged: boolean;
+  stepState: OrchestrationStepState;
+  postState: StateSummary;
+}): PostconditionStatus {
+  if (params.finalStatus === "success" && params.stateChanged) {
+    return "met";
+  }
+  if (params.actionType === "wait_for_ui" && params.finalStatus === "success" && params.postState.readiness === "ready") {
+    return "met";
+  }
+  if (params.finalStatus === "partial" && params.stateChanged) {
+    return "partial";
+  }
+  if (params.finalStatus === "success" && params.stepState === "ready_to_execute") {
+    return "unknown";
+  }
+  return "not_met";
+}
+
+export function classifyActionProgressMarker(params: {
+  finalStatus: ToolResult["status"];
+  stateChanged: boolean;
+  postconditionStatus: PostconditionStatus;
+}): ActionProgressMarker {
+  if (params.finalStatus === "success" && params.stateChanged) {
+    return "full";
+  }
+  if (params.finalStatus === "partial" && params.stateChanged) {
+    return "partial";
+  }
+  if (params.finalStatus === "success" && !params.stateChanged && params.postconditionStatus === "unknown") {
+    return "ambiguous";
+  }
+  return "none";
 }
 
 export function classifyNetworkReadiness(postState: StateSummary): ActionOutcomeSummary["networkReadinessClass"] {
@@ -118,20 +183,38 @@ export function shouldRetryStep(params: {
 }
 
 export function buildPostActionVerificationTrace(params: {
+  actionType: ActionOutcomeSummary["actionType"];
+  finalStatus: ToolResult["status"];
   stepState: OrchestrationStepState;
   stateChanged: boolean;
   preState: StateSummary;
   postState: StateSummary;
   attempts: number;
 }): PostActionVerificationTrace {
+  const postconditionStatus = classifyPostconditionStatus({
+    actionType: params.actionType,
+    finalStatus: params.finalStatus,
+    stateChanged: params.stateChanged,
+    stepState: params.stepState,
+    postState: params.postState,
+  });
+  const progressMarker = classifyActionProgressMarker({
+    finalStatus: params.finalStatus,
+    stateChanged: params.stateChanged,
+    postconditionStatus,
+  });
   const signals = uniqueNonEmpty([
     params.stateChanged ? "state_changed" : "state_unchanged",
     params.preState.screenId !== params.postState.screenId ? "screen_shift_detected" : undefined,
     params.preState.readiness !== params.postState.readiness ? `readiness:${params.preState.readiness}->${params.postState.readiness}` : undefined,
+    `postcondition_status:${postconditionStatus}`,
+    `progress_marker:${progressMarker}`,
     params.stepState,
   ], 6);
   return {
-    postconditionMet: params.stateChanged || params.stepState === "checkpoint_candidate" || params.stepState === "ready_to_execute",
+    postconditionMet: postconditionStatus === "met",
+    postconditionStatus,
+    progressMarker,
     attempts: params.attempts,
     verificationSignals: signals,
   };

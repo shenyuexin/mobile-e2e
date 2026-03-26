@@ -26,6 +26,9 @@ import { randomUUID } from "node:crypto";
 import {
   buildActionabilityReview,
   buildActionEvidenceDelta,
+  classifyActionProgressMarker,
+  classifyPostconditionStatus,
+  classifyStateChangeCategory,
   buildActionOutcomeConfidence,
   buildCheckpointDecisionTraceForAction,
   buildPostActionVerificationTrace,
@@ -466,6 +469,8 @@ export async function performActionWithEvidenceWithMaestro(
   };
 
   const postActionVerificationTrace = buildPostActionVerificationTrace({
+    actionType: input.action.actionType,
+    finalStatus: actionStatus,
     stepState,
     stateChanged,
     preState: preStateSummary,
@@ -536,9 +541,27 @@ export async function performActionWithEvidenceWithMaestro(
     fallbackUsed,
     retryCount: (ocrFallbackResult?.retryCount ?? 0) + Math.max(0, retryAttemptIndex - 1),
     stepState,
+    progressMarker: classifyActionProgressMarker({
+      finalStatus: actionStatus,
+      stateChanged,
+      postconditionStatus: postActionVerificationTrace.postconditionStatus ?? classifyPostconditionStatus({
+        actionType: input.action.actionType,
+        finalStatus: actionStatus,
+        stateChanged,
+        stepState,
+        postState: postStateSummary,
+      }),
+    }),
     evidenceConfidence,
+    stateChangeCategory: classifyStateChangeCategory({
+      stateChanged,
+      preState: preStateSummary,
+      postState: postStateSummary,
+    }),
+    stateChangeConfidence: evidenceConfidence,
     networkReadinessClass: classifyNetworkReadiness(postStateSummary),
     postconditionMet: postActionVerificationTrace.postconditionMet,
+    postconditionStatus: postActionVerificationTrace.postconditionStatus,
     targetQuality: classifyTargetQuality({ failureCategory, finalStatus: actionStatus, fallbackUsed, stateChanged }),
     failureCategory,
     confidence: ocrFallbackResult?.ocrEvidence?.ocrConfidence ?? buildActionOutcomeConfidence(actionStatus, stateChanged),
@@ -598,6 +621,12 @@ export async function performActionWithEvidenceWithMaestro(
       sessionId: input.sessionId,
       actionType: outcome.actionType,
       screenId: outcome.postState?.screenId ?? outcome.preState?.screenId,
+      readiness: outcome.postState?.readiness ?? outcome.preState?.readiness,
+      progressMarker: outcome.progressMarker,
+      stateChangeCategory: outcome.stateChangeCategory,
+      replayValue: outcome.outcome === "success"
+        ? (outcome.progressMarker === "full" || outcome.postconditionStatus === "met" ? "high" : "medium")
+        : "low",
       updatedAt: new Date().toISOString(),
     });
   }
