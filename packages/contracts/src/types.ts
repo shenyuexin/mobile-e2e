@@ -11,6 +11,12 @@ export type AppPhase = "launching" | "ready" | "loading" | "blocked" | "backgrou
 export type StateReadiness = "ready" | "waiting_network" | "waiting_ui" | "degraded_success" | "backend_failed_terminal" | "offline_terminal" | "interrupted" | "unknown";
 export type OrchestrationStepState = "ready_to_execute" | "recoverable_waiting" | "partial_progress" | "degraded_but_continue_safe" | "checkpoint_candidate" | "replay_recommended" | "terminal_stop";
 export type EvidenceConfidence = "strong" | "moderate" | "weak" | "none";
+export type ActionProgressMarker = "full" | "partial" | "none" | "ambiguous";
+export type PostconditionStatus = "met" | "partial" | "not_met" | "unknown";
+export type StateChangeCategory = "screen_transition" | "screen_title_transition" | "readiness_transition" | "blocking_signal_transition" | "same_screen_delta" | "no_material_change";
+export type DiagnosisEscalationThreshold = "none" | "if_summary_inconclusive" | "if_no_action_record";
+export type ReplayValue = "high" | "medium" | "low" | "unknown";
+export type CheckpointDivergence = "none" | "screen_mismatch" | "readiness_mismatch" | "outcome_mismatch" | "signal_mismatch" | "unknown";
 export type RetryBackoffClass = "none" | "short_ui_settle" | "bounded_wait_ready" | "reason_aware_retry";
 export type TimelineEventLayer = "session" | "ui" | "state" | "action" | "log" | "crash" | "network" | "runtime" | "performance" | "environment" | "unknown";
 export type EvidenceCompletenessLevel = "complete" | "partial" | "minimal" | "missing";
@@ -292,9 +298,13 @@ export interface ActionOutcomeSummary {
   fallbackUsed: boolean;
   retryCount: number;
   stepState?: OrchestrationStepState;
+  progressMarker?: ActionProgressMarker;
   evidenceConfidence?: EvidenceConfidence;
+  stateChangeCategory?: StateChangeCategory;
+  stateChangeConfidence?: EvidenceConfidence;
   networkReadinessClass?: "retryable_waiting" | "degraded_success" | "terminal_backend_failed" | "terminal_offline" | "unknown";
   postconditionMet?: boolean;
+  postconditionStatus?: PostconditionStatus;
   targetQuality?: "high" | "medium" | "low";
   failureCategory?: "selector_missing" | "selector_ambiguous" | "blocked" | "waiting" | "no_state_change" | "transport" | "unsupported";
   confidence?: number;
@@ -309,6 +319,14 @@ export interface FailureAttribution {
   recommendedNextProbe?: string;
   recommendedRecovery?: string;
 }
+export interface DiagnosisPacket {
+  strongestSuspectLayer: AffectedLayer;
+  strongestCausalSignal: string;
+  confidence: EvidenceConfidence;
+  recommendedNextProbe?: string;
+  recommendedRecovery?: string;
+  escalationThreshold: DiagnosisEscalationThreshold;
+}
 export interface RecoverySummary {
   strategy: RecoveryStrategy;
   recovered: boolean;
@@ -318,6 +336,8 @@ export interface RecoverySummary {
   replayedActionId?: string;
   stopReasonCode?: ReasonCode;
   checkpointDecision?: CheckpointDecisionTrace;
+  replayValue?: ReplayValue;
+  checkpointDivergence?: CheckpointDivergence;
 }
 export interface RetryDecisionTrace {
   stepState: OrchestrationStepState;
@@ -331,6 +351,8 @@ export interface RetryDecisionTrace {
 }
 export interface PostActionVerificationTrace {
   postconditionMet: boolean;
+  postconditionStatus?: PostconditionStatus;
+  progressMarker?: ActionProgressMarker;
   attempts: number;
   verificationSignals: string[];
 }
@@ -387,18 +409,26 @@ export interface FailureSignature {
   affectedLayer: AffectedLayer;
   topSignal?: string;
   interruptionCategory?: string;
+  readiness?: StateReadiness;
+  progressMarker?: ActionProgressMarker;
+  stateChangeCategory?: StateChangeCategory;
 }
 export interface SimilarFailure {
   actionId: string;
   sessionId: string;
   signature: FailureSignature;
   matchScore: number;
+  matchedSignals?: string[];
+  replayValue?: ReplayValue;
 }
 export interface BaselineComparison {
   baselineActionId?: string;
   comparedActionId: string;
   differences: string[];
   matched: boolean;
+  divergenceSignals?: string[];
+  replayValue?: ReplayValue;
+  checkpointDivergence?: CheckpointDivergence;
 }
 export interface TimelineEvent {
   eventId?: string;
@@ -645,6 +675,7 @@ export interface CollectDebugEvidenceData {
   jsNetworkEventCount?: number;
   jsConsoleSummary?: JsConsoleLogSummary;
   jsNetworkSummary?: JsNetworkFailureSummary;
+  diagnosisPacket?: DiagnosisPacket;
   diagnosisBriefing: string[];
   suspectAreas: string[];
   interestingSignals: DebugSignalSummary[];
@@ -1079,6 +1110,7 @@ export interface GetActionOutcomeData {
   actionId: string;
   sessionId?: string;
   outcome?: ActionOutcomeSummary;
+  diagnosisPacket?: DiagnosisPacket;
   retryRecommendationTier?: PerformActionWithEvidenceData["retryRecommendationTier"];
   retryRecommendation?: RetryRecommendation;
   retryDecisionTrace?: RetryDecisionTrace;
@@ -1096,6 +1128,7 @@ export interface ExplainLastFailureData {
   found: boolean;
   actionId?: string;
   outcome?: ActionOutcomeSummary;
+  diagnosisPacket?: DiagnosisPacket;
   retryRecommendationTier?: PerformActionWithEvidenceData["retryRecommendationTier"];
   retryRecommendation?: RetryRecommendation;
   attribution?: FailureAttribution;
