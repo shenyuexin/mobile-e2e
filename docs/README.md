@@ -38,6 +38,8 @@ If a delivery process becomes stable and reusable, promote it into `architecture
 ## Recommended architecture entry points
 
 - `architecture/orchestration-robustness-strategy.md` — priority deepening areas for high-frequency automation-flow failures and network anomaly handling
+- `architecture/harness-deepening-debug-first-strategy.zh-CN.md` — debug-first harness deepening strategy focused on stronger evidence, attribution, recovery, and stop decisions
+- `architecture/harness-deepening-debug-first-implementation-checklist.zh-CN.md` — milestone-based execution checklist for outcome proof, diagnosis packet, session memory, recovery follow-on, and validation gates
 - `architecture/bounded-retry-and-state-change-evidence-architecture.md` — runtime design for bounded retry, checkpoint, replay-safe resume, and state-change proof
 - `architecture/network-anomaly-runtime-architecture.md` — runtime design for network-aware readiness, attribution, retry, and early-stop behavior
 - `architecture/orchestration-robustness-implementation-checklist.md` — directly executable milestone checklist for robustness work
