@@ -52,12 +52,15 @@ Framework lane boundary (current truth):
 - Native and Flutter profiles remain `validated-sample-baseline` in `configs/profiles/*.yaml` and `configs/matrices/framework-profile-matrix.md`.
 - In the current shared acceptance runner/report path, Flutter framework-lane proof is Android-only (`flutter-android`).
 - React Native acceptance lanes (`react-native-ios`, `react-native-android`) are workflow acceptance backbone lanes and are intentionally distinct from framework-profile matrix rows.
+- The default Phase 02 framework acceptance entrypoint is `pnpm run validate:phase2-rn-android-acceptance`, which isolates the RN Android lane as a dedicated command path while reusing the shared acceptance evidence generators.
 
 ## Prerequisites for clone-and-run
 
 - Android emulator/device online via `adb devices` (recommended Android 9 / API 28 or newer)
 - `adb` and `pnpm` installed and available in your `PATH`
-- `com.epam.mobitru` installed on the selected device
+- Expo sample app checked in under `examples/rn-login-demo/`
+- Expo Go (`host.exp.exponent`) installed on the selected Android device for the RN Phase 02 lane
+- `com.epam.mobitru` installed only when running the Mobitru showcase/native/flutter lanes
 - `ffmpeg` and `ffprobe` installed (required for `publish-showcase-assets-android.sh`)
 
 Optional fast install path from this repo before recording:
@@ -72,6 +75,8 @@ Notes:
 
 - If `DEVICE_ID` is unset, both recording wrappers and direct demo TS scripts auto-select the first online Android device.
 - `APK_PATH` is supported by both recording wrappers and by `publish-showcase-assets-android.sh`.
+- Start Expo for the tracked RN sample with `pnpm --dir examples/rn-login-demo start` before running the dedicated Phase 02 acceptance command when using Expo Go.
+- `pnpm run validate:phase2-rn-android-acceptance` uses the React Native Android sample flow and writes lane-local artifacts under `artifacts/phase2-rn-android/**` before regenerating `reports/phase-sample-report.*` and `reports/acceptance-evidence.*`.
 
 ## Snapshot assets used by README
 

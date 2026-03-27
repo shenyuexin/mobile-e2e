@@ -21,6 +21,11 @@ on:
         required: false
         default: true
         type: boolean
+      phase2_rn_android_runs:
+        description: Phase 2 React Native Android dedicated acceptance run count
+        required: false
+        default: "1"
+        type: string
       phase1_ios_runs:
         description: Phase 1 iOS run count
         required: false
@@ -64,6 +69,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run validate:phase2-rn-android
       - run: pnpm run validate:phase3-samples
 
   real-run-matrix:
@@ -105,6 +111,7 @@ jobs:
             RAW_RUN_FLUTTER_ANDROID="${{ inputs.run_flutter_android }}"
             RAW_RUN_NATIVE_ANDROID="${{ inputs.run_native_android }}"
             RAW_RUN_NATIVE_IOS="${{ inputs.run_native_ios }}"
+            RAW_PHASE2_RN_ANDROID_RUNS="${{ inputs.phase2_rn_android_runs }}"
             RAW_PHASE1_IOS_RUNS="${{ inputs.phase1_ios_runs }}"
             RAW_PHASE1_ANDROID_RUNS="${{ inputs.phase1_android_runs }}"
             RAW_PHASE3_FLUTTER_RUNS="${{ inputs.phase3_flutter_runs }}"
@@ -114,6 +121,7 @@ jobs:
             RAW_RUN_FLUTTER_ANDROID="true"
             RAW_RUN_NATIVE_ANDROID="true"
             RAW_RUN_NATIVE_IOS="true"
+            RAW_PHASE2_RN_ANDROID_RUNS="1"
             RAW_PHASE1_IOS_RUNS="1"
             RAW_PHASE1_ANDROID_RUNS="1"
             RAW_PHASE3_FLUTTER_RUNS="1"
@@ -132,6 +140,7 @@ jobs:
           echo "RUN_FLUTTER_ANDROID=$(bool_to_flag "$RAW_RUN_FLUTTER_ANDROID")" >> "$GITHUB_ENV"
           echo "RUN_NATIVE_ANDROID=$(bool_to_flag "$RAW_RUN_NATIVE_ANDROID")" >> "$GITHUB_ENV"
           echo "RUN_NATIVE_IOS=$(bool_to_flag "$RAW_RUN_NATIVE_IOS")" >> "$GITHUB_ENV"
+          echo "PHASE2_RN_ANDROID_RUNS=$RAW_PHASE2_RN_ANDROID_RUNS" >> "$GITHUB_ENV"
           echo "PHASE1_IOS_RUNS=$RAW_PHASE1_IOS_RUNS" >> "$GITHUB_ENV"
           echo "PHASE1_ANDROID_RUNS=$RAW_PHASE1_ANDROID_RUNS" >> "$GITHUB_ENV"
           echo "PHASE3_FLUTTER_RUNS=$RAW_PHASE3_FLUTTER_RUNS" >> "$GITHUB_ENV"
@@ -149,6 +158,7 @@ jobs:
 
           require_positive_int "phase1_ios_runs" "$RAW_PHASE1_IOS_RUNS"
           require_positive_int "phase1_android_runs" "$RAW_PHASE1_ANDROID_RUNS"
+          require_positive_int "phase2_rn_android_runs" "$RAW_PHASE2_RN_ANDROID_RUNS"
           require_positive_int "phase3_flutter_runs" "$RAW_PHASE3_FLUTTER_RUNS"
           require_positive_int "phase3_native_android_runs" "$RAW_PHASE3_NATIVE_ANDROID_RUNS"
           require_positive_int "phase3_native_ios_runs" "$RAW_PHASE3_NATIVE_IOS_RUNS"
@@ -159,12 +169,33 @@ jobs:
             echo "- run_flutter_android: \`$RAW_RUN_FLUTTER_ANDROID\`"
             echo "- run_native_android: \`$RAW_RUN_NATIVE_ANDROID\`"
             echo "- run_native_ios: \`$RAW_RUN_NATIVE_IOS\`"
+            echo "- phase2_rn_android_runs: \`$RAW_PHASE2_RN_ANDROID_RUNS\`"
             echo "- phase1_ios_runs: \`$RAW_PHASE1_IOS_RUNS\`"
             echo "- phase1_android_runs: \`$RAW_PHASE1_ANDROID_RUNS\`"
             echo "- phase3_flutter_runs: \`$RAW_PHASE3_FLUTTER_RUNS\`"
             echo "- phase3_native_android_runs: \`$RAW_PHASE3_NATIVE_ANDROID_RUNS\`"
             echo "- phase3_native_ios_runs: \`$RAW_PHASE3_NATIVE_IOS_RUNS\`"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Run dedicated Phase 2 RN Android acceptance lane
+        run: pnpm run validate:phase2-rn-android-acceptance
+      - name: Preserve dedicated Phase 2 lane evidence
+        if: always()
+        run: |
+          if [ -f reports/phase-sample-report.json ]; then
+            cp reports/phase-sample-report.json reports/phase2-rn-android-phase-sample-report.json
+          fi
+          if [ -f reports/phase-sample-report.md ]; then
+            cp reports/phase-sample-report.md reports/phase2-rn-android-phase-sample-report.md
+          fi
+          if [ -f reports/acceptance-evidence.json ]; then
+            cp reports/acceptance-evidence.json reports/phase2-rn-android-acceptance-evidence.json
+          fi
+          if [ -f reports/acceptance-evidence.md ]; then
+            cp reports/acceptance-evidence.md reports/phase2-rn-android-acceptance-evidence.md
+          fi
+          if [ -f reports/phase2-rn-android-run-metadata.json ]; then
+            cp reports/phase2-rn-android-run-metadata.json reports/phase2-rn-android-run-metadata.snapshot.json
+          fi
       - name: Run real-device acceptance matrix
         run: pnpm run validate:phase3-real-run
       - name: Enforce real-run quality gate
@@ -240,6 +271,8 @@ jobs:
             echo "## Real-device acceptance boundary"
             echo "- Status: **${{ job.status }}**"
             echo "- Scope: self-hosted acceptance matrix (Phase 1 React Native backbone + Phase 3 Native/Flutter sample-profile paths)"
+            echo "- Dedicated Phase 2 entrypoint: \`pnpm run validate:phase2-rn-android-acceptance\` for the default RN Android lane"
+            echo "- Dedicated Phase 2 artifacts: \`reports/phase2-rn-android-phase-sample-report.json\`, \`reports/phase2-rn-android-acceptance-evidence.json\`, and \`artifacts/phase2-rn-android/**\`"
             echo "- Gate: fail when expected lanes are \`NO_DATA\`/missing or any lane is \`NO_GO\` in \`reports/phase-sample-report.json\`"
             echo "- Framework-profile lane note: current shared acceptance runner/report path proves Flutter Android lane first; Flutter iOS is outside this shared lane"
             echo "- Framework-profile status source: \`configs/profiles/native.yaml\` + \`configs/profiles/flutter.yaml\` remain \`validated-sample-baseline\`"
@@ -255,11 +288,18 @@ jobs:
             reports/self-hosted-run-metadata.json
             reports/phase-sample-report.json
             reports/phase-sample-report.md
+            reports/phase2-rn-android-phase-sample-report.json
+            reports/phase2-rn-android-phase-sample-report.md
             reports/acceptance-evidence.json
             reports/acceptance-evidence.md
+            reports/phase2-rn-android-acceptance-evidence.json
+            reports/phase2-rn-android-acceptance-evidence.md
+            reports/phase2-rn-android-run-metadata.json
+            reports/phase2-rn-android-run-metadata.snapshot.json
             artifacts/audit/*.json
             artifacts/phase1-ios/**
             artifacts/phase1-android/**
+            artifacts/phase2-rn-android/**
             artifacts/phase3-flutter-android/**
             artifacts/phase3-native-android/**
             artifacts/phase3-native-ios/**

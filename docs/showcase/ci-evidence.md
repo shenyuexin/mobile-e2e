@@ -35,16 +35,19 @@ For each run of `Real Device Acceptance` (`.github/workflows/real-device-accepta
 2. Self-hosted macOS real-run matrix + acceptance evidence artifacts
 3. Quality gate: workflow fails when any expected lane is missing/`NO_DATA`, or any lane status is `NO_GO` in `reports/phase-sample-report.json`
 4. Lane semantics:
-   - Phase 1 lanes (`react-native-ios`, `react-native-android`) are acceptance backbone lanes in this workflow.
-   - Phase 3 framework-profile lanes are sample-profile acceptance lanes (`flutter-android`, `native-android`, `native-ios` when enabled).
-   - The first framework-profile acceptance proof in the shared runner/report path is Flutter Android; Flutter iOS is not in that shared acceptance lane today.
+    - Phase 1 lanes (`react-native-ios`, `react-native-android`) are acceptance backbone lanes in this workflow.
+    - Phase 2 now defines a dedicated React Native Android acceptance entrypoint: `pnpm run validate:phase2-rn-android-acceptance`.
+    - Phase 3 framework-profile lanes are sample-profile acceptance lanes (`flutter-android`, `native-android`, `native-ios` when enabled).
+    - The first framework-profile acceptance proof in the shared runner/report path is Flutter Android; Flutter iOS is not in that shared acceptance lane today.
 
 ## CI boundary (important)
 
 - Ubuntu CI validates **buildability, type-safety, and smoke-level tool behavior**.
 - Platform smoke validates simulator/emulator toolchain baseline only.
 - Ubuntu CI and platform smoke do **not** fully prove real-device execution fidelity.
+- `validate:phase2-rn-android` is the clean-clone prerequisite gate for the default RN Android acceptance lane and must pass before self-hosted acceptance is meaningful.
 - `validate:phase3-samples` preserves profile/matrix contract truth for Native + Flutter `validated-sample-baseline` and dry-run CLI semantics, but it is still smoke-level (not acceptance proof).
+- `validate:phase2-rn-android-acceptance` is the smallest dedicated command path for the default Phase 02 framework lane; it reuses the shared report generators but isolates the RN Android lane as an explicit entrypoint.
 - Real-device confidence should be validated through showcase scripts and artifacts under:
   - `docs/showcase/README.md`
   - `docs/showcase/demo-playbook.zh-CN.md`
