@@ -26,6 +26,7 @@ export {
 } from "./recording-store.js";
 export {
 	appendSessionTimelineEvent,
+	appendSessionTimelineEvent as appendReplayTimelineEvent,
 	buildSessionAuditRelativePath,
 	buildSessionRecordRelativePath,
 	loadSessionAuditRecord,
