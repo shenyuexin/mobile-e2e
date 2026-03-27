@@ -23,6 +23,15 @@ device_manufacturer() {
   adb -s "$DEVICE_ID" shell getprop ro.product.manufacturer 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -d '\r'
 }
 
+ensure_package_installed() {
+  local package_name="$1"
+  if ! adb -s "$DEVICE_ID" shell pm list packages 2>/dev/null | grep -q "^package:${package_name}$"; then
+    printf 'Required package %s is not installed on device %s.\n' "$package_name" "$DEVICE_ID" >&2
+    printf 'Install the required app before replaying this lane.\n' >&2
+    exit 3
+  fi
+}
+
 flow_contains_text_commands() {
   grep -Eq '^- (inputText|pasteText|setClipboard):?|^- inputText:|^- pasteText|^- setClipboard:' "$FLOW"
 }
@@ -100,6 +109,7 @@ for i in $(seq 1 "$RUN_COUNT"); do
   fi
 
   if [ "$APP_ID" = "host.exp.exponent" ]; then
+    ensure_package_installed "$APP_ID"
     adb -s "$DEVICE_ID" reverse tcp:8081 tcp:8081 >/dev/null 2>&1 || true
     if [ -n "$ANDROID_USER_ID" ]; then
       adb -s "$DEVICE_ID" shell am force-stop --user "$ANDROID_USER_ID" host.exp.exponent || true
@@ -119,6 +129,7 @@ for i in $(seq 1 "$RUN_COUNT"); do
       adb -s "$DEVICE_ID" shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
     else
       adb -s "$DEVICE_ID" shell am force-stop "$APP_ID" >/dev/null 2>&1 || true
+      adb -s "$DEVICE_ID" shell monkey -p "$APP_ID" -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
     fi
     sleep 1
   fi
