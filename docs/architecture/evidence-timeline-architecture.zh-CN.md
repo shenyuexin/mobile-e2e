@@ -41,6 +41,7 @@
 
 - `packages/contracts/session.schema.json` 当前仅强约束 `timeline` 为对象数组，未强约束 event 子字段。
 - 本文档中的事件字段视为**目标标准模型**，用于指导实现与后续 schema 收敛。
+- 当前 Phase 4 已落地的最小 replay 事件为：`replay_started`、`replay_step_started`、`replay_step_completed`、`replay_step_failed`、`replay_stopped`、`replay_completed`。
 
 ### 3.2 Evidence Packet
 
@@ -51,6 +52,7 @@
 - `postStateSummary`
 - `fallbackUsed`
 - `confidence`
+- 对 replay preview，evidence 目前先以 `stepOutcomes[].artifacts/evidence` 与 timeline 引用为主，尚未形成完整独立 replay evidence packet。
 - `logs/crash/network snippets`
 
 当前落点建议：

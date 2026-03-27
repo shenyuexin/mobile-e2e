@@ -173,6 +173,12 @@
 
 这条链路只在专题文档维护：[`flow-generation.md`](./flow-generation.md)
 
+当前迁移状态：
+
+- `run_flow` 已支持对导出的 recorded flow 执行 **step-aware dry-run preview**
+- 该 preview 会返回 `executionMode`、`replayProgress`、`stepOutcomes`
+- 其余 replay 路径当前仍以 `runner_compat` 为主，不应被描述成已全部迁移完成
+
 ### 3.11 抓 React Native / Expo JS 调试信号
 
 `list_js_debug_targets -> capture_js_console_logs` 或 `capture_js_network_events`

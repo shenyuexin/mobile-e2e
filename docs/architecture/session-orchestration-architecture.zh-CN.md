@@ -158,6 +158,17 @@ MCP Tool Call
 - `reasonCode`
 - `artifactRefs`
 
+当前 Phase 4 已开始写入的 replay 事件类型：
+
+- `replay_started`
+- `replay_step_started`
+- `replay_step_completed`
+- `replay_step_failed`
+- `replay_stopped`
+- `replay_completed`
+
+这些事件当前首先服务于 step-aware replay preview，不代表所有 replay 路径都已完全迁移到该事件模型。
+
 审计 schema 与 retention 以 `configs/policies/session-audit-schema.yaml`、`artifact-retention.yaml` 为准。
 
 ---

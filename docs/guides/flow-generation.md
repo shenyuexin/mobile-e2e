@@ -144,6 +144,12 @@ Optional task-oriented export:
 
 Replay exported flow with `run_flow` and returned `data.outputPath`.
 
+Current migration truth:
+
+- exported recorded flows now support a **step-aware dry-run preview** through `run_flow`
+- that preview reports `executionMode`, replay progress, and per-step outcomes for the generated flow path
+- non-exported or non-preview replay still falls back to the existing `runner_compat` path
+
 ## 3) Mapping coverage and current limit
 
 Current mapping covers `launch_app`, `tap_element`, `type_into_element`, and `wait_for_ui`. `terminate_app` is skipped and reported in warnings.
