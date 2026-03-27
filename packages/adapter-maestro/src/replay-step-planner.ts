@@ -107,21 +107,23 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
 
     if (isRecord(item.tapOn)) {
       const point = parsePoint(asString(item.tapOn.point));
+      if (point) {
+        unsupportedCommands.push({ stepNumber, command: "tapOn.point" });
+        continue;
+      }
       steps.push({
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: point ? "tap" : "tap_element",
-        actionIntent: point
-          ? undefined
-          : {
-              actionType: "tap_element",
-              identifier: asString(item.tapOn.identifier),
-              resourceId: asString(item.tapOn.id),
-              text: asString(item.tapOn.text),
-            },
-        confidence: point ? "medium" : "high",
-        warnings: point ? ["Coordinate tap imported from flow YAML."] : [],
+        actionType: "tap_element",
+        actionIntent: {
+          actionType: "tap_element",
+          identifier: asString(item.tapOn.identifier),
+          resourceId: asString(item.tapOn.id),
+          text: asString(item.tapOn.text),
+        },
+        confidence: "high",
+        warnings: [],
         dependency: { previousStepRequired: true, checkpointEligible: true },
       });
       continue;
