@@ -87,7 +87,13 @@ docs/delivery/pilot-execution-*.md
 docs/delivery/mcp-context-downshift-*.md
 
 # Optional local-only demo package / fixtures
-examples/rn-login-demo/
+examples/rn-login-demo/*
+!examples/rn-login-demo/.gitignore
+!examples/rn-login-demo/App.tsx
+!examples/rn-login-demo/app.json
+!examples/rn-login-demo/index.ts
+!examples/rn-login-demo/package.json
+!examples/rn-login-demo/tsconfig.json
 tests/fixtures/ocr/
 
 # Optional non-runtime config artifacts
