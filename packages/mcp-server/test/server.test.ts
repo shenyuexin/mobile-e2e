@@ -739,12 +739,25 @@ test("server invoke supports run_flow Android dry-run", async () => {
     platform: "android",
     dryRun: true,
     runCount: 1,
-  }) as { status: string; reasonCode: string; data: { dryRun: boolean; runnerProfile: string } };
+  }) as {
+    status: string;
+    reasonCode: string;
+    data: {
+      dryRun: boolean;
+      runnerProfile: string;
+      executionMode?: string;
+      replayProgress?: { completedSteps: number[] };
+      stepOutcomes?: unknown[];
+    };
+  };
 
   assert.equal(result.status, "success");
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.dryRun, true);
   assert.equal(result.data.runnerProfile, "phase1");
+  assert.equal(result.data.executionMode, "runner_compat");
+  assert.deepEqual(result.data.replayProgress?.completedSteps ?? [], []);
+  assert.deepEqual(result.data.stepOutcomes ?? [], []);
 });
 
 test("server invoke supports export_session_flow with persisted actions", async () => {
@@ -878,12 +891,17 @@ test("server invoke supports export_session_flow to run_flow dry-run closure", a
     });
     const typedReplay = replay as {
       status: string;
-      data: { flowPath: string };
+      artifacts: string[];
+      data: { flowPath: string; executionMode?: string; stepOutcomes?: Array<{ stepNumber: number }>; replayProgress?: { totalSteps: number } };
     };
 
     assert.equal(exported.status, "success");
     assert.ok(["success", "partial"].includes(typedReplay.status));
     assert.equal(typeof typedReplay.data.flowPath, "string");
+    assert.equal(typedReplay.data.executionMode, "step_orchestrated");
+    assert.equal(Array.isArray(typedReplay.data.stepOutcomes), true);
+    assert.equal(typeof typedReplay.data.replayProgress?.totalSteps, "number");
+    assert.equal(typedReplay.artifacts.some((artifact) => artifact.endsWith("replay-summary.json")), true);
   } finally {
     await cleanupActionArtifact(actionId);
     await rm(path.resolve(repoRoot, `flows/samples/generated/${sessionId}.yaml`), { force: true });

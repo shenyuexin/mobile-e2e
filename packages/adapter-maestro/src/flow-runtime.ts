@@ -1,5 +1,6 @@
-import type { ReasonCode, RunFlowData, RunFlowInput, RunnerProfile, ToolResult } from "@mobile-e2e-mcp/contracts";
+import type { ActionIntent, ReasonCode, RunFlowData, RunFlowInput, RunnerProfile, ToolResult } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
+import { appendReplayTimelineEvent } from "@mobile-e2e-mcp/core";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -13,6 +14,13 @@ import {
   loadHarnessSelection,
   resolveRepoPath,
 } from "./harness-config.js";
+import { performActionWithEvidenceWithMaestro } from "./action-orchestrator.js";
+import { buildReplayStepsFromFlowYaml } from "./replay-step-planner.js";
+import { runReplaySteps } from "./replay-step-orchestrator.js";
+import { executeIntentWithMaestro } from "./task-planner.js";
+import { launchAppWithRuntime } from "./app-lifecycle-tools.js";
+import { terminateAppWithRuntime } from "./device-runtime.js";
+import { tapElementWithMaestroTool, typeIntoElementWithMaestroTool, waitForUiWithMaestroTool } from "./ui-tools.js";
 import { buildFailureReason, executeRunner, toRelativePath } from "./runtime-shared.js";
 
 function readSummaryLine(stdout?: string): string | undefined {
@@ -25,6 +33,17 @@ function readSummaryLine(stdout?: string): string | undefined {
   const normalized = stdout.replaceAll(carriageReturn, "");
   const lines = normalized.split(lineFeed).filter(Boolean);
   return lines.at(-1);
+}
+
+function buildCompatReplayProgress(totalRuns: number) {
+  return {
+    totalSteps: totalRuns,
+    completedSteps: [] as number[],
+    partialSteps: [] as number[],
+    failedSteps: [] as number[],
+    skippedSteps: [] as number[],
+    remainingSteps: totalRuns > 0 ? Array.from({ length: totalRuns }, (_, index) => index + 1) : [],
+  };
 }
 
 async function listArtifacts(rootPath: string, repoRoot: string): Promise<string[]> {
@@ -77,6 +96,55 @@ async function readRunCounts(artifactsDir: string): Promise<{ totalRuns: number;
   } catch {
     return { totalRuns: 0, passedRuns: 0, failedRuns: 0 };
   }
+}
+
+function shouldUseStepOrchestratedReplay(input: RunFlowInput, unsupportedCustomFlow: boolean): boolean {
+  return Boolean(input.dryRun && input.flowPath);
+}
+
+function buildReplayPersistenceEvent(params: {
+  type: string;
+  summary: string;
+  detail?: string;
+  actionId?: string;
+  artifactRefs?: string[];
+}) {
+  return {
+    timestamp: new Date().toISOString(),
+    type: params.type,
+    eventType: params.type,
+    layer: "action" as const,
+    summary: params.summary,
+    detail: params.detail,
+    actionId: params.actionId,
+    artifactRefs: params.artifactRefs,
+  };
+}
+
+async function persistReplaySummaryArtifact(params: {
+  repoRoot: string;
+  sessionId: string;
+  artifactsDirAbsolutePath: string;
+  artifactsDirRelativePath: string;
+  replay: {
+    progress: RunFlowData["replayProgress"];
+    outcomes: RunFlowData["stepOutcomes"];
+    finalReplayState: RunFlowData["finalReplayState"];
+  };
+}): Promise<string> {
+  const relativePath = path.join(params.artifactsDirRelativePath, "replay-summary.json");
+  const absolutePath = path.join(params.artifactsDirAbsolutePath, "replay-summary.json");
+  await writeFile(
+    absolutePath,
+    `${JSON.stringify({
+      sessionId: params.sessionId,
+      replayProgress: params.replay.progress,
+      stepOutcomes: params.replay.outcomes,
+      finalReplayState: params.replay.finalReplayState,
+    }, null, 2)}\n`,
+    "utf8",
+  );
+  return relativePath;
 }
 
 export async function collectBasicRunResultWithRuntime(params: {
@@ -152,6 +220,9 @@ export async function collectBasicRunResultWithRuntime(params: {
       command: params.command,
       exitCode: params.execution?.exitCode ?? 0,
       summaryLine: readSummaryLine(params.execution?.stdout),
+      executionMode: "runner_compat",
+      replayProgress: buildCompatReplayProgress(totalRuns),
+      stepOutcomes: [],
     },
     nextSuggestions,
   };
@@ -182,6 +253,9 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
         command: [],
         exitCode: null,
         summaryLine: "",
+        executionMode: "runner_compat",
+        replayProgress: buildCompatReplayProgress(input.runCount ?? 1),
+        stepOutcomes: [],
       },
       nextSuggestions: ["Provide platform explicitly, or call run_flow with an active sessionId so MCP can resolve platform from session context."],
     };
@@ -208,6 +282,90 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
   const command = ["bash", toRelativePath(repoRoot, absoluteRunnerScript), String(runCount)];
 
   await mkdir(artifactsDir.absolutePath, { recursive: true });
+
+  if (shouldUseStepOrchestratedReplay(input, unsupportedCustomFlow)) {
+    const flowContent = await readFile(path.resolve(repoRoot, effectiveFlowPath), "utf8");
+    const replaySteps = buildReplayStepsFromFlowYaml(flowContent);
+    const replay = await runReplaySteps({
+      sessionId: input.sessionId,
+      platform: input.platform,
+      runnerProfile,
+      harnessConfigPath,
+      deviceId: input.deviceId ?? selection.deviceId,
+      appId: input.appId ?? selection.appId,
+      dryRun: true,
+      steps: replaySteps,
+      appendTimelineEvent: async (event, artifacts = []) => {
+        await appendReplayTimelineEvent(repoRoot, input.sessionId, event, artifacts);
+      },
+      executeStep: async ({ action, sessionId, platform, deviceId, appId, dryRun }) => performActionWithEvidenceWithMaestro({
+        sessionId,
+        platform,
+        runnerProfile,
+        harnessConfigPath,
+        deviceId,
+        appId,
+        dryRun,
+        action: action as ActionIntent,
+      }, {
+        executeIntentWithMaestro: (params, intent) => executeIntentWithMaestro(params, intent, {
+          tapElementWithMaestro: tapElementWithMaestroTool,
+          typeIntoElementWithMaestro: typeIntoElementWithMaestroTool,
+          waitForUiWithMaestro: waitForUiWithMaestroTool,
+          launchAppWithMaestro: launchAppWithRuntime,
+          terminateAppWithMaestro: terminateAppWithRuntime,
+        }),
+      }),
+    });
+    const replaySummaryArtifact = await persistReplaySummaryArtifact({
+      repoRoot,
+      sessionId: input.sessionId,
+      artifactsDirAbsolutePath: artifactsDir.absolutePath,
+      artifactsDirRelativePath: artifactsDir.relativePath,
+      replay,
+    });
+    await appendReplayTimelineEvent(
+      repoRoot,
+      input.sessionId,
+      buildReplayPersistenceEvent({
+        type: "replay_summary_persisted",
+        summary: "Replay summary artifact persisted.",
+        detail: replay.finalReplayState,
+        artifactRefs: [replaySummaryArtifact],
+      }),
+      [replaySummaryArtifact],
+    );
+
+    return {
+      status: replay.outcomes.some((outcome) => outcome.status === "failed") ? "failed" : replay.outcomes.some((outcome) => outcome.status === "partial") ? "partial" : "success",
+      reasonCode: replay.outcomes.find((outcome) => outcome.status === "failed")?.reasonCode ?? replay.outcomes.find((outcome) => outcome.status === "partial")?.reasonCode ?? REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [replaySummaryArtifact],
+      data: {
+        dryRun: true,
+        harnessConfigPath,
+        runnerProfile,
+        runnerScript,
+        flowPath: effectiveFlowPath,
+        requestedFlowPath,
+        configuredFlows: selection.configuredFlows,
+        artifactsDir: artifactsDir.relativePath,
+        totalRuns: 1,
+        passedRuns: replay.outcomes.every((outcome) => outcome.status === "success") ? 1 : 0,
+        failedRuns: replay.outcomes.some((outcome) => outcome.status === "failed") ? 1 : 0,
+        command: [],
+        exitCode: 0,
+        summaryLine: "Step-orchestrated dry-run replay preview.",
+        executionMode: "step_orchestrated",
+        replayProgress: replay.progress,
+        stepOutcomes: replay.outcomes,
+        finalReplayState: replay.finalReplayState,
+      },
+      nextSuggestions: ["Run the same flow without --dry-run once the step-orchestrated path is promoted beyond preview mode."],
+    };
+  }
 
   if (unsupportedCustomFlow || input.dryRun) {
     return collectBasicRunResultWithRuntime({

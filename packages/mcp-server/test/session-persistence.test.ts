@@ -5,11 +5,13 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   buildDeviceLeaseRecordRelativePath,
+  buildActionRecordRelativePath,
   buildSessionAuditRelativePath,
   buildSessionRecordRelativePath,
   loadFailureIndex,
   loadSessionAuditRecord,
   loadSessionRecord,
+  persistActionRecord,
   persistSessionState,
   recordFailureSignature,
 } from "@mobile-e2e-mcp/core";
@@ -30,6 +32,11 @@ async function cleanupSessionArtifact(sessionId: string): Promise<void> {
   await rm(auditPath, { force: true });
   await rm(androidLeasePath, { force: true });
   await rm(iosLeasePath, { force: true });
+}
+
+async function cleanupActionArtifact(actionId: string): Promise<void> {
+  const absolutePath = path.resolve(repoRoot, buildActionRecordRelativePath(actionId));
+  await rm(absolutePath, { force: true });
 }
 
 test("start_session persists a recoverable session record", async () => {
@@ -374,6 +381,74 @@ test("measure_ios_performance appends planned performance artifacts into the ses
     assert.equal(audit.artifact_paths.some((entry) => entry.category === "reports" || entry.category === "debug-output"), true);
   } finally {
     await cleanupSessionArtifact(sessionId);
+  }
+});
+
+test("run_flow step preview appends replay timeline events into the session record", async () => {
+  const sessionId = `persisted-replay-preview-${Date.now()}`;
+  const actionId = `persisted-replay-action-${Date.now()}`;
+  await cleanupSessionArtifact(sessionId);
+  await cleanupActionArtifact(actionId);
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", {
+      sessionId,
+      platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
+      profile: "phase1",
+    });
+
+    await persistActionRecord(repoRoot, {
+      actionId,
+      sessionId,
+      intent: {
+        actionType: "tap_element",
+        contentDesc: "View products",
+      },
+      outcome: {
+        actionId,
+        actionType: "tap_element",
+        resolutionStrategy: "deterministic",
+        stateChanged: true,
+        fallbackUsed: false,
+        retryCount: 0,
+        outcome: "success",
+      },
+      evidenceDelta: {},
+      evidence: [],
+      lowLevelStatus: "success",
+      lowLevelReasonCode: "OK",
+      updatedAt: new Date().toISOString(),
+    });
+
+    const exported = await server.invoke("export_session_flow", {
+      sessionId,
+      outputPath: `flows/samples/generated/${sessionId}.yaml`,
+    });
+
+    const replay = await server.invoke("run_flow", {
+      sessionId,
+      platform: "android",
+      flowPath: exported.data.outputPath,
+      dryRun: true,
+      runCount: 1,
+    });
+
+    assert.ok(["success", "partial"].includes(replay.status));
+
+    const stored = await loadSessionRecord(repoRoot, sessionId);
+    const audit = await loadSessionAuditRecord(repoRoot, sessionId);
+    assert.ok(stored);
+    assert.ok(audit);
+    assert.equal(stored.session.timeline.some((event) => event.type === "replay_started"), true);
+    assert.equal(stored.session.timeline.some((event) => event.type === "replay_completed" || event.type === "replay_stopped"), true);
+    assert.equal(stored.session.timeline.some((event) => event.type === "replay_summary_persisted"), true);
+    assert.equal(audit.artifact_paths.some((entry) => entry.path.includes("replay-summary.json")), true);
+  } finally {
+    await cleanupActionArtifact(actionId);
+    await cleanupSessionArtifact(sessionId);
+    await rm(path.resolve(repoRoot, `flows/samples/generated/${sessionId}.yaml`), { force: true });
   }
 });
 
