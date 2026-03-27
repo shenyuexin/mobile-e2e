@@ -24,7 +24,8 @@ const PLACEHOLDER_VALUES = new Map([
   ['Capability category', 'state / action / evidence / diagnosis / recovery / infra-only'],
   ['Platforms/frameworks affected', 'Android / iOS / React Native / Flutter / docs-only'],
   ['Support boundary change', 'none / contract-ready / experimental / reproducible-demo / ci-verified'],
-  ['AI-first capability guideline consulted', 'yes / no (if no, why not applicable)']
+  ['AI-first capability guideline consulted', 'yes / no (if no, why not applicable)'],
+  ['Public docs / canonical guide update', 'yes / no / not-needed (why)']
 ]);
 
 function isGuardedPath(filePath) {
@@ -78,7 +79,9 @@ export function validatePullRequestGate({ body, changedFiles }) {
     'User-visible or AI-facing behavior change',
     'Platforms/frameworks affected',
     'Support boundary change',
-    'AI-first capability guideline consulted'
+    'AI-first capability guideline consulted',
+    'Capability truth source checked',
+    'Public docs / canonical guide update'
   ];
 
   const errors = [];
