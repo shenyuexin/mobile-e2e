@@ -10,6 +10,10 @@ Current committed fixtures:
 
 - `tests/fixtures/ui/android-cart.xml` - stable Android hierarchy sample for parsing/query/action tests
 - `tests/fixtures/ui/ios-sample.json` - stable iOS hierarchy sample for partial-support summary tests
+
+OCR fixtures are intentionally **not committed** in this repository profile (`tests/fixtures/ocr/` is gitignored).
+When present locally (for example after fixture sync on macOS), they are used by OCR-oriented tests and checks:
+
 - `tests/fixtures/ocr/*.png` - screenshot-style OCR fixtures for semi-real fallback regression tests
 - `tests/fixtures/ocr/*.observations.json` - normalized MacVision-style OCR observation fixtures paired with the screenshot assets
 - `tests/fixtures/ocr/manifest.json` - expected OCR fixture triads and text inventory used to catch fixture drift in unit tests
@@ -60,7 +64,7 @@ Current screenshot-driven OCR fallback coverage includes:
 Current regression layers are now explicitly named:
 
 - `pnpm test:adapter` - adapter-only deterministic unit coverage
-- `pnpm test:ocr-smoke` - macOS-only OCR provider smoke coverage against a committed screenshot fixture
+- `pnpm test:ocr-smoke` - macOS-only OCR provider smoke coverage against local OCR fixtures; skips with an explicit reason when fixtures are absent (for example clean-clone environments)
 - `pnpm test:mcp-server` - server/stdio/dev-cli smoke coverage
 - `pnpm test:unit` - combined no-device regression layer
 - `pnpm test:smoke` - asserted root dry-run validation layer
@@ -77,9 +81,8 @@ Evidence contract levels (must stay explicit):
 - `pnpm test:smoke` and `scripts/validate-dry-run.ts` prove dry-run/smoke semantics only (no-device, deterministic contract checks).
 - `.github/workflows/platform-smoke.yml` proves simulator/emulator baseline wiring only (toolchain smoke, not real-device acceptance).
 - `.github/workflows/real-device-acceptance.yml` is the acceptance-evidence lane; it combines Phase 1 React Native backbone lanes with Phase 3 sample-profile lanes.
-- The framework-profile baseline truth remains `validated-sample-baseline` for Native + Flutter (`configs/profiles/*.yaml`, `configs/matrices/framework-profile-matrix.md`), not `ci-verified`.
+- The framework-profile baseline truth remains `validated-sample-baseline` for Native + React Native + Flutter (`configs/profiles/*.yaml`, `configs/matrices/framework-profile-matrix.md`), not `ci-verified`.
 - In the shared acceptance runner/report path for framework profiles, Flutter proof is currently Android-only; Flutter iOS remains outside that shared path.
-- React Native acceptance lanes are not represented as framework-profile `validated-sample-baseline` rows in the current matrix, so keep that distinction in docs and summaries.
 
 Important boundary note:
 
