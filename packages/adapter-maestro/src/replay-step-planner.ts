@@ -16,6 +16,16 @@ export interface ReplayStep {
   };
 }
 
+export interface UnsupportedReplayFlowCommand {
+  stepNumber: number;
+  command: string;
+}
+
+export interface ReplayFlowImportPlan {
+  steps: ReplayStep[];
+  unsupportedCommands: UnsupportedReplayFlowCommand[];
+}
+
 export function buildInitialReplayProgress(totalSteps: number): ReplayProgressSummary {
   return {
     totalSteps,
@@ -62,14 +72,15 @@ function parsePoint(value: string | undefined): { x: number; y: number } | undef
   return { x, y };
 }
 
-export function buildReplayStepsFromFlowYaml(flowContent: string): ReplayStep[] {
+export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImportPlan {
   const documents = parseAllDocuments(flowContent).map((doc) => doc.toJSON());
   const parsed = documents.find((value) => Array.isArray(value));
   if (!Array.isArray(parsed)) {
-    return [];
+    return { steps: [], unsupportedCommands: [] };
   }
 
   const steps: ReplayStep[] = [];
+  const unsupportedCommands: UnsupportedReplayFlowCommand[] = [];
 
   for (const [index, item] of parsed.entries()) {
     if (!isRecord(item)) {
@@ -151,7 +162,14 @@ export function buildReplayStepsFromFlowYaml(flowContent: string): ReplayStep[] 
       });
       continue;
     }
+
+    const command = Object.keys(item)[0] ?? "unknown";
+    unsupportedCommands.push({ stepNumber, command });
   }
 
-  return steps;
+  return { steps, unsupportedCommands };
+}
+
+export function buildReplayStepsFromFlowYaml(flowContent: string): ReplayStep[] {
+  return buildReplayPlanFromFlowYaml(flowContent).steps;
 }
