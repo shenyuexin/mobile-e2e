@@ -13,6 +13,8 @@
 - Platforms/frameworks affected: Android / iOS / React Native / Flutter / docs-only
 - Support boundary change: none / contract-ready / experimental / reproducible-demo / ci-verified
 - Invocation guidance impact: none / canonical / topic-only
+- Capability truth source checked:
+- Public docs / canonical guide update: yes / no / not-needed (why)
 
 ## Implementation notes
 
