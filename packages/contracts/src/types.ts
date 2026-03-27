@@ -1379,6 +1379,38 @@ export interface ReplayDryRunSummary {
   status: ToolStatus;
   reasonCode: ReasonCode;
 }
+export type ReplayExecutionMode = "runner_compat" | "step_orchestrated";
+export type ReplayStepStatus = "pending" | "running" | "success" | "partial" | "failed" | "skipped";
+export interface ReplayProgressSummary {
+  totalSteps: number;
+  currentStepNumber?: number;
+  completedSteps: number[];
+  partialSteps: number[];
+  failedSteps: number[];
+  skippedSteps: number[];
+  remainingSteps: number[];
+  lastSuccessfulStepNumber?: number;
+  firstFailedStepNumber?: number;
+}
+export interface ReplayStepOutcome {
+  replayStepId: string;
+  stepNumber: number;
+  status: ReplayStepStatus;
+  reasonCode: ReasonCode;
+  actionId?: string;
+  attempts: number;
+  boundedRecoveryAttempted: boolean;
+  selectedRecovery?: "none" | "wait_until_ready" | "recover_to_known_state" | "replay_last_stable_path";
+  outcome?: ActionOutcomeSummary;
+  retryDecisionTrace?: RetryDecisionTrace;
+  postActionVerificationTrace?: PostActionVerificationTrace;
+  checkpointDecisionTrace?: CheckpointDecisionTrace;
+  actionabilityReview?: string[];
+  artifacts: string[];
+  evidence?: ExecutionEvidence[];
+  blockingStepNumber?: number;
+  stopReason?: string;
+}
 export interface FlowGenerationReport {
   flowPath?: string;
   stepCount: number;
@@ -1681,6 +1713,14 @@ export interface RunFlowData {
   command: string[];
   exitCode: number | null;
   summaryLine?: string;
+  executionMode?: ReplayExecutionMode;
+  replayProgress?: ReplayProgressSummary;
+  stepOutcomes?: ReplayStepOutcome[];
+  finalReplayState?: OrchestrationStepState;
+  checkpointSummary?: {
+    lastCheckpointStepNumber?: number;
+    replayRecommendedFromStepNumber?: number;
+  };
 }
 export interface StartSessionInput { platform: Platform; sessionId?: string; deviceId?: string; appId?: string; policyProfile?: string; phase?: string | null; profile?: RunnerProfile | null; sampleName?: string | null; artifactsRoot?: string; harnessConfigPath?: string; }
 export interface EndSessionInput { sessionId: string; artifacts?: string[]; }
