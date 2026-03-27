@@ -34,12 +34,17 @@ For each run of `Real Device Acceptance` (`.github/workflows/real-device-accepta
 1. Dry-run baseline (`validate:phase3-samples`) on Ubuntu
 2. Self-hosted macOS real-run matrix + acceptance evidence artifacts
 3. Quality gate: workflow fails when any expected lane is missing/`NO_DATA`, or any lane status is `NO_GO` in `reports/phase-sample-report.json`
+4. Lane semantics:
+   - Phase 1 lanes (`react-native-ios`, `react-native-android`) are acceptance backbone lanes in this workflow.
+   - Phase 3 framework-profile lanes are sample-profile acceptance lanes (`flutter-android`, `native-android`, `native-ios` when enabled).
+   - The first framework-profile acceptance proof in the shared runner/report path is Flutter Android; Flutter iOS is not in that shared acceptance lane today.
 
 ## CI boundary (important)
 
 - Ubuntu CI validates **buildability, type-safety, and smoke-level tool behavior**.
 - Platform smoke validates simulator/emulator toolchain baseline only.
 - Ubuntu CI and platform smoke do **not** fully prove real-device execution fidelity.
+- `validate:phase3-samples` preserves profile/matrix contract truth for Native + Flutter `validated-sample-baseline` and dry-run CLI semantics, but it is still smoke-level (not acceptance proof).
 - Real-device confidence should be validated through showcase scripts and artifacts under:
   - `docs/showcase/README.md`
   - `docs/showcase/demo-playbook.zh-CN.md`
@@ -50,4 +55,5 @@ For each run of `Real Device Acceptance` (`.github/workflows/real-device-accepta
 - CI run is green on `main` and target PR branch.
 - Platform smoke run is green and both lane summaries are present.
 - If real-device acceptance ran, no platform should show `NO_GO` in `phase-sample-report.json`.
+- If real-device acceptance ran, verify docs/summaries keep lane boundaries explicit: smoke vs acceptance, framework-profile sample lanes vs React Native acceptance backbone lanes.
 - Boundary statements remain visible in this document and workflow summaries.

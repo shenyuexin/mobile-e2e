@@ -41,6 +41,18 @@ This folder contains reproducible, real-device demo evidence used by README.
 These flows are used by `.github/workflows/platform-smoke.yml` to keep simulator/emulator wiring visible in CI.
 They intentionally validate baseline toolchain execution only, and do not replace real-device acceptance evidence.
 
+## Evidence contract and proof levels
+
+- Smoke proof (`pnpm test:smoke`, dry-run validators, Ubuntu CI): verifies deterministic contracts and dry-run behavior, not real-device fidelity.
+- Platform smoke proof (`.github/workflows/platform-smoke.yml`): verifies simulator/emulator baseline wiring only.
+- Acceptance proof (`.github/workflows/real-device-acceptance.yml`): self-hosted real-run artifacts plus quality gate on `reports/phase-sample-report.json`.
+
+Framework lane boundary (current truth):
+
+- Native and Flutter profiles remain `validated-sample-baseline` in `configs/profiles/*.yaml` and `configs/matrices/framework-profile-matrix.md`.
+- In the current shared acceptance runner/report path, Flutter framework-lane proof is Android-only (`flutter-android`).
+- React Native acceptance lanes (`react-native-ios`, `react-native-android`) are workflow acceptance backbone lanes and are intentionally distinct from framework-profile matrix rows.
+
 ## Prerequisites for clone-and-run
 
 - Android emulator/device online via `adb devices` (recommended Android 9 / API 28 or newer)

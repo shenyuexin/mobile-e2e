@@ -260,6 +260,23 @@ async function main(): Promise<void> {
   for (const validation of validations) {
     await validatePhase3CliCase(repoRoot, validation);
   }
+
+  const validatedRunnerProfiles = validations.map((validation) => validation.runnerProfile).sort();
+  const hasFlutterAndroidLane = validatedRunnerProfiles.includes("flutter_android");
+  const flutterLaneSummary = hasFlutterAndroidLane
+    ? "framework sample lane proof includes Flutter Android"
+    : "framework sample lane proof does not include Flutter Android";
+
+  console.log("Phase3 sample dry-run contract validation passed.");
+  console.log(
+    [
+      "Evidence contract: smoke-level dry-run validation only (not real-device acceptance evidence).",
+      "Profile truth: Native + Flutter remain validated-sample-baseline per configs/profiles/*.yaml and framework-profile matrix.",
+      `Shared runner/report dry-run lanes checked: ${validatedRunnerProfiles.join(", ")}.`,
+      `Framework lane note: ${flutterLaneSummary}; Flutter iOS remains outside the shared runner/report path.`,
+      "Acceptance evidence lane is .github/workflows/real-device-acceptance.yml (self-hosted real-run artifacts + quality gate).",
+    ].join(" "),
+  );
 }
 
 main().catch((error: unknown) => {

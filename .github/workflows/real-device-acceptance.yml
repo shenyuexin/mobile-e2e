@@ -7,17 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       run_flutter_android:
-        description: Run Flutter Android validation
+        description: Run Phase 3 Flutter Android sample acceptance lane
         required: false
         default: true
         type: boolean
       run_native_android:
-        description: Run native Android validation
+        description: Run Phase 3 native Android sample acceptance lane
         required: false
         default: true
         type: boolean
       run_native_ios:
-        description: Run native iOS validation
+        description: Run Phase 3 native iOS sample acceptance lane
         required: false
         default: true
         type: boolean
@@ -154,7 +154,7 @@ jobs:
           require_positive_int "phase3_native_ios_runs" "$RAW_PHASE3_NATIVE_IOS_RUNS"
 
           {
-            echo "## Real-device acceptance matrix configuration"
+            echo "## Real-device acceptance lane configuration"
             echo "- Event: \`${{ github.event_name }}\`"
             echo "- run_flutter_android: \`$RAW_RUN_FLUTTER_ANDROID\`"
             echo "- run_native_android: \`$RAW_RUN_NATIVE_ANDROID\`"
@@ -231,7 +231,7 @@ jobs:
               print(f"- {item}")
             sys.exit(1)
 
-          print("Real-device acceptance quality gate passed: expected lanes are present with data and no platform is NO_GO.")
+          print("Real-device acceptance quality gate passed: expected acceptance lanes are present with data and no lane is NO_GO.")
           PY
       - name: Append acceptance boundary summary
         if: always()
@@ -239,8 +239,10 @@ jobs:
           {
             echo "## Real-device acceptance boundary"
             echo "- Status: **${{ job.status }}**"
-            echo "- Scope: self-hosted acceptance matrix (Phase 1 + Phase 3 sample paths)"
+            echo "- Scope: self-hosted acceptance matrix (Phase 1 React Native backbone + Phase 3 Native/Flutter sample-profile paths)"
             echo "- Gate: fail when expected lanes are \`NO_DATA\`/missing or any lane is \`NO_GO\` in \`reports/phase-sample-report.json\`"
+            echo "- Framework-profile lane note: current shared acceptance runner/report path proves Flutter Android lane first; Flutter iOS is outside this shared lane"
+            echo "- Framework-profile status source: \`configs/profiles/native.yaml\` + \`configs/profiles/flutter.yaml\` remain \`validated-sample-baseline\`"
             echo "- Artifact bundle: \`real-device-acceptance-report-${{ github.run_id }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload acceptance report

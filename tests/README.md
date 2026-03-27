@@ -72,6 +72,15 @@ Current GitHub Actions CI scope:
 - `.github/workflows/ocr-smoke.yml` is a separate macOS-only lane; it runs automatically only when OCR-related paths change, and it can also be started manually with `workflow_dispatch`
 - real Android emulator and real iOS simulator/device regression are still separate future lanes and should not be inferred from the current Ubuntu-only workflow
 
+Evidence contract levels (must stay explicit):
+
+- `pnpm test:smoke` and `scripts/validate-dry-run.ts` prove dry-run/smoke semantics only (no-device, deterministic contract checks).
+- `.github/workflows/platform-smoke.yml` proves simulator/emulator baseline wiring only (toolchain smoke, not real-device acceptance).
+- `.github/workflows/real-device-acceptance.yml` is the acceptance-evidence lane; it combines Phase 1 React Native backbone lanes with Phase 3 sample-profile lanes.
+- The framework-profile baseline truth remains `validated-sample-baseline` for Native + Flutter (`configs/profiles/*.yaml`, `configs/matrices/framework-profile-matrix.md`), not `ci-verified`.
+- In the shared acceptance runner/report path for framework profiles, Flutter proof is currently Android-only; Flutter iOS remains outside that shared path.
+- React Native acceptance lanes are not represented as framework-profile `validated-sample-baseline` rows in the current matrix, so keep that distinction in docs and summaries.
+
 Important boundary note:
 
 - the current debug-first recovery/state-machine coverage is still primarily no-device and dry-run oriented; it improves structured observability and bounded decision regression, but it does not by itself prove generalized real-run recovery maturity across all platforms
