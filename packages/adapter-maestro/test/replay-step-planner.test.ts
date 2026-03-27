@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { RecordedStep } from "@mobile-e2e-mcp/contracts";
-import { buildInitialReplayProgress, buildReplayStepsFromRecordedSteps } from "../src/replay-step-planner.ts";
+import { buildInitialReplayProgress, buildReplayPlanFromFlowYaml, buildReplayStepsFromRecordedSteps } from "../src/replay-step-planner.ts";
 
 function buildRecordedStep(overrides: Partial<RecordedStep> = {}): RecordedStep {
   return {
@@ -47,4 +47,11 @@ test("buildInitialReplayProgress returns empty completion arrays and sequential 
   assert.deepEqual(progress.failedSteps, []);
   assert.deepEqual(progress.skippedSteps, []);
   assert.deepEqual(progress.remainingSteps, [1, 2, 3]);
+});
+
+test("buildReplayPlanFromFlowYaml surfaces tapOn.point as unsupported", () => {
+  const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- tapOn:\n    point: 10,10\n');
+
+  assert.deepEqual(plan.steps, []);
+  assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "tapOn.point" }]);
 });
