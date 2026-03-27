@@ -68,10 +68,10 @@
    - 若变化影响 AI / 用户调用方式，优先更新 `docs/guides/ai-agent-invocation.zh-CN.md`；专题变化再更新对应 topic guide。
    - README / `docs/README.md` 更适合作为入口导航，不应承担完整调用流程的重复维护。
 2. **`release:mcp:prepare-tag` 阶段（二次确认）**
-   - 在发版前做一次“自上个 MCP tag 以来的对外变化”清单核对，确认是否存在 public docs 漂移。
-   - 如果命中了 tool surface / capability boundary 变化，但 canonical invocation guide 未更新，应至少给出 warning 并人工确认是否属于豁免场景。
+    - 在发版前做一次“自上个 MCP tag 以来的对外变化”清单核对，确认是否存在 public docs 漂移。
+    - 如果命中了 tool surface / capability boundary 变化，但 canonical invocation guide / public docs 没有同步，本地 `release:mcp:check` 与 tag workflow 应直接失败，而不是仅 warning。
 3. **Tag workflow 阶段（兜底提醒）**
-   - 建议做 warning/notice，不建议因为 README 或 invocation guide 未更新直接阻断 npm publish。
+    - 仍可保留 notice，但对 capability-governed release range 的 doc-sync 缺失不再放行 npm publish。
 
 建议触发条件（命中任一目录时，优先检查文档是否需要同步；这些是高概率触发器，不代表“命中就必须改文档”）：
 
@@ -91,6 +91,8 @@
 - 仅修复拼写、格式、注释
 
 > 实践建议：将“public docs / canonical invocation guide 是否需要更新”作为 release checklist 固定项，而不是把它设计成强制失败门禁。
+
+> Phase 03 更新：对于 capability-governed release range，这一项现在应视为强制失败门禁，而不是纯提示项。
 
 ## 标准操作流程（推荐）
 
