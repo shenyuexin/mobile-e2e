@@ -452,6 +452,42 @@ test("run_flow step preview appends replay timeline events into the session reco
   }
 });
 
+test("run_flow unsupported generated preview appends rejection replay timeline events", async () => {
+  const sessionId = `persisted-replay-unsupported-${Date.now()}`;
+  const flowPath = `flows/samples/generated/${sessionId}.yaml`;
+  await cleanupSessionArtifact(sessionId);
+  const server = createServer();
+
+  try {
+    await server.invoke("start_session", {
+      sessionId,
+      platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
+      profile: "phase1",
+    });
+
+    await writeFile(path.resolve(repoRoot, flowPath), 'appId: com.example.demo\n---\n- tapOn:\n    point: 10,10\n', 'utf8');
+
+    const replay = await server.invoke("run_flow", {
+      sessionId,
+      platform: "android",
+      flowPath,
+      dryRun: true,
+      runCount: 1,
+    });
+
+    assert.equal(replay.status, "partial");
+    const stored = await loadSessionRecord(repoRoot, sessionId);
+    assert.ok(stored);
+    assert.equal(stored.session.timeline.some((event) => event.type === "replay_started"), true);
+    assert.equal(stored.session.timeline.some((event) => event.type === "replay_step_failed"), true);
+    assert.equal(stored.session.timeline.some((event) => event.type === "replay_stopped"), true);
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+    await rm(path.resolve(repoRoot, flowPath), { force: true });
+  }
+});
+
 test("recordFailureSignature tolerates a truncated failure index and rewrites it", async () => {
   const failureIndexPath = path.resolve(repoRoot, "artifacts/ai-first/failure-index.json");
   await rm(failureIndexPath, { force: true });

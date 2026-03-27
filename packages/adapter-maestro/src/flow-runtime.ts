@@ -287,6 +287,14 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
     const flowContent = await readFile(path.resolve(repoRoot, effectiveFlowPath), "utf8");
     const replayPlan = buildReplayPlanFromFlowYaml(flowContent);
     if (replayPlan.unsupportedCommands.length > 0) {
+      await appendReplayTimelineEvent(
+        repoRoot,
+        input.sessionId,
+        buildReplayPersistenceEvent({
+          type: "replay_started",
+          summary: `Replay started with ${replayPlan.steps.length + replayPlan.unsupportedCommands.length} steps.`,
+        }),
+      );
       const replayProgress = {
         totalSteps: replayPlan.steps.length + replayPlan.unsupportedCommands.length,
         completedSteps: [],
@@ -308,6 +316,25 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
         actionabilityReview: [`unsupported_flow_command:${command.command}`],
         stopReason: `unsupported_flow_command:${command.command}`,
       }));
+      for (const outcome of stepOutcomes) {
+        await appendReplayTimelineEvent(
+          repoRoot,
+          input.sessionId,
+          buildReplayPersistenceEvent({
+            type: "replay_step_failed",
+            summary: `Replay step ${outcome.stepNumber} failed.`,
+            detail: outcome.stopReason,
+          }),
+        );
+      }
+      await appendReplayTimelineEvent(
+        repoRoot,
+        input.sessionId,
+        buildReplayPersistenceEvent({
+          type: "replay_stopped",
+          summary: `Replay stopped at step ${stepOutcomes[0]?.stepNumber ?? 1}.`,
+        }),
+      );
       const replaySummaryArtifact = await persistReplaySummaryArtifact({
         repoRoot,
         sessionId: input.sessionId,
