@@ -1,5 +1,7 @@
 # Capability Map and Maturity Model
 
+> This document is a capability taxonomy and maturity model, not the shipped support matrix. For current support boundaries, prefer `configs/profiles/*.yaml`, `configs/matrices/framework-profile-matrix.md`, `README.md`, and the latest acceptance evidence surfaces under `docs/showcase/*`.
+
 ## 1. Capability Domains
 
 ## A. Environment Control

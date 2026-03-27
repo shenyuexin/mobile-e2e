@@ -1,5 +1,7 @@
 # Governance, Security, and Operations
 
+> This document describes governance and policy design direction. It should not be read as proof that every listed control is already shipped at full maturity. Current enforced behavior and supported guardrails live in `configs/policies/*.yaml`, `packages/mcp-server/src/server.ts`, and the current release/PR gate workflow definitions.
+
 ## 1. Security Model
 
 Define policy profiles:
