@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile, rm } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -905,6 +905,54 @@ test("server invoke supports export_session_flow to run_flow dry-run closure", a
   } finally {
     await cleanupActionArtifact(actionId);
     await rm(path.resolve(repoRoot, `flows/samples/generated/${sessionId}.yaml`), { force: true });
+  }
+});
+
+test("server invoke keeps non-generated custom dry-run flows on runner_compat", async () => {
+  const server = createServer();
+  const sessionId = `server-custom-flow-${Date.now()}`;
+  const flowPath = `flows/samples/react-native/android-login-smoke.yaml`;
+
+  const replay = await server.invoke("run_flow", {
+    sessionId,
+    platform: "android",
+    flowPath,
+    dryRun: true,
+    runCount: 1,
+  }) as {
+    status: string;
+    data: { executionMode?: string };
+  };
+
+  assert.ok(["success", "partial"].includes(replay.status));
+  assert.equal(replay.data.executionMode, "runner_compat");
+});
+
+test("server invoke surfaces unsupported generated flow commands explicitly", async () => {
+  const server = createServer();
+  const sessionId = `server-unsupported-flow-${Date.now()}`;
+  const flowPath = `flows/samples/generated/${sessionId}.yaml`;
+  try {
+    await writeFile(path.resolve(repoRoot, flowPath), 'appId: com.example.demo\n---\n- swipe:\n    start: 10,10\n    end: 20,20\n', 'utf8');
+    const replay = await server.invoke("run_flow", {
+      sessionId,
+      platform: "android",
+      flowPath,
+      dryRun: true,
+      runCount: 1,
+    }) as {
+      status: string;
+      reasonCode: string;
+      data: { executionMode?: string; stepOutcomes?: Array<{ stepNumber: number; reasonCode: string }> };
+    };
+
+    assert.equal(replay.status, "partial");
+    assert.equal(replay.reasonCode, "UNSUPPORTED_OPERATION");
+    assert.equal(replay.data.executionMode, "step_orchestrated");
+    assert.equal(replay.data.stepOutcomes?.[0]?.stepNumber, 1);
+    assert.equal(replay.data.stepOutcomes?.[0]?.reasonCode, "UNSUPPORTED_OPERATION");
+  } finally {
+    await rm(path.resolve(repoRoot, flowPath), { force: true });
   }
 });
 

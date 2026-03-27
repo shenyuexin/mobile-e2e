@@ -15,7 +15,7 @@ import {
   resolveRepoPath,
 } from "./harness-config.js";
 import { performActionWithEvidenceWithMaestro } from "./action-orchestrator.js";
-import { buildReplayStepsFromFlowYaml } from "./replay-step-planner.js";
+import { buildReplayPlanFromFlowYaml } from "./replay-step-planner.js";
 import { runReplaySteps } from "./replay-step-orchestrator.js";
 import { executeIntentWithMaestro } from "./task-planner.js";
 import { launchAppWithRuntime } from "./app-lifecycle-tools.js";
@@ -99,7 +99,7 @@ async function readRunCounts(artifactsDir: string): Promise<{ totalRuns: number;
 }
 
 function shouldUseStepOrchestratedReplay(input: RunFlowInput, unsupportedCustomFlow: boolean): boolean {
-  return Boolean(input.dryRun && input.flowPath);
+  return Boolean(input.dryRun && input.flowPath && input.flowPath.startsWith("flows/samples/generated/"));
 }
 
 function buildReplayPersistenceEvent(params: {
@@ -285,7 +285,82 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
 
   if (shouldUseStepOrchestratedReplay(input, unsupportedCustomFlow)) {
     const flowContent = await readFile(path.resolve(repoRoot, effectiveFlowPath), "utf8");
-    const replaySteps = buildReplayStepsFromFlowYaml(flowContent);
+    const replayPlan = buildReplayPlanFromFlowYaml(flowContent);
+    if (replayPlan.unsupportedCommands.length > 0) {
+      const replayProgress = {
+        totalSteps: replayPlan.steps.length + replayPlan.unsupportedCommands.length,
+        completedSteps: [],
+        partialSteps: [],
+        failedSteps: replayPlan.unsupportedCommands.map((command) => command.stepNumber),
+        skippedSteps: [],
+        remainingSteps: [],
+        firstFailedStepNumber: replayPlan.unsupportedCommands[0]?.stepNumber,
+      };
+      const stepOutcomes = replayPlan.unsupportedCommands.map((command) => ({
+        replayStepId: `replay-step-${command.stepNumber}`,
+        stepNumber: command.stepNumber,
+        status: "failed" as const,
+        reasonCode: REASON_CODES.unsupportedOperation,
+        attempts: 0,
+        boundedRecoveryAttempted: false,
+        selectedRecovery: "none" as const,
+        artifacts: [],
+        actionabilityReview: [`unsupported_flow_command:${command.command}`],
+        stopReason: `unsupported_flow_command:${command.command}`,
+      }));
+      const replaySummaryArtifact = await persistReplaySummaryArtifact({
+        repoRoot,
+        sessionId: input.sessionId,
+        artifactsDirAbsolutePath: artifactsDir.absolutePath,
+        artifactsDirRelativePath: artifactsDir.relativePath,
+        replay: {
+          progress: replayProgress,
+          outcomes: stepOutcomes,
+          finalReplayState: "terminal_stop",
+        },
+      });
+      await appendReplayTimelineEvent(
+        repoRoot,
+        input.sessionId,
+        buildReplayPersistenceEvent({
+          type: "replay_summary_persisted",
+          summary: "Replay summary artifact persisted.",
+          detail: "terminal_stop",
+          artifactRefs: [replaySummaryArtifact],
+        }),
+        [replaySummaryArtifact],
+      );
+      return {
+        status: "partial",
+        reasonCode: REASON_CODES.unsupportedOperation,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [replaySummaryArtifact],
+        data: {
+          dryRun: true,
+          harnessConfigPath,
+          runnerProfile,
+          runnerScript,
+          flowPath: effectiveFlowPath,
+          requestedFlowPath,
+          configuredFlows: selection.configuredFlows,
+          artifactsDir: artifactsDir.relativePath,
+          totalRuns: 1,
+          passedRuns: 0,
+          failedRuns: 1,
+          command: [],
+          exitCode: 0,
+          summaryLine: "Step-orchestrated replay preview rejected unsupported flow commands.",
+          executionMode: "step_orchestrated",
+          replayProgress,
+          stepOutcomes,
+          finalReplayState: "terminal_stop",
+        },
+        nextSuggestions: ["Use export_session_flow output or extend the step-orchestrated parser before replaying this flow in preview mode."],
+      };
+    }
+    const replaySteps = replayPlan.steps;
     const replay = await runReplaySteps({
       sessionId: input.sessionId,
       platform: input.platform,
