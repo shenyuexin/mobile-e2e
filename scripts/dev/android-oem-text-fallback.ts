@@ -1,23 +1,10 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { buildStateSummaryFromSignals } from "../../packages/adapter-maestro/src/index.ts";
 import { buildInspectUiSummary, parseAndroidUiHierarchyNodes, queryUiNodes } from "../../packages/adapter-maestro/src/ui-model.ts";
+import { parseCommandsFromFlowFile, type FlowCommand, type SelectorMap } from "./android-oem-text-fallback-lib.ts";
 
 const execFileAsync = promisify(execFile);
-
-interface SelectorMap {
-  id?: string;
-  text?: string;
-}
-
-type FlowCommand =
-  | { kind: "launchApp" }
-  | { kind: "assertVisible"; selector: SelectorMap }
-  | { kind: "tapOn"; selector: SelectorMap }
-  | { kind: "inputText"; text: string }
-  | { kind: "setClipboard"; text: string }
-  | { kind: "pasteText" };
 
 function parseBoundsCenter(bounds: string): { x: number; y: number } {
   const match = bounds.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
@@ -61,10 +48,17 @@ function normalizeResourceId(appId: string, rawId: string | undefined): string |
 async function resolveBounds(deviceId: string, appId: string, selector: SelectorMap, stepLabel: string): Promise<string> {
   const xml = await captureUiXml(deviceId);
   const nodes = parseAndroidUiHierarchyNodes(xml);
-  const result = queryUiNodes(nodes, {
+  const normalizedResourceId = normalizeResourceId(appId, selector.id);
+  let result = queryUiNodes(nodes, {
     ...(selector.id ? { resourceId: normalizeResourceId(appId, selector.id) } : {}),
     ...(selector.text ? { text: selector.text } : {}),
   });
+  if (!result.matches.length && selector.id && normalizedResourceId !== selector.id) {
+    result = queryUiNodes(nodes, {
+      resourceId: selector.id,
+      ...(selector.text ? { text: selector.text } : {}),
+    });
+  }
   const bounds = result.matches[0]?.node?.bounds;
   if (!bounds) {
     throw new Error(`${stepLabel} did not return a target bounds.`);
@@ -73,88 +67,17 @@ async function resolveBounds(deviceId: string, appId: string, selector: Selector
 }
 
 async function injectAndroidText(deviceId: string, value: string): Promise<void> {
-  for (const char of value) {
-    if (char === "@") {
-      await adb(deviceId, ["shell", "input", "keyevent", "77"]);
-      continue;
-    }
-    if (char === ".") {
-      await adb(deviceId, ["shell", "input", "keyevent", "56"]);
-      continue;
-    }
-    if (char === "_") {
-      await adb(deviceId, ["shell", "input", "text", "_"]);
-      continue;
-    }
-    if (char === " ") {
-      await adb(deviceId, ["shell", "input", "keyevent", "62"]);
-      continue;
-    }
-    await adb(deviceId, ["shell", "input", "text", char]);
-  }
-}
-
-function unquote(value: string): string {
-  return value.replace(/^"|"$/g, "").replace(/\\"/g, '"');
-}
-
-function parseCommands(flowText: string): FlowCommand[] {
-  const commands: FlowCommand[] = [];
-  const lines = flowText.replace(/\r/g, "").split(String.fromCharCode(10));
-  for (let index = 0; index < lines.length; index += 1) {
-    const rawLine = lines[index] ?? "";
-    const line = rawLine.trim();
-    if (line.length === 0 || line === "---" || /^appId:/.test(line)) {
-      continue;
-    }
-    if (line === "- launchApp" || line.startsWith("- launchApp:")) {
-      commands.push({ kind: "launchApp" });
-      while ((lines[index + 1] ?? "").startsWith("    ") || (lines[index + 1] ?? "").startsWith("  ")) {
-        index += 1;
-      }
-      continue;
-    }
-    if (line.startsWith("- assertVisible:")) {
-      const next = lines[index + 1]?.trim() ?? "";
-      if (next.startsWith("id:")) {
-        commands.push({ kind: "assertVisible", selector: { id: unquote(next.slice(3).trim()) } });
-        index += 1;
-      } else if (next.startsWith("text:")) {
-        commands.push({ kind: "assertVisible", selector: { text: unquote(next.slice(5).trim()) } });
-        index += 1;
-      } else {
-        throw new Error(`Unsupported assertVisible selector near line: ${line}`);
-      }
-      continue;
-    }
-    if (line.startsWith("- tapOn:")) {
-      const next = lines[index + 1]?.trim() ?? "";
-      if (next.startsWith("id:")) {
-        commands.push({ kind: "tapOn", selector: { id: unquote(next.slice(3).trim()) } });
-        index += 1;
-      } else if (next.startsWith("text:")) {
-        commands.push({ kind: "tapOn", selector: { text: unquote(next.slice(5).trim()) } });
-        index += 1;
-      } else {
-        throw new Error(`Unsupported tapOn selector near line: ${line}`);
-      }
-      continue;
-    }
-    if (line.startsWith("- inputText:")) {
-      commands.push({ kind: "inputText", text: unquote(line.slice("- inputText:".length).trim()) });
-      continue;
-    }
-    if (line.startsWith("- setClipboard:")) {
-      commands.push({ kind: "setClipboard", text: unquote(line.slice("- setClipboard:".length).trim()) });
-      continue;
-    }
-    if (line === "- pasteText") {
-      commands.push({ kind: "pasteText" });
-      continue;
-    }
-    throw new Error(`Unsupported command in OEM fallback flow: ${line}`);
-  }
-  return commands;
+  const normalized = value
+    .replace(/%/g, "\\%")
+    .replace(/ /g, "%s")
+    .replace(/&/g, "\\&")
+    .replace(/</g, "\\<")
+    .replace(/>/g, "\\>")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/;/g, "\\;")
+    .replace(/\|/g, "\\|");
+  await adb(deviceId, ["shell", "input", "text", normalized]);
 }
 
 async function main(): Promise<void> {
@@ -168,8 +91,7 @@ async function main(): Promise<void> {
     throw new Error("DEVICE_ID, APP_ID, and FLOW must be set.");
   }
 
-  const flowText = await readFile(flowPath, "utf8");
-  const commands = parseCommands(flowText);
+  const commands = await parseCommandsFromFlowFile(flowPath);
   let clipboardValue = "";
   await adb(deviceId, ["shell", "am", "switch-user", androidUserId]);
 
@@ -183,15 +105,27 @@ async function main(): Promise<void> {
     }
 
     if (command.kind === "assertVisible") {
-      await resolveBounds(deviceId, appId, command.selector, `assertVisible[${index}]`);
+      try {
+        await resolveBounds(deviceId, appId, command.selector, `assertVisible[${index}]`);
+      } catch (error) {
+        if (!command.optional) {
+          throw error;
+        }
+      }
       continue;
     }
 
     if (command.kind === "tapOn") {
-      const bounds = await resolveBounds(deviceId, appId, command.selector, `tapOn[${index}]`);
-      const center = parseBoundsCenter(bounds);
-      await adb(deviceId, ["shell", "input", "tap", String(center.x), String(center.y)]);
-      await sleep(700);
+      try {
+        const bounds = await resolveBounds(deviceId, appId, command.selector, `tapOn[${index}]`);
+        const center = parseBoundsCenter(bounds);
+        await adb(deviceId, ["shell", "input", "tap", String(center.x), String(center.y)]);
+        await sleep(700);
+      } catch (error) {
+        if (!command.optional) {
+          throw error;
+        }
+      }
       continue;
     }
 

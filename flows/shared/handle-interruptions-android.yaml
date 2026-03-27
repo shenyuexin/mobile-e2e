@@ -27,3 +27,12 @@ appId: host.exp.exponent
 - tapOn:
     text: "Deny"
     optional: true
+- tapOn:
+    text: "Save"
+    optional: true
+- tapOn:
+    text: "Don't remind me again"
+    optional: true
+- tapOn:
+    text: "Cancel"
+    optional: true
