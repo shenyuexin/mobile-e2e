@@ -3,7 +3,10 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { parseHarnessConfig } from "../src/harness-config.ts";
+import { fileURLToPath } from "node:url";
+import { loadHarnessSelection, parseHarnessConfig } from "../src/harness-config.ts";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 test("parseHarnessConfig fails loudly when canonical harness config is missing", async () => {
   const repoRoot = await mkdtemp(path.join(os.tmpdir(), "adapter-maestro-harness-config-"));
@@ -17,4 +20,18 @@ test("parseHarnessConfig fails loudly when canonical harness config is missing",
       return true;
     },
   );
+});
+
+test("loadHarnessSelection resolves real configured flutter_android profile from canonical harness config", async () => {
+  const selection = await loadHarnessSelection(
+    repoRoot,
+    "android",
+    "flutter_android",
+    "configs/harness/sample-harness.yaml",
+  );
+
+  assert.equal(selection.runnerProfile, "flutter_android");
+  assert.equal(selection.runnerScript.length > 0, true);
+  assert.equal(selection.appId.length > 0, true);
+  assert.equal(selection.configuredFlows.length > 0, true);
 });
