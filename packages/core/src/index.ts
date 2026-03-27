@@ -1,5 +1,6 @@
 export {
   appendSessionTimelineEvent,
+  appendReplayTimelineEvent,
   buildActionRecordRelativePath,
   buildRecordEventsRelativePath,
   buildRecordedStepsRelativePath,
