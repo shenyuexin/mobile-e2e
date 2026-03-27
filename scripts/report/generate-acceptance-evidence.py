@@ -12,7 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 REPORT_DIR = ROOT / "reports"
 PHASE_REPORT = REPORT_DIR / "phase-sample-report.json"
-RUN_METADATA = REPORT_DIR / "self-hosted-run-metadata.json"
+RUN_METADATA = Path(
+    os.environ.get("ACCEPTANCE_RUN_METADATA_PATH", str(REPORT_DIR / "self-hosted-run-metadata.json"))
+)
 OUT_JSON = REPORT_DIR / "acceptance-evidence.json"
 OUT_MD = REPORT_DIR / "acceptance-evidence.md"
 
@@ -50,6 +52,7 @@ def collect_visual_evidence() -> list[str]:
     for pattern in [
         "artifacts/phase1-ios/**/final.jpg",
         "artifacts/phase1-android/**/final.jpg",
+        "artifacts/phase2-rn-android/**/final.jpg",
         "artifacts/phase3-flutter-android/**/final.jpg",
         "artifacts/phase3-native-android/**/final.jpg",
         "artifacts/phase3-native-ios/**/final.jpg",

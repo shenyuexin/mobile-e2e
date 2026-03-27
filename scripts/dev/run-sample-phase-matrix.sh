@@ -24,6 +24,7 @@ EOF
 rm -rf \
   "$ROOT/artifacts/phase1-ios" \
   "$ROOT/artifacts/phase1-android" \
+  "$ROOT/artifacts/phase2-rn-android" \
   "$ROOT/artifacts/phase3-flutter-android" \
   "$ROOT/artifacts/phase3-native-android" \
   "$ROOT/artifacts/phase3-native-ios"

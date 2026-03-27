@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
@@ -34,16 +35,39 @@ class PhaseReport(TypedDict):
 
 
 ROOT = Path(__file__).resolve().parents[2]
+PHASE2_RN_ANDROID_ROOT = Path(
+    os.environ.get("PHASE2_RN_ANDROID_ARTIFACT_ROOT", str(ROOT / "artifacts/phase2-rn-android"))
+)
 ARTIFACT_ROOTS = {
     "react-native-ios": ROOT / "artifacts/phase1-ios",
-    "react-native-android": ROOT / "artifacts/phase1-android",
+    "react-native-android": PHASE2_RN_ANDROID_ROOT if PHASE2_RN_ANDROID_ROOT.exists() else ROOT / "artifacts/phase1-android",
     "flutter-android": ROOT / "artifacts/phase3-flutter-android",
     "native-android": ROOT / "artifacts/phase3-native-android",
     "native-ios": ROOT / "artifacts/phase3-native-ios",
 }
+PLATFORM_SAMPLES = {
+    "react-native-ios": "rn-login-demo",
+    "react-native-android": "rn-login-demo",
+    "flutter-android": "mobitru-flutter",
+    "native-android": "mobitru-native",
+    "native-ios": "mobitru-native",
+}
 REPORT_DIR = ROOT / "reports"
 JSON_OUT = REPORT_DIR / "phase-sample-report.json"
 MD_OUT = REPORT_DIR / "phase-sample-report.md"
+
+
+def selected_artifact_roots() -> dict[str, Path]:
+    requested = os.environ.get("PHASE_REPORT_PLATFORMS")
+    if not requested:
+        return ARTIFACT_ROOTS
+
+    selected: dict[str, Path] = {}
+    for platform in [item.strip() for item in requested.split(",") if item.strip()]:
+        root = ARTIFACT_ROOTS.get(platform)
+        if root is not None:
+            selected[platform] = root
+    return selected if selected else ARTIFACT_ROOTS
 
 
 def collect_platform(platform: str, root: Path) -> PlatformReport:
@@ -150,11 +174,12 @@ def collect_scheduler_metrics(platform: str) -> dict[str, float | int]:
 
 def main() -> None:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    artifact_roots = selected_artifact_roots()
     report: PhaseReport = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "phase": "Phase 2/3 sample validation report",
-        "samples": ["rn-login-demo", "mobitru-flutter", "mobitru-native"],
-        "platforms": [collect_platform(platform, root) for platform, root in ARTIFACT_ROOTS.items()],
+        "phase": os.environ.get("PHASE_REPORT_PHASE", "Phase 2/3 sample validation report"),
+        "samples": sorted({PLATFORM_SAMPLES[platform] for platform in artifact_roots if platform in PLATFORM_SAMPLES}),
+        "platforms": [collect_platform(platform, root) for platform, root in artifact_roots.items()],
     }
 
     _ = JSON_OUT.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
