@@ -1,0 +1,42 @@
+sample:
+  name: rn-login-demo
+
+platforms:
+  android:
+    runner_script: scripts/dev/run-phase1-android.sh
+    device_udid: emulator-5554
+    app_id: host.exp.exponent
+    launch_url: exp://127.0.0.1:8081
+    run_count_default: 1
+  ios:
+    runner_script: scripts/dev/run-phase1-ios.sh
+    device_udid: ADA078B9-3C6B-4875-8B85-A7789F368816
+    app_id: host.exp.Exponent
+    launch_url: exp://127.0.0.1:8081
+    run_count_default: 1
+
+phase3_validations:
+  flutter_android:
+    runner_script: scripts/dev/run-sample-phase-matrix.sh
+    sample_name: mobitru-flutter
+    artifact_root: artifacts/phase3-flutter-android
+    app_id: com.epam.mobitru
+    run_count_default: 1
+    flows:
+      - flows/samples/flutter/mobitru-flutter-login.yaml
+  native_android:
+    runner_script: scripts/dev/run-sample-phase-matrix.sh
+    sample_name: mobitru-native
+    artifact_root: artifacts/phase3-native-android
+    app_id: com.epam.mobitru
+    run_count_default: 1
+    flows:
+      - flows/samples/native/mobitru-android-login.yaml
+  native_ios:
+    runner_script: scripts/dev/run-sample-phase-matrix.sh
+    sample_name: mobitru-native
+    artifact_root: artifacts/phase3-native-ios
+    app_id: com.epam.mobitru.demoapp
+    run_count_default: 1
+    flows:
+      - flows/samples/native/mobitru-ios-login.yaml

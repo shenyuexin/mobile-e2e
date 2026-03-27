@@ -41,52 +41,10 @@ export const DEFAULT_FLOWS: Record<Platform, string> = {
   ios: "flows/samples/react-native/ios-login-smoke.yaml",
 };
 
-function buildDefaultHarnessConfig(): Record<string, unknown> {
-  return {
-    sample: { name: "rn-login-demo" },
-    platforms: {
-      android: {
-        runner_script: "scripts/dev/run-rn-android.sh",
-        device_udid: DEFAULT_ANDROID_DEVICE_ID,
-        app_id: DEFAULT_ANDROID_APP_ID,
-        launch_url: "exp://127.0.0.1:8081",
-        run_count_default: 1,
-      },
-      ios: {
-        runner_script: "scripts/dev/run-rn-ios.sh",
-        device_udid: DEFAULT_IOS_SIMULATOR_UDID,
-        app_id: DEFAULT_IOS_APP_ID,
-        launch_url: "exp://127.0.0.1:8081",
-        run_count_default: 1,
-      },
-    },
-    phase3_validations: {
-      flutter_android: {
-        runner_script: "scripts/dev/run-sample-phase-matrix.sh",
-        app_id: DEFAULT_ANDROID_APP_ID,
-        sample_name: "flutter_android",
-        artifact_root: "artifacts/phase3-flutter-android",
-        run_count_default: 1,
-        flows: [DEFAULT_FLOWS.android],
-      },
-      native_android: {
-        runner_script: "scripts/dev/run-sample-phase-matrix.sh",
-        app_id: DEFAULT_ANDROID_APP_ID,
-        sample_name: "native_android",
-        artifact_root: "artifacts/phase3-native-android",
-        run_count_default: 1,
-        flows: [DEFAULT_FLOWS.android],
-      },
-      native_ios: {
-        runner_script: "scripts/dev/run-sample-phase-matrix.sh",
-        app_id: DEFAULT_IOS_APP_ID,
-        sample_name: "native_ios",
-        artifact_root: "artifacts/phase3-native-ios",
-        run_count_default: 1,
-        flows: [DEFAULT_FLOWS.ios],
-      },
-    },
-  };
+function buildMissingHarnessConfigError(harnessConfigPath: string): Error {
+  return new Error(
+    `Missing harness config: ${harnessConfigPath}. The canonical harness config is required for the repository baseline at ${DEFAULT_HARNESS_CONFIG_PATH}.`,
+  );
 }
 
 export function buildDefaultDeviceId(platform: Platform): string {
@@ -138,7 +96,7 @@ export async function parseHarnessConfig(repoRoot: string, harnessConfigPath: st
   } catch (error: unknown) {
     const isMissingConfig = error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT";
     if (isMissingConfig) {
-      return buildDefaultHarnessConfig();
+      throw buildMissingHarnessConfigError(harnessConfigPath);
     }
     throw error;
   }
