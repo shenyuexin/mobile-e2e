@@ -125,7 +125,7 @@ async function loadHarnessPhase3Validations(repoRoot: string): Promise<HarnessPh
     });
 }
 
-async function loadProfileRecord(repoRoot: string, profileName: "native" | "flutter"): Promise<ProfileRecord> {
+async function loadProfileRecord(repoRoot: string, profileName: string): Promise<ProfileRecord> {
   const raw = await readFile(path.join(repoRoot, `configs/profiles/${profileName}.yaml`), "utf8");
   const status = raw.match(/^status:\s*(.+)$/m)?.[1]?.trim();
   const sample = raw.match(/^\s+sample:\s*(.+)$/m)?.[1]?.trim();
@@ -219,8 +219,15 @@ async function main(): Promise<void> {
   const repoRoot = repoRootFromScript();
   const matrixPath = path.resolve(repoRoot, "configs/matrices/framework-profile-matrix.md");
   if (!existsSync(matrixPath)) {
-    console.log("Skipped phase3 sample validation: configs/matrices/framework-profile-matrix.md not found.");
-    return;
+    throw new Error(
+      [
+        "CFG-02 required input missing: configs/matrices/framework-profile-matrix.md",
+        "guidance:",
+        "- This validation requires the tracked framework/profile compatibility matrix.",
+        "- Restore the file from git history or switch to a branch/worktree where it exists.",
+        "- Re-run: pnpm test:smoke",
+      ].join("\n"),
+    );
   }
 
   const validations = await loadHarnessPhase3Validations(repoRoot);
@@ -234,24 +241,35 @@ async function main(): Promise<void> {
   }
 
   const nativeProfile = await loadProfileRecord(repoRoot, "native");
+  const reactNativeProfile = await loadProfileRecord(repoRoot, "react-native");
   const flutterProfile = await loadProfileRecord(repoRoot, "flutter");
   assert.equal(nativeProfile.status, "validated-sample-baseline");
   assert.equal(nativeProfile.sample, "mobitru-native");
   assert.equal(nativeProfile.platforms.includes("ios"), true);
   assert.equal(nativeProfile.platforms.includes("android"), true);
+  assert.equal(reactNativeProfile.status, "validated-sample-baseline");
+  assert.equal(reactNativeProfile.sample, "rn-login-demo");
+  assert.equal(reactNativeProfile.platforms.includes("ios"), true);
+  assert.equal(reactNativeProfile.platforms.includes("android"), true);
   assert.equal(flutterProfile.status, "validated-sample-baseline");
   assert.equal(flutterProfile.sample, "mobitru-flutter");
   assert.equal(flutterProfile.platforms.includes("android"), true);
 
   const matrixRows = await loadMatrixRows(repoRoot);
   const nativeRow = matrixRows.get("Native");
+  const reactNativeRow = matrixRows.get("React Native");
   const flutterRow = matrixRows.get("Flutter");
   assert.ok(nativeRow);
+  assert.ok(reactNativeRow);
   assert.ok(flutterRow);
   assert.equal(nativeRow?.status, "validated-sample-baseline");
   assert.equal(nativeRow?.sample, "mobitru-native");
   assert.equal(nativeRow?.ios, "yes");
   assert.equal(nativeRow?.android, "yes");
+  assert.equal(reactNativeRow?.status, "validated-sample-baseline");
+  assert.equal(reactNativeRow?.sample, "rn-login-demo");
+  assert.equal(reactNativeRow?.ios, "yes");
+  assert.equal(reactNativeRow?.android, "yes");
   assert.equal(flutterRow?.status, "validated-sample-baseline");
   assert.equal(flutterRow?.sample, "mobitru-flutter");
   assert.equal(flutterRow?.ios, "no");
@@ -269,12 +287,12 @@ async function main(): Promise<void> {
 
   console.log("Phase3 sample dry-run contract validation passed.");
   console.log(
-    [
-      "Evidence contract: smoke-level dry-run validation only (not real-device acceptance evidence).",
-      "Profile truth: Native + Flutter remain validated-sample-baseline per configs/profiles/*.yaml and framework-profile matrix.",
-      `Shared runner/report dry-run lanes checked: ${validatedRunnerProfiles.join(", ")}.`,
-      `Framework lane note: ${flutterLaneSummary}; Flutter iOS remains outside the shared runner/report path.`,
-      "Acceptance evidence lane is .github/workflows/real-device-acceptance.yml (self-hosted real-run artifacts + quality gate).",
+      [
+        "Evidence contract: smoke-level dry-run validation only (not real-device acceptance evidence).",
+        "Profile truth: Native + React Native + Flutter remain validated-sample-baseline per configs/profiles/*.yaml and framework-profile matrix.",
+        `Shared runner/report dry-run lanes checked: ${validatedRunnerProfiles.join(", ")}.`,
+        `Framework lane note: ${flutterLaneSummary}; Flutter iOS remains outside the shared runner/report path.`,
+        "Acceptance evidence lane is .github/workflows/real-device-acceptance.yml (self-hosted real-run artifacts + quality gate).",
     ].join(" "),
   );
 }
