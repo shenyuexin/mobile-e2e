@@ -393,7 +393,7 @@ export {
   getRecordSessionStatusWithMaestro,
   startRecordSessionWithMaestro,
 } from "./recording-runtime.js";
-export { buildInitialReplayProgress, buildReplayStepsFromRecordedSteps, buildReplayStepsFromFlowYaml, type ReplayStep } from "./replay-step-planner.js";
+export { buildInitialReplayProgress, buildReplayPlanFromFlowYaml, buildReplayStepsFromRecordedSteps, buildReplayStepsFromFlowYaml, type ReplayFlowImportPlan, type ReplayStep, type UnsupportedReplayFlowCommand } from "./replay-step-planner.js";
 export { classifyInterruptionFromSignals } from "./interruption-classifier.js";
 export { detectInterruptionFromSummary } from "./interruption-detector.js";
 export { buildInterruptionEvent, decideInterruptionResolution } from "./interruption-resolver.js";
