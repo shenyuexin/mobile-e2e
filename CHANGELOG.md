@@ -12,10 +12,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 - Expanded replay, recording, and session-orchestration capabilities across the MCP harness.
 - Extended deterministic UI inspection, targeting, and interaction coverage for mobile flows.
+- Improved bounded OCR and vision fallback support for cases where deterministic selectors are unavailable.
 
 ### Changed
+- Improved diagnostics, evidence capture, and performance analysis workflows for mobile automation runs.
 - Refined operator documentation, governance guidance, and architecture references around the release.
-- Release scope includes 5 merged commits between mcp-server-v0.1.10 and the target tag.
+- Release scope includes 48 merged commits between mcp-server-v0.1.9 and the target tag.
 
 ### Fixed
 - Hardened release reliability, runtime guardrails, and end-to-end flow stability on supported platforms.
