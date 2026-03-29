@@ -99,8 +99,9 @@
 ### 一条命令完成准备 + 推送 tag
 
 ```bash
-pnpm release:mcp:prepare-tag patch
-# 可选: patch | minor | major
+pnpm release:mcp:version 0.1.10
+# 或: pnpm release:mcp:prepare-tag patch
+# prepare-tag 仍支持 patch | minor | major
 ```
 
 该脚本会自动执行：
@@ -120,14 +121,26 @@ pnpm release:mcp:prepare-tag patch
 ### 方案 A：本地标准发版（推荐）
 
 ```bash
-pnpm release:mcp:prepare-tag patch
+pnpm release:mcp:version 0.1.10
 ```
 
 特点：
 
-- 自动更新版本号
+- 显式指定目标版本号
 - 自动生成该版本 changelog
 - 自动提交并推 tag
+
+如果你只想按语义级别递增，也可以继续使用：
+
+```bash
+pnpm release:mcp:prepare-tag patch
+```
+
+但对日常操作建议统一心智模型为：
+
+> “更新版本到 0.x.x” = `pnpm release:mcp:version 0.x.x`
+
+不要再手工修改 `packages/mcp-server/package.json` 来发版；这不会触发完整 release 链路。
 
 ### 方案 B：你只负责发 tag（机制补 changelog）
 
