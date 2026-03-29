@@ -30,6 +30,7 @@ Current no-device regression layers:
 - `packages/mcp-server/test/server.test.ts` - server registry and invoke smoke coverage
 - `packages/mcp-server/test/stdio-server.test.ts` - stdio initialize/list/call and error-path coverage
 - `packages/mcp-server/test/dev-cli.test.ts` - CLI argument parsing and dry-run dispatch coverage
+- `scripts/release/prepare-mcp-release.test.ts` - release entrypoint argument parsing and explicit-version guardrail coverage
 - `scripts/validate-dry-run.ts` - top-level asserted dry-run validator that spawns the real CLI commands and checks returned JSON semantics
 
 Capability discovery coverage now also lives in the same stack:
@@ -66,6 +67,7 @@ Current regression layers are now explicitly named:
 - `pnpm test:adapter` - adapter-only deterministic unit coverage
 - `pnpm test:ocr-smoke` - macOS-only OCR provider smoke coverage against local OCR fixtures; skips with an explicit reason when fixtures are absent (for example clean-clone environments)
 - `pnpm test:mcp-server` - server/stdio/dev-cli smoke coverage
+- `pnpm test:release-scripts` - release-script argument and preflight regression coverage
 - `pnpm test:unit` - combined no-device regression layer
 - `pnpm test:smoke` - asserted root dry-run validation layer
 - `pnpm test:ci` - build + typecheck + unit + smoke in one CI-oriented sequence
