@@ -2,42 +2,14 @@ import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-type ReleaseLevel = 'patch' | 'minor' | 'major';
-
-const levelArg = (process.argv[2] ?? 'patch').trim() as ReleaseLevel;
-const allowedLevels = new Set<ReleaseLevel>(['patch', 'minor', 'major']);
-
-if (!allowedLevels.has(levelArg)) {
-  throw new Error(`Invalid release level: ${levelArg}. Use patch|minor|major.`);
-}
+import { parsePrepareReleaseArgs, resolveTargetVersion } from './prepare-mcp-release-lib.ts';
 
 const thisDir = fileURLToPath(new URL('.', import.meta.url));
 const repoRoot = resolve(thisDir, '..', '..');
 const pkgName = '@shenyuexin/mobile-e2e-mcp';
 const pkgJsonPath = resolve(repoRoot, 'packages/mcp-server/package.json');
 const repomixOutputPath = 'repomix-output.xml';
-
-function bumpSemver(version: string, level: ReleaseLevel): string {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
-  if (!match) {
-    throw new Error(`Unsupported version format: ${version}. Expected x.y.z`);
-  }
-
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  const patch = Number(match[3]);
-
-  if (level === 'major') {
-    return `${major + 1}.0.0`;
-  }
-
-  if (level === 'minor') {
-    return `${major}.${minor + 1}.0`;
-  }
-
-  return `${major}.${minor}.${patch + 1}`;
-}
+const releaseArgs = parsePrepareReleaseArgs(process.argv.slice(2));
 
 function run(command: string): string {
   return execSync(command, {
@@ -62,11 +34,22 @@ if (status.length > 0) {
 
 const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as Record<string, unknown>;
 const currentVersion = String(pkgJson.version ?? '');
-const version = bumpSemver(currentVersion, levelArg);
-pkgJson.version = version;
-writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`, 'utf8');
+const version = resolveTargetVersion(currentVersion, releaseArgs);
 
 const tagName = `mcp-server-v${version}`;
+
+const localTagExists = run(`git tag -l "${tagName}"`);
+if (localTagExists === tagName) {
+  throw new Error(`Tag already exists locally: ${tagName}`);
+}
+
+const remoteTagExists = run(`git ls-remote --tags origin ${tagName}`);
+if (remoteTagExists.length > 0) {
+  throw new Error(`Tag already exists on origin: ${tagName}`);
+}
+
+pkgJson.version = version;
+writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`, 'utf8');
 
 runWithOutput(`pnpm tsx scripts/release/sync-mcp-release-changelog.ts --version ${version}`);
 runWithOutput(`pnpm tsx scripts/release/validate-mcp-release.ts --version ${version} --tag ${tagName}`);
@@ -78,16 +61,6 @@ runWithOutput('pnpm test:mcp-server');
 
 runWithOutput(`git add packages/mcp-server/package.json pnpm-lock.yaml CHANGELOG.md ${repomixOutputPath}`);
 runWithOutput(`git commit -m "release(mcp-server): v${version}"`);
-
-const localTagExists = run(`git tag -l "${tagName}"`);
-if (localTagExists === tagName) {
-  throw new Error(`Tag already exists locally: ${tagName}`);
-}
-
-const remoteTagExists = run(`git ls-remote --tags origin ${tagName}`);
-if (remoteTagExists.length > 0) {
-  throw new Error(`Tag already exists on origin: ${tagName}`);
-}
 
 runWithOutput(`git tag -a ${tagName} -m "Release ${pkgName} v${version}"`);
 

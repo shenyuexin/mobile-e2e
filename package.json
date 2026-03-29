@@ -13,7 +13,7 @@
     "test:adapter": "pnpm --filter @mobile-e2e-mcp/adapter-vision test && pnpm --filter @mobile-e2e-mcp/adapter-maestro test",
     "test:ocr-smoke": "pnpm --filter @mobile-e2e-mcp/adapter-vision exec tsx --test test/ocr-smoke.test.ts",
     "test:mcp-server": "pnpm --filter @shenyuexin/mobile-e2e-mcp test",
-    "test:unit": "pnpm --filter @mobile-e2e-mcp/core test && pnpm --filter @mobile-e2e-mcp/adapter-vision test && pnpm --filter @mobile-e2e-mcp/adapter-maestro test && pnpm --filter @shenyuexin/mobile-e2e-mcp test",
+    "test:unit": "pnpm --filter @mobile-e2e-mcp/core test && pnpm --filter @mobile-e2e-mcp/adapter-vision test && pnpm --filter @mobile-e2e-mcp/adapter-maestro test && pnpm --filter @shenyuexin/mobile-e2e-mcp test && pnpm test:release-scripts",
     "test:smoke": "pnpm run validate:dry-run && pnpm run validate:phase2-rn-android && pnpm run validate:phase3-samples && pnpm run validate:concurrent-smoke",
     "test:ci": "pnpm build && pnpm typecheck && pnpm test:unit && pnpm test:smoke",
     "test": "pnpm test:unit && pnpm run test:smoke",
@@ -37,10 +37,12 @@
     "mcp:stdio": "pnpm build && pnpm --filter @shenyuexin/mobile-e2e-mcp stdio",
     "release:mcp:publish": "pnpm --filter @shenyuexin/mobile-e2e-mcp run release:publish",
     "release:mcp:publish:dry-run": "pnpm --filter @shenyuexin/mobile-e2e-mcp run release:publish:dry-run",
+    "test:release-scripts": "pnpm exec tsx --test scripts/release/*.test.ts",
     "release:mcp:check": "pnpm tsx scripts/release/validate-mcp-release.ts",
     "release:mcp:sync-changelog": "pnpm tsx scripts/release/sync-mcp-release-changelog.ts",
     "release:mcp:patch": "pnpm --filter @shenyuexin/mobile-e2e-mcp run release:patch",
-    "release:mcp:prepare-tag": "tsx scripts/release/prepare-mcp-release.ts"
+    "release:mcp:prepare-tag": "tsx scripts/release/prepare-mcp-release.ts",
+    "release:mcp:version": "tsx scripts/release/prepare-mcp-release.ts --version"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
