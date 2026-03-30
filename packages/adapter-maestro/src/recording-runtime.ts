@@ -128,6 +128,18 @@ async function enrichEventsWithSelectors(
 	return enriched;
 }
 
+function mapRecordedEventTimestamp(
+	platform: "android" | "ios",
+	startedAt: string,
+	eventMonotonicMs: number,
+	anchorMonotonicMs?: number,
+): string {
+	if (platform === "ios" && eventMonotonicMs > 1_000_000_000_000) {
+		return new Date(eventMonotonicMs).toISOString();
+	}
+	return mapMonotonicToIso(startedAt, eventMonotonicMs, anchorMonotonicMs);
+}
+
 export async function startRecordSessionWithMaestro(
 	input: StartRecordSessionInput,
 ): Promise<ToolResult<StartRecordSessionData>> {
@@ -453,7 +465,8 @@ export async function endRecordSessionWithMaestro(
 			parsed.find((event) => event.eventMonotonicMs > 0)?.eventMonotonicMs;
 		const normalized: ExtendedRawRecordedEvent[] = parsed.map(
 			(event, index) => {
-				const mappedTimestamp = mapMonotonicToIso(
+				const mappedTimestamp = mapRecordedEventTimestamp(
+					recordSession.platform,
 					recordSession.startedAt,
 					event.eventMonotonicMs,
 					anchorMonotonicMs,
@@ -705,5 +718,6 @@ export const recordingRuntimeInternals = {
 	parseSnapshotCapturedAtMs,
 	chooseNearestSnapshotRef,
 	mapMonotonicToIso,
+	mapRecordedEventTimestamp,
 	resolveSelectorAtPoint,
 };

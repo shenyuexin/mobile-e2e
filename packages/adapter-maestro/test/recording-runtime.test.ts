@@ -241,3 +241,30 @@ test("resolveSelectorAtPoint prefers iOS identifier-backed actionable node over 
   assert.equal(selector?.identifier, "login-submit-button");
   assert.equal(selector?.text, "Continue");
 });
+
+test("mapRecordedEventTimestamp preserves wall-clock iOS timestamps", () => {
+  const timestamp = recordingRuntimeInternals.mapRecordedEventTimestamp(
+    "ios",
+    "2026-03-19T10:00:00.000Z",
+    Date.parse("2026-03-20T10:00:00.050Z"),
+    1_000_000,
+  );
+
+  assert.equal(timestamp, "2026-03-20T10:00:00.050Z");
+});
+
+test("chooseNearestSnapshotRef keeps later iOS pre-action snapshot when timestamp is wall-clock", () => {
+  const mappedTimestamp = recordingRuntimeInternals.mapRecordedEventTimestamp(
+    "ios",
+    "2026-03-19T10:00:00.000Z",
+    Date.parse("2026-03-20T10:00:00.250Z"),
+    1_000_000,
+  );
+  const selected = recordingRuntimeInternals.chooseNearestSnapshotRef(mappedTimestamp, [
+    { ref: "artifacts/record-snapshots/rec-1/rec-1-1774000800100.json", capturedAtMs: 1774000800100 },
+    { ref: "artifacts/record-snapshots/rec-1/rec-1-1774000800200.json", capturedAtMs: 1774000800200 },
+    { ref: "artifacts/record-snapshots/rec-1/rec-1-1774000800400.json", capturedAtMs: 1774000800400 },
+  ]);
+
+  assert.equal(selected, "artifacts/record-snapshots/rec-1/rec-1-1774000800200.json");
+});
