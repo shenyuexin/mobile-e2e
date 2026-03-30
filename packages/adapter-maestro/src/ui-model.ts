@@ -664,6 +664,17 @@ export function buildUiTargetResolution(query: QueryUiSelector, result: InspectU
 
   const matchedNode = result.matches[0]?.node;
   const bestCandidate = result.matches[0];
+  if (bestCandidate?.isOffScreen) {
+    return {
+      status: "off_screen",
+      matchCount: result.totalMatches,
+      query,
+      matches: result.matches,
+      bestCandidate,
+      matchedNode,
+      ambiguityReason: "The best matching node is currently outside the visible viewport.",
+    };
+  }
   if (matchedNode && matchedNode.enabled === false) {
     return {
       status: "disabled_match",
