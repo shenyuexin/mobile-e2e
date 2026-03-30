@@ -1320,7 +1320,40 @@ test("buildUiTargetResolution still resolves a single partially visible match", 
     "full",
   );
 
-  assert.equal(resolution.status, "resolved");
+  assert.equal(resolution.status, "off_screen");
+});
+
+test("buildUiTargetResolution does not auto-resolve a barely visible dominant candidate", () => {
+  const resolution = buildUiTargetResolution(
+    { text: "Continue" },
+    {
+      query: { text: "Continue" },
+      totalMatches: 2,
+      matches: [
+        {
+          node: { text: "Continue", resourceId: "barely_visible", clickable: true, enabled: true, scrollable: false, bounds: "[0,1900][200,2060]" },
+          matchedBy: ["text", "resourceId"],
+          score: 8,
+          matchQuality: "exact",
+          scoreBreakdown: ["exact text match", "resourceId match"],
+          isOffScreen: false,
+          viewportOverlapPercent: 0.12,
+        },
+        {
+          node: { text: "Continue details", clickable: false, enabled: true, scrollable: false, bounds: "[0,100][200,180]" },
+          matchedBy: ["text"],
+          score: 4,
+          matchQuality: "substring",
+          scoreBreakdown: ["substring text match"],
+          isOffScreen: false,
+          viewportOverlapPercent: 1,
+        },
+      ],
+    },
+    "full",
+  );
+
+  assert.equal(resolution.status, "ambiguous");
 });
 
 test("diffAmbiguousCandidates returns selector-friendly field differences", () => {

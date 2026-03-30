@@ -196,3 +196,46 @@ test("runUiScrollResolveLoop keeps a single off-screen match as off_screen inste
   assert.equal(outcome.state.resolution.status, "off_screen");
   assert.equal(outcome.state.swipesPerformed, 0);
 });
+
+test("runUiScrollResolveLoop keeps a barely visible single match in off_screen state", async () => {
+  const barelyVisibleMatch = {
+    node: {
+      text: "Continue",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[0,1900][200,2060]",
+    },
+    matchedBy: ["text"] as QueryUiMatch["matchedBy"],
+    isOffScreen: false,
+    viewportOverlapPercent: 0.12,
+    score: 5,
+    matchQuality: "exact" as const,
+    scoreBreakdown: ["exact text match", "low_viewport_visibility:0.12"],
+  };
+  const outcome = await uiRuntimeInternals.runUiScrollResolveLoop({
+    query: { text: "Continue" },
+    maxSwipes: 0,
+    defaultOutputPath: "artifacts/ui-dumps/test/android.xml",
+    captureSnapshot: async () =>
+      buildSnapshot({
+        queryResult: {
+          totalMatches: 1,
+          matches: [barelyVisibleMatch],
+        },
+      }),
+    buildSwipeCommand: () => ["swipe"],
+    executeSwipeCommand: async () => ({
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    }),
+    scrollFailureMessage: "unused",
+  });
+
+  assert.equal(outcome.outcome, "max_swipes");
+  if (outcome.outcome !== "max_swipes") {
+    assert.fail("expected max_swipes outcome");
+  }
+  assert.equal(outcome.state.resolution.status, "off_screen");
+});

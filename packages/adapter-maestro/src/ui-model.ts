@@ -567,6 +567,9 @@ function selectDominantCandidate(matches: InspectUiMatch[]): InspectUiMatch | un
   if (!bestBounds || bestCandidate.node.enabled === false || bestCandidate.isOffScreen) {
     return undefined;
   }
+  if ((bestCandidate.viewportOverlapPercent ?? 1) < 0.25) {
+    return undefined;
+  }
 
   const bestHasStrongSelector = bestCandidate.matchedBy.some((field) => field === "resourceId" || field === "text" || field === "contentDesc");
   if (!bestHasStrongSelector || bestCandidate.matchQuality !== "exact") {
@@ -664,7 +667,7 @@ export function buildUiTargetResolution(query: QueryUiSelector, result: InspectU
 
   const matchedNode = result.matches[0]?.node;
   const bestCandidate = result.matches[0];
-  if (bestCandidate?.isOffScreen) {
+  if (bestCandidate?.isOffScreen || ((bestCandidate?.viewportOverlapPercent ?? 1) < 0.25)) {
     return {
       status: "off_screen",
       matchCount: result.totalMatches,
