@@ -142,28 +142,30 @@ function toIosInspectNode(node: Record<string, unknown>, depth: number): Inspect
   const bounds = frame ? `[${String(frameX)},${String(frameY)}][${String(frameX + frameWidth)},${String(frameY + frameHeight)}]` : undefined;
   const type = readNonEmptyString(node, "type") ?? undefined;
 
-  const identifier = readNonEmptyString(node, "identifier")
+  const stableIdentifier = readNonEmptyString(node, "identifier")
     ?? readNonEmptyString(node, "AXIdentifier")
-    ?? readNonEmptyString(node, "name")
     ?? readNonEmptyString(node, "id")
+    ?? readNonEmptyString(node, "AXUniqueId")
     ?? undefined;
   const title = readNonEmptyString(node, "title") ?? undefined;
+  const label = readNonEmptyString(node, "AXLabel")
+    ?? readNonEmptyString(node, "name")
+    ?? undefined;
   const valueText = readNonEmptyString(node, "value")
     ?? readNonEmptyString(node, "AXValue")
     ?? undefined;
+  const labelEligibleForText = ["Button", "Link", "Cell", "StaticText"].includes(type ?? "");
 
   return {
     depth,
-    text: title ?? valueText,
-    resourceId: identifier
-      ?? readNonEmptyString(node, "AXUniqueId")
-      ?? undefined,
+    text: title ?? valueText ?? (labelEligibleForText ? label : undefined),
+    resourceId: stableIdentifier,
     className: type,
     packageName: readNonEmptyString(node, "bundleIdentifier")
       ?? readNonEmptyString(node, "bundleId")
       ?? readNonEmptyString(node, "bundle")
       ?? undefined,
-    contentDesc: readNonEmptyString(node, "AXLabel") ?? undefined,
+    contentDesc: label,
     clickable: ["Button", "Link", "Cell"].includes(type ?? "") || (Array.isArray(node.custom_actions) && node.custom_actions.length > 0),
     enabled: node.enabled !== false,
     scrollable: (type ?? "").toLowerCase().includes("scroll"),

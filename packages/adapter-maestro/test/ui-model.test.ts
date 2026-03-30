@@ -227,7 +227,7 @@ test("parseIosInspectSummary produces honest partial-ready summary from fixture"
   assert.equal(summary.totalNodes, 5);
   assert.equal(summary.clickableNodes, 2);
   assert.equal(summary.scrollableNodes, 1);
-  assert.equal(summary.nodesWithText, 2);
+  assert.equal(summary.nodesWithText, 3);
   assert.equal(summary.nodesWithContentDesc, 5);
   assert.ok(summary.sampleNodes.some((node) => node.resourceId === "signin_button"));
 });
@@ -255,6 +255,62 @@ test("parseIosInspectNodes detects ambiguous iOS selector matches", async () => 
 
   assert.equal(result.totalMatches, 2);
   assert.equal(resolution.status, "ambiguous");
+});
+
+test("parseIosInspectNodes uses label-like fields for text without turning names into pseudo resource ids", () => {
+  const nodes = parseIosInspectNodes(JSON.stringify([
+    {
+      type: "Button",
+      name: "Continue",
+      AXLabel: "Continue",
+      enabled: true,
+      frame: { x: 20, y: 120, width: 120, height: 44 },
+    },
+  ]));
+
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0]?.text, "Continue");
+  assert.equal(nodes[0]?.contentDesc, "Continue");
+  assert.equal(nodes[0]?.resourceId, undefined);
+
+  const query = normalizeQueryUiSelector({ text: "Continue" });
+  const result = queryUiNodes(nodes, query);
+  assert.equal(result.totalMatches, 1);
+  assert.equal(result.matches[0]?.node.text, "Continue");
+});
+
+test("parseIosInspectNodes prefers stable identifiers over name-derived pseudo ids", () => {
+  const nodes = parseIosInspectNodes(JSON.stringify([
+    {
+      type: "Button",
+      name: "Continue",
+      AXLabel: "Continue",
+      enabled: true,
+      frame: { x: 20, y: 120, width: 120, height: 44 },
+    },
+    {
+      type: "Button",
+      identifier: "primary_continue_button",
+      name: "Continue",
+      AXLabel: "Continue",
+      enabled: true,
+      frame: { x: 20, y: 220, width: 120, height: 44 },
+    },
+  ]));
+
+  const resourceIdQuery = normalizeQueryUiSelector({ resourceId: "primary_continue_button" });
+  const resourceIdResult = { query: resourceIdQuery, ...queryUiNodes(nodes, resourceIdQuery) };
+  const resolution = buildUiTargetResolution(resourceIdQuery, resourceIdResult, "full");
+
+  assert.equal(resourceIdResult.totalMatches, 1);
+  assert.equal(resourceIdResult.matches[0]?.node.resourceId, "primary_continue_button");
+  assert.equal(resolution.status, "resolved");
+  assert.equal(resolution.matchedNode?.resourceId, "primary_continue_button");
+
+  const textQuery = normalizeQueryUiSelector({ text: "Continue", clickable: true });
+  const textResult = { query: textQuery, ...queryUiNodes(nodes, textQuery) };
+  assert.equal(textResult.totalMatches, 2);
+  assert.equal(buildUiTargetResolution(textQuery, textResult, "full").status, "ambiguous");
 });
 
 test("parseIosInspectSummary falls back to empty summary for invalid JSON", () => {
