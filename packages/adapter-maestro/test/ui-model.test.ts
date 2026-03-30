@@ -359,7 +359,7 @@ test("isWaitConditionMet supports visible gone and unique modes", async () => {
     totalMatches: 1,
     matches: [{
       node: { text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[0,2100][100,2300]" },
-      matchedBy: ["text"] as const,
+      matchedBy: ["text"] as ("text")[],
       score: 5,
       matchQuality: "exact" as const,
       scoreBreakdown: ["exact text match"],
@@ -372,7 +372,7 @@ test("isWaitConditionMet supports visible gone and unique modes", async () => {
     totalMatches: 1,
     matches: [{
       node: { text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[0,1900][200,2060]" },
-      matchedBy: ["text"] as const,
+      matchedBy: ["text"] as ("text")[],
       score: 5,
       matchQuality: "exact" as const,
       scoreBreakdown: ["exact text match", "low_viewport_visibility:0.12"],
@@ -1173,26 +1173,26 @@ test("buildUiTargetResolution returns disabled_match when best candidate is disa
 
 test("buildUiTargetResolution auto-resolves a clearly dominant exact candidate", () => {
   const resolution = buildUiTargetResolution(
-    { text: "Allow" },
+    { resourceId: "alert_allow_button", text: "Allow" },
     {
-      query: { text: "Allow" },
+      query: { resourceId: "alert_allow_button", text: "Allow" },
       totalMatches: 2,
       matches: [
         {
           node: { text: "Allow", resourceId: "alert_allow_button", clickable: true, enabled: true, scrollable: false, bounds: "[240,620][360,680]" },
-          matchedBy: ["text", "clickable"],
-          score: 9,
+          matchedBy: ["resourceId", "text", "clickable"],
+          score: 12,
           matchQuality: "exact",
-          scoreBreakdown: ["exact text match", "clickable flag matched", "clickable node bonus"],
+          scoreBreakdown: ["exact resourceId match", "exact text match", "clickable flag matched", "clickable node bonus"],
           isOffScreen: false,
           viewportOverlapPercent: 1,
         },
         {
-          node: { text: "Allow access while using the app", clickable: false, enabled: true, scrollable: false, bounds: "[40,520][353,600]" },
+          node: { text: "Allow", clickable: true, enabled: true, scrollable: false, bounds: "[40,520][353,600]" },
           matchedBy: ["text"],
-          score: 5,
-          matchQuality: "substring",
-          scoreBreakdown: ["substring text match"],
+          score: 8,
+          matchQuality: "exact",
+          scoreBreakdown: ["exact text match", "clickable flag matched"],
           isOffScreen: false,
           viewportOverlapPercent: 1,
         },
@@ -1207,26 +1207,26 @@ test("buildUiTargetResolution auto-resolves a clearly dominant exact candidate",
 
 test("buildUiTargetResolution keeps peer exact candidates ambiguous", () => {
   const resolution = buildUiTargetResolution(
-    { text: "Allow" },
+    { resourceId: "allow_once", text: "Allow" },
     {
-      query: { text: "Allow" },
+      query: { resourceId: "allow_once", text: "Allow" },
       totalMatches: 2,
       matches: [
         {
           node: { text: "Allow", resourceId: "allow_once", clickable: true, enabled: true, scrollable: false, bounds: "[240,620][360,680]" },
-          matchedBy: ["text", "clickable"],
-          score: 9,
+          matchedBy: ["resourceId", "text", "clickable"],
+          score: 12,
           matchQuality: "exact",
-          scoreBreakdown: ["exact text match", "clickable flag matched"],
+          scoreBreakdown: ["exact resourceId match", "exact text match", "clickable flag matched"],
           isOffScreen: false,
           viewportOverlapPercent: 1,
         },
         {
           node: { text: "Allow", resourceId: "allow_always", clickable: true, enabled: true, scrollable: false, bounds: "[240,700][360,760]" },
-          matchedBy: ["text", "clickable"],
-          score: 8,
+          matchedBy: ["resourceId", "text", "clickable"],
+          score: 11,
           matchQuality: "exact",
-          scoreBreakdown: ["exact text match", "clickable flag matched"],
+          scoreBreakdown: ["exact resourceId match", "exact text match", "clickable flag matched"],
           isOffScreen: false,
           viewportOverlapPercent: 1,
         },
