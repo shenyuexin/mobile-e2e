@@ -54,6 +54,82 @@ import {
 } from "./ui-tool-utils.js";
 import { resolveUiTargetWithMaestroTool } from "./ui-inspection-tools.js";
 
+async function tapResolvedTarget(
+  input: ScrollAndTapElementInput,
+  resolveResult: ToolResult<ScrollAndResolveUiTargetData>,
+): Promise<ToolResult<TapElementData>> {
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const resolution = resolveResult.data.resolution;
+  if (!resolution.resolvedPoint || !resolution.resolvedBounds || !resolution.matchedNode) {
+    return {
+      status: "partial",
+      reasonCode: reasonCodeForResolutionStatus(resolution.status),
+      sessionId: input.sessionId,
+      durationMs: 0,
+      attempts: 1,
+      artifacts: resolveResult.artifacts,
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        query: resolveResult.data.query,
+        matchCount: resolution.matchCount,
+        resolution,
+        matchedNode: resolution.matchedNode,
+        resolvedBounds: resolution.resolvedBounds,
+        resolvedX: resolution.resolvedPoint?.x,
+        resolvedY: resolution.resolvedPoint?.y,
+        command: [],
+        exitCode: null,
+        supportLevel: resolveResult.data.supportLevel,
+      },
+      nextSuggestions: buildResolutionNextSuggestions(
+        resolution.status,
+        "scroll_and_tap_element",
+        resolution,
+      ),
+    };
+  }
+
+  const tapResult = await tapWithMaestroTool({
+    sessionId: input.sessionId,
+    platform: input.platform,
+    runnerProfile: input.runnerProfile,
+    harnessConfigPath: input.harnessConfigPath,
+    deviceId: input.deviceId,
+    x: resolution.resolvedPoint.x,
+    y: resolution.resolvedPoint.y,
+    dryRun: input.dryRun,
+  });
+
+  return {
+    status: tapResult.status,
+    reasonCode: tapResult.reasonCode,
+    sessionId: input.sessionId,
+    durationMs: tapResult.durationMs,
+    attempts: tapResult.attempts,
+    artifacts: tapResult.artifacts,
+    data: {
+      dryRun: Boolean(input.dryRun),
+      runnerProfile,
+      query: resolveResult.data.query,
+      matchCount: resolution.matchCount,
+      resolution,
+      matchedNode: resolution.matchedNode,
+      resolvedBounds: resolution.resolvedBounds,
+      resolvedX: resolution.resolvedPoint.x,
+      resolvedY: resolution.resolvedPoint.y,
+      command: tapResult.data.command,
+      exitCode: tapResult.data.exitCode,
+      supportLevel: resolveResult.data.supportLevel,
+    },
+    nextSuggestions: tapResult.nextSuggestions,
+  };
+}
+
+export const uiActionToolInternals = {
+  tapResolvedTarget,
+};
+
 export async function tapWithMaestroTool(
   input: TapInput,
 ): Promise<ToolResult<TapData>> {
@@ -1224,21 +1300,7 @@ export async function scrollAndTapElementWithMaestroTool(
     };
   }
 
-  const tapResult = await tapElementWithMaestroTool({
-    sessionId: input.sessionId,
-    platform,
-    runnerProfile: input.runnerProfile,
-    harnessConfigPath: input.harnessConfigPath,
-    deviceId: input.deviceId,
-    outputPath: input.outputPath,
-    resourceId: input.resourceId,
-    contentDesc: input.contentDesc,
-    text: input.text,
-    className: input.className,
-    clickable: input.clickable,
-    limit: input.limit,
-    dryRun: input.dryRun,
-  });
+  const tapResult = await tapResolvedTarget(input, resolveResult);
   stepResults.push({
     step: "tap",
     status: tapResult.status,
