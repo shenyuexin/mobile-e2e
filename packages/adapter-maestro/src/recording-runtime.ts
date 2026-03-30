@@ -705,4 +705,5 @@ export const recordingRuntimeInternals = {
 	parseSnapshotCapturedAtMs,
 	chooseNearestSnapshotRef,
 	mapMonotonicToIso,
+	resolveSelectorAtPoint,
 };

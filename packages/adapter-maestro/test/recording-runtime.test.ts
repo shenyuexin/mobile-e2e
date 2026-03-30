@@ -218,3 +218,26 @@ test("parseIosRawInputEvents extracts tap, type, and swipe", () => {
   assert.equal(parsed[1]?.textDelta, "hello@example.com");
   assert.equal(parsed[2]?.type, "swipe");
 });
+
+test("resolveSelectorAtPoint prefers iOS identifier-backed actionable node over smaller text child", () => {
+  const snapshot = JSON.stringify([
+    {
+      type: "Button",
+      identifier: "login-submit-button",
+      AXLabel: "Continue",
+      frame: { x: 40, y: 300, width: 240, height: 80 },
+      children: [
+        {
+          type: "StaticText",
+          name: "Continue",
+          AXLabel: "Continue",
+          frame: { x: 110, y: 330, width: 80, height: 20 },
+        },
+      ],
+    },
+  ]);
+
+  const selector = recordingRuntimeInternals.resolveSelectorAtPoint(snapshot, 120, 340);
+  assert.equal(selector?.identifier, "login-submit-button");
+  assert.equal(selector?.text, "Continue");
+});
