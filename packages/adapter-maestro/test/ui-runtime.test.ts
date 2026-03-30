@@ -84,6 +84,62 @@ test("runUiWaitPollingLoop aborts after repeated retryable snapshot failures", a
   assert.equal(outcome.state.result.totalMatches, 0);
 });
 
+test("runUiWaitPollingLoop does not treat off-screen or low-visibility matches as visible", async () => {
+  let currentTime = 0;
+  const snapshots = [
+    buildSnapshot({
+      queryResult: {
+        totalMatches: 1,
+        matches: [{
+          node: { text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[0,2100][100,2300]" },
+          matchedBy: ["text"] as QueryUiMatch["matchedBy"],
+          isOffScreen: true,
+          viewportOverlapPercent: 0,
+          score: 5,
+          matchQuality: "exact",
+          scoreBreakdown: ["exact text match"],
+        }],
+      },
+    }),
+    buildSnapshot({
+      queryResult: {
+        totalMatches: 1,
+        matches: [{
+          node: { text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[0,1900][200,2060]" },
+          matchedBy: ["text"] as QueryUiMatch["matchedBy"],
+          isOffScreen: false,
+          viewportOverlapPercent: 0.12,
+          score: 5,
+          matchQuality: "exact",
+          scoreBreakdown: ["exact text match", "low_viewport_visibility:0.12"],
+        }],
+      },
+    }),
+  ];
+  const outcome = await uiRuntimeInternals.runUiWaitPollingLoop({
+    query: { text: "Continue" },
+    waitUntil: "visible",
+    timeoutMs: 2,
+    intervalMs: 1,
+    defaultOutputPath: "artifacts/ui-dumps/test/android.xml",
+    previewCommand: ["preview"],
+    captureSnapshot: async () => snapshots.shift() ?? buildSnapshot(),
+    buildRetryableSnapshotFailure: () => ({
+      reasonCode: REASON_CODES.deviceUnavailable,
+      message: "unused",
+    }),
+    maxConsecutiveRetryableFailures: 2,
+    now: () => currentTime++,
+    delayMs: async () => undefined,
+  });
+
+  assert.equal(outcome.outcome, "timeout");
+  if (outcome.outcome !== "timeout") {
+    assert.fail("expected timeout outcome");
+  }
+  assert.equal(outcome.state.result.totalMatches, 1);
+});
+
 test("runUiScrollResolveLoop reports swipe failures with last snapshot state", async () => {
   const outcome = await uiRuntimeInternals.runUiScrollResolveLoop({
     query: { text: "Continue" },

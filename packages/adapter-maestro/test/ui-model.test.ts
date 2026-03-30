@@ -354,8 +354,36 @@ test("isWaitConditionMet supports visible gone and unique modes", async () => {
   const visibleResult = { query: normalizeQueryUiSelector({ contentDesc: "View products" }), ...queryUiNodes(nodes, normalizeQueryUiSelector({ contentDesc: "View products" })) };
   const ambiguousResult = { query: normalizeQueryUiSelector({ className: "android.widget.Button", clickable: true }), ...queryUiNodes(nodes, normalizeQueryUiSelector({ className: "android.widget.Button", clickable: true })) };
   const missingResult = { query: normalizeQueryUiSelector({ contentDesc: "does not exist" }), totalMatches: 0, matches: [] };
+  const offScreenResult = {
+    query: normalizeQueryUiSelector({ text: "Continue" }),
+    totalMatches: 1,
+    matches: [{
+      node: { text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[0,2100][100,2300]" },
+      matchedBy: ["text"] as const,
+      score: 5,
+      matchQuality: "exact" as const,
+      scoreBreakdown: ["exact text match"],
+      isOffScreen: true,
+      viewportOverlapPercent: 0,
+    }],
+  };
+  const lowVisibilityResult = {
+    query: normalizeQueryUiSelector({ text: "Continue" }),
+    totalMatches: 1,
+    matches: [{
+      node: { text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[0,1900][200,2060]" },
+      matchedBy: ["text"] as const,
+      score: 5,
+      matchQuality: "exact" as const,
+      scoreBreakdown: ["exact text match", "low_viewport_visibility:0.12"],
+      isOffScreen: false,
+      viewportOverlapPercent: 0.12,
+    }],
+  };
 
   assert.equal(isWaitConditionMet(visibleResult, "visible"), true);
+  assert.equal(isWaitConditionMet(offScreenResult, "visible"), false);
+  assert.equal(isWaitConditionMet(lowVisibilityResult, "visible"), false);
   assert.equal(isWaitConditionMet(ambiguousResult, "unique"), false);
   assert.equal(isWaitConditionMet(visibleResult, "unique"), true);
   assert.equal(isWaitConditionMet(missingResult, "gone"), true);

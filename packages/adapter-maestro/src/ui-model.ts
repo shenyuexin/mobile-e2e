@@ -754,7 +754,14 @@ export function isWaitConditionMet(result: InspectUiQueryResult, waitUntil: Wait
   if (waitUntil === "unique") {
     return result.totalMatches === 1;
   }
-  return result.totalMatches > 0;
+  const bestCandidate = result.matches[0];
+  if (!bestCandidate) {
+    return false;
+  }
+  if (bestCandidate.isOffScreen) {
+    return false;
+  }
+  return (bestCandidate.viewportOverlapPercent ?? 1) >= 0.25;
 }
 
 export function shouldAbortWaitForUiAfterReadFailure(state: WaitForUiReadFailureState): boolean {
