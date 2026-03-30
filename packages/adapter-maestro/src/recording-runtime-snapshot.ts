@@ -120,7 +120,13 @@ export function resolveSelectorAtPoint(
 		return undefined;
 	}
 	const nodes = parseSnapshotNodes(snapshot);
-	let best: { area: number; selector: ResolvedSelector } | undefined;
+	let best:
+		| {
+			area: number;
+			score: number;
+			selector: ResolvedSelector;
+		}
+		| undefined;
 	for (const node of nodes) {
 		const bounds = parseUiBounds(node.bounds);
 		if (!bounds) {
@@ -152,8 +158,15 @@ export function resolveSelectorAtPoint(
 			continue;
 		}
 		const area = bounds.width * bounds.height;
-		if (!best || area < best.area) {
-			best = { area, selector };
+		const score =
+			(selector.identifier || selector.resourceId ? 100 : 0)
+			+ (node.clickable ? 20 : 0)
+			+ (node.className === "Button" || node.className === "Cell" || node.className === "Link" ? 10 : 0)
+			- (node.className === "StaticText" ? 10 : 0)
+			+ (selector.contentDesc ? 3 : 0)
+			+ (selector.text ? 1 : 0);
+		if (!best || score > best.score || (score === best.score && area < best.area)) {
+			best = { area, score, selector };
 		}
 	}
 	return best?.selector;
