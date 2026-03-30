@@ -242,8 +242,7 @@ test("parseIosInspectNodes supports structured query and target resolution from 
   assert.equal(nodes.length, 5);
   assert.equal(result.totalMatches, 1);
   assert.equal(result.matches[0]?.node.resourceId, "signin_button");
-  assert.equal(resolution.status, "resolved");
-  assert.deepEqual(resolution.resolvedPoint, { x: 113, y: 164 });
+  assert.equal(resolution.status, "off_screen");
 });
 
 test("parseIosInspectNodes detects ambiguous iOS selector matches", async () => {
@@ -304,8 +303,8 @@ test("parseIosInspectNodes prefers stable identifiers over name-derived pseudo i
 
   assert.equal(resourceIdResult.totalMatches, 1);
   assert.equal(resourceIdResult.matches[0]?.node.resourceId, "primary_continue_button");
-  assert.equal(resolution.status, "resolved");
-  assert.equal(resolution.matchedNode?.resourceId, "primary_continue_button");
+  assert.equal(resolution.status, "off_screen");
+  assert.equal(resolution.bestCandidate?.node.resourceId, "primary_continue_button");
 
   const textQuery = normalizeQueryUiSelector({ text: "Continue", clickable: true });
   const textResult = { query: textQuery, ...queryUiNodes(nodes, textQuery) };
@@ -1274,6 +1273,54 @@ test("buildUiTargetResolution returns off_screen when all candidates are outside
   );
 
   assert.equal(resolution.status, "off_screen");
+});
+
+test("buildUiTargetResolution returns off_screen for a single exact match outside the viewport", () => {
+  const resolution = buildUiTargetResolution(
+    { text: "Continue" },
+    {
+      query: { text: "Continue" },
+      totalMatches: 1,
+      matches: [
+        {
+          node: { text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[0,2100][100,2300]" },
+          matchedBy: ["text"],
+          score: 5,
+          matchQuality: "exact",
+          scoreBreakdown: ["exact text match"],
+          isOffScreen: true,
+          viewportOverlapPercent: 0,
+        },
+      ],
+    },
+    "full",
+  );
+
+  assert.equal(resolution.status, "off_screen");
+});
+
+test("buildUiTargetResolution still resolves a single partially visible match", () => {
+  const resolution = buildUiTargetResolution(
+    { text: "Continue" },
+    {
+      query: { text: "Continue" },
+      totalMatches: 1,
+      matches: [
+        {
+          node: { text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[0,1900][200,2060]" },
+          matchedBy: ["text"],
+          score: 5,
+          matchQuality: "exact",
+          scoreBreakdown: ["exact text match"],
+          isOffScreen: false,
+          viewportOverlapPercent: 0.12,
+        },
+      ],
+    },
+    "full",
+  );
+
+  assert.equal(resolution.status, "resolved");
 });
 
 test("diffAmbiguousCandidates returns selector-friendly field differences", () => {
