@@ -578,11 +578,17 @@ function selectDominantCandidate(matches: InspectUiMatch[]): InspectUiMatch | un
 
   const secondHasStrongSelector = secondCandidate.matchedBy.some((field) => field === "resourceId" || field === "text" || field === "contentDesc");
   const secondIsPeerExact = secondHasStrongSelector && secondCandidate.matchQuality === "exact";
+  const bestHasExactResourceId = bestCandidate.matchQuality === "exact" && bestCandidate.matchedBy.includes("resourceId");
+  const secondHasExactResourceId = secondCandidate.matchQuality === "exact" && secondCandidate.matchedBy.includes("resourceId");
   const topScore = bestCandidate.score ?? 0;
   const secondScore = secondCandidate.score ?? 0;
   const scoreDelta = topScore - secondScore;
 
-  if (scoreDelta < 3 || secondIsPeerExact) {
+  if (scoreDelta < 3) {
+    return undefined;
+  }
+
+  if (secondIsPeerExact && !(bestHasExactResourceId && !secondHasExactResourceId)) {
     return undefined;
   }
 
