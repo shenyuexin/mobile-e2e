@@ -317,6 +317,81 @@ test("mapRawEventsToRecordedSteps splits keyboard chunks by timestamp gap", () =
   assert.equal(result.steps[1]?.actionIntent?.value, "cd");
 });
 
+test("mapRawEventsToRecordedSteps carries selector only from input-like tap targets", () => {
+  const result = mapRawEventsToRecordedSteps("rec-input-carry", [
+    buildEvent({
+      eventId: "tap-input",
+      timestamp: "2026-03-19T10:00:00.000Z",
+      eventType: "tap",
+      x: 120,
+      y: 300,
+      resolvedSelector: { identifier: "login-email-input", className: "TextField", text: "Email" },
+    }),
+    buildEvent({
+      eventId: "type-after-input",
+      timestamp: "2026-03-19T10:00:00.100Z",
+      eventType: "type",
+      textDelta: "demo@example.com",
+    }),
+  ], { includeAutoWaitStep: false });
+
+  assert.equal(result.steps[1]?.actionType, "type_into_element");
+  assert.equal((result.steps[1]?.actionIntent as { identifier?: string } | undefined)?.identifier, "login-email-input");
+});
+
+test("mapRawEventsToRecordedSteps does not carry selector from button tap into later type event", () => {
+  const result = mapRawEventsToRecordedSteps("rec-no-button-carry", [
+    buildEvent({
+      eventId: "tap-button",
+      timestamp: "2026-03-19T10:00:00.000Z",
+      eventType: "tap",
+      x: 120,
+      y: 300,
+      resolvedSelector: { identifier: "login-submit-button", className: "Button", text: "Continue" },
+    }),
+    buildEvent({
+      eventId: "type-after-button",
+      timestamp: "2026-03-19T10:00:00.100Z",
+      eventType: "type",
+      textDelta: "demo@example.com",
+    }),
+  ], { includeAutoWaitStep: false });
+
+  assert.equal(result.steps[1]?.actionType, "type_into_element");
+  assert.equal((result.steps[1]?.actionIntent as { identifier?: string } | undefined)?.identifier, undefined);
+  assert.equal(result.steps[1]?.confidence, "low");
+});
+
+test("mapRawEventsToRecordedSteps clears prior input target after non-input tap", () => {
+  const result = mapRawEventsToRecordedSteps("rec-clear-input-carry", [
+    buildEvent({
+      eventId: "tap-input",
+      timestamp: "2026-03-19T10:00:00.000Z",
+      eventType: "tap",
+      x: 120,
+      y: 300,
+      resolvedSelector: { identifier: "login-email-input", className: "TextField", text: "Email" },
+    }),
+    buildEvent({
+      eventId: "tap-button",
+      timestamp: "2026-03-19T10:00:00.050Z",
+      eventType: "tap",
+      x: 180,
+      y: 360,
+      resolvedSelector: { identifier: "login-submit-button", className: "Button", text: "Continue" },
+    }),
+    buildEvent({
+      eventId: "type-after-button",
+      timestamp: "2026-03-19T10:00:00.100Z",
+      eventType: "type",
+      textDelta: "demo@example.com",
+    }),
+  ], { includeAutoWaitStep: false });
+
+  assert.equal(result.steps[2]?.actionType, "type_into_element");
+  assert.equal((result.steps[2]?.actionIntent as { identifier?: string } | undefined)?.identifier, undefined);
+});
+
 test("renderRecordedStepsAsFlow escapes backslash content in inputText", () => {
   const rendered = renderRecordedStepsAsFlow({
     appId: "com.example.app",

@@ -124,6 +124,42 @@ function isWeakTapIntent(intent: ActionIntent): boolean {
   return false;
 }
 
+function isInputLikeIntent(intent: ActionIntent | undefined): boolean {
+  if (!intent) {
+    return false;
+  }
+  const extendedIntent = intent as ExtendedActionIntent;
+  const className = intent.className?.toLowerCase();
+  const identifier = extendedIntent.identifier?.toLowerCase();
+  const resourceId = intent.resourceId?.toLowerCase();
+  const text = intent.text?.toLowerCase();
+  const contentDesc = intent.contentDesc?.toLowerCase();
+
+  const containsInputHint = (value: string | undefined): boolean =>
+  {
+    if (!value) {
+      return false;
+    }
+    return value.includes("input")
+      || value.includes("field")
+      || value.includes("text")
+      || value.includes("email")
+      || value.includes("password")
+      || value.includes("search")
+      || value.includes("username")
+      || value.includes("phone");
+  };
+
+  return className === "edittext"
+    || className === "textfield"
+    || className === "securetextfield"
+    || containsInputHint(className)
+    || containsInputHint(identifier)
+    || containsInputHint(resourceId)
+    || containsInputHint(text)
+    || containsInputHint(contentDesc);
+}
+
 function toStep(
   stepNumber: number,
   event: RawRecordedEvent,
@@ -194,9 +230,10 @@ export function mapRawEventsToRecordedSteps(
           "Tap mapped to tap_element from resolved selector context.",
           tapIntent,
         );
-          lastInputIntent = tapIntent;
+          lastInputIntent = isInputLikeIntent(tapIntent) ? tapIntent : undefined;
         } else {
         mappedStep = toStep(stepNumber, event, "tap", "medium", "Tap mapped as coordinate fallback due to weak or missing selector context.");
+          lastInputIntent = undefined;
         }
       }
     } else if (event.eventType === "type") {
@@ -241,6 +278,7 @@ export function mapRawEventsToRecordedSteps(
         },
       );
     } else if (event.eventType === "swipe") {
+      lastInputIntent = undefined;
       const gesture = (event as RawRecordedEvent & { gesture?: { start?: { x: number; y: number }; end?: { x: number; y: number }; durationMs?: number } }).gesture;
       const startX = gesture?.start?.x ?? event.x;
       const startY = gesture?.start?.y ?? event.y;
@@ -267,6 +305,7 @@ export function mapRawEventsToRecordedSteps(
         } as ActionIntent),
       );
     } else if (event.eventType === "app_switch" || event.eventType === "home") {
+      lastInputIntent = undefined;
       stepNumber += 1;
       const appId = event.foregroundApp ?? options.defaultAppId;
       mappedStep = toStep(
@@ -281,6 +320,7 @@ export function mapRawEventsToRecordedSteps(
         },
       );
     } else if (event.eventType === "back") {
+      lastInputIntent = undefined;
       stepNumber += 1;
       const waitIntent = buildIntentFromEventSelector(event, "wait_for_ui");
       mappedStep = toStep(
