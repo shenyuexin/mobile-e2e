@@ -556,6 +556,36 @@ export function resolveFirstTapTarget(matches: InspectUiMatch[]): ResolvedUiTarg
   };
 }
 
+function selectDominantCandidate(matches: InspectUiMatch[]): InspectUiMatch | undefined {
+  const bestCandidate = matches[0];
+  const secondCandidate = matches[1];
+  if (!bestCandidate || !secondCandidate) {
+    return undefined;
+  }
+
+  const bestBounds = parseUiBounds(bestCandidate.node.bounds);
+  if (!bestBounds || bestCandidate.node.enabled === false || bestCandidate.isOffScreen) {
+    return undefined;
+  }
+
+  const bestHasStrongSelector = bestCandidate.matchedBy.some((field) => field === "resourceId" || field === "text" || field === "contentDesc");
+  if (!bestHasStrongSelector || bestCandidate.matchQuality !== "exact") {
+    return undefined;
+  }
+
+  const secondHasStrongSelector = secondCandidate.matchedBy.some((field) => field === "resourceId" || field === "text" || field === "contentDesc");
+  const secondIsPeerExact = secondHasStrongSelector && secondCandidate.matchQuality === "exact";
+  const topScore = bestCandidate.score ?? 0;
+  const secondScore = secondCandidate.score ?? 0;
+  const scoreDelta = topScore - secondScore;
+
+  if (scoreDelta < 3 || secondIsPeerExact) {
+    return undefined;
+  }
+
+  return bestCandidate;
+}
+
 export function buildUiTargetResolution(query: QueryUiSelector, result: InspectUiQueryResult, supportLevel: "full" | "partial"): UiTargetResolution {
   if (supportLevel === "partial") {
     return {
@@ -588,6 +618,23 @@ export function buildUiTargetResolution(query: QueryUiSelector, result: InspectU
 
   if (result.totalMatches > 1) {
     const bestCandidate = result.matches[0];
+    const dominantCandidate = selectDominantCandidate(result.matches);
+    if (dominantCandidate) {
+      const matchedNode = dominantCandidate.node;
+      const resolvedBounds = parseUiBounds(matchedNode.bounds);
+      if (resolvedBounds) {
+        return {
+          status: "resolved",
+          matchCount: result.totalMatches,
+          query,
+          matches: result.matches,
+          bestCandidate: dominantCandidate,
+          matchedNode,
+          resolvedBounds,
+          resolvedPoint: resolvedBounds.center,
+        };
+      }
+    }
     const topScore = bestCandidate?.score;
     const secondScore = result.matches[1]?.score;
     const ambiguityDiff = diffAmbiguousCandidates(result.matches);
