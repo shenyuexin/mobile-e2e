@@ -216,8 +216,22 @@ test("summarizeIosPerformance extracts top processes and hotspots from time prof
   assert.equal(summary.likelyCategory, "cpu");
   assert.equal(summary.cpu.topProcesses[0]?.name, "MyApp");
   assert.equal(summary.cpu.topHotspots[0]?.name, "MyAppMain");
+  assert.equal(summary.cpu.topHotspots[0]?.processName, "MyApp");
   assert.equal(summary.cpu.status !== "unknown", true);
   assert.match(summary.cpu.note, /not app-scoped/);
+});
+
+test("summarizeIosPerformance keeps duplicate frame names separate by process", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><summary><duration>3.0</duration></summary></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'><schema name="time-profile"></schema><row><process fmt="MyApp (123)"/><weight fmt="2.00 ms">2000000</weight><backtrace><frame name="SharedFrame"/></backtrace></row><row><process fmt="WindowServer (511)"/><weight fmt="1.50 ms">1500000</weight><backtrace><frame name="SharedFrame"/></backtrace></row></node></trace-query-result>`;
+
+  const summary = summarizeIosPerformance({ durationMs: 10, template: "time-profiler", tocXml, exportXml });
+
+  assert.equal(summary.cpu.topHotspots.length >= 2, true);
+  assert.equal(summary.cpu.topHotspots[0]?.name, "SharedFrame");
+  assert.equal(summary.cpu.topHotspots[0]?.processName, "MyApp");
+  assert.equal(summary.cpu.topHotspots[1]?.name, "SharedFrame");
+  assert.equal(summary.cpu.topHotspots[1]?.processName, "WindowServer");
 });
 
 test("summarizeIosPerformance stays unknown when schema exists but rows do not parse", () => {
