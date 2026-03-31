@@ -321,7 +321,7 @@ export function mapMonotonicToIso(
 	eventMonotonicMs: number | undefined,
 	anchorMonotonicMs: number | undefined,
 ): string {
-	if (!eventMonotonicMs || !anchorMonotonicMs) {
+	if (eventMonotonicMs === undefined || anchorMonotonicMs === undefined) {
 		return new Date().toISOString();
 	}
 	const delta = Math.max(0, eventMonotonicMs - anchorMonotonicMs);
