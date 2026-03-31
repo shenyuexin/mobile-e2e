@@ -71,6 +71,24 @@ test("renderRecordedStepsAsFlow exports iOS identifier selectors", () => {
   assert.equal(rendered.yaml.includes("identifier: \"login-email-input\""), true);
 });
 
+test("mapRawEventsToRecordedSteps keeps identifier on auto wait after identifier-backed tap", () => {
+  const result = mapRawEventsToRecordedSteps("rec-ios-auto-wait-identifier", [
+    buildEvent({
+      eventId: "tap-ios-identifier",
+      eventType: "tap",
+      x: 120,
+      y: 300,
+      resolvedSelector: {
+        identifier: "login-email-input",
+      },
+    }),
+  ]);
+
+  assert.equal(result.steps[0]?.actionType, "tap_element");
+  assert.equal(result.steps[1]?.actionType, "wait_for_ui");
+  assert.equal((result.steps[1]?.actionIntent as { identifier?: string } | undefined)?.identifier, "login-email-input");
+});
+
 test("mapRawEventsToRecordedSteps keeps identifier-backed iOS tap as tap_element", () => {
   const result = mapRawEventsToRecordedSteps("rec-ios-promoted-selector", [
     buildEvent({
