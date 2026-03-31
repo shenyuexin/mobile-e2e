@@ -73,6 +73,32 @@ test("mapMonotonicToIso anchors with capture start monotonic clock", () => {
   assert.equal(timestamp, "2026-03-19T10:01:40.000Z");
 });
 
+test("mapMonotonicToIso treats zero timestamps as valid anchored values", () => {
+  const timestamp = recordingRuntimeInternals.mapMonotonicToIso(
+    "2026-03-19T10:00:00.000Z",
+    0,
+    0,
+  );
+
+  assert.equal(timestamp, "2026-03-19T10:00:00.000Z");
+});
+
+test("mapMonotonicToIso keeps first synthetic iOS-style event anchored to session start", () => {
+  const firstTimestamp = recordingRuntimeInternals.mapMonotonicToIso(
+    "2026-03-19T10:00:00.000Z",
+    0,
+    0,
+  );
+  const secondTimestamp = recordingRuntimeInternals.mapMonotonicToIso(
+    "2026-03-19T10:00:00.000Z",
+    50,
+    0,
+  );
+
+  assert.equal(firstTimestamp, "2026-03-19T10:00:00.000Z");
+  assert.equal(secondTimestamp, "2026-03-19T10:00:00.050Z");
+});
+
 test("parseSnapshotCapturedAtMs extracts epoch millis from snapshot ref", () => {
   const parsed = recordingRuntimeInternals.parseSnapshotCapturedAtMs(
     "artifacts/record-snapshots/rec-1/rec-1-1773885602600.xml",
