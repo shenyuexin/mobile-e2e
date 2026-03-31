@@ -393,6 +393,23 @@ function extractXmlAttributes(xml: string, attribute: string): string[] {
   return results;
 }
 
+export function buildIosExportInspectionManifest(params: {
+  tocXml?: string;
+  exportXml?: string;
+}): {
+  captureScope: "attached_process" | "all_processes" | "unknown";
+  targetProcess?: string;
+  schemaNames: string[];
+  rowCount: number;
+} {
+  return {
+    captureScope: extractIosTocCaptureScope(params.tocXml),
+    targetProcess: extractIosTocTargetProcess(params.tocXml),
+    schemaNames: params.tocXml ? [...new Set(extractXmlAttributes(params.tocXml, "schema"))] : [],
+    rowCount: params.exportXml ? parseXmlRows(params.exportXml).length : 0,
+  };
+}
+
 export function buildBasePerformanceSummary(durationMs: number, supportLevel: "full" | "partial"): PerformanceStructuredSummary {
   return {
     captureMode: "time_window",
@@ -585,7 +602,8 @@ export function summarizeIosPerformance(params: {
   exportXml?: string;
 }): PerformanceStructuredSummary {
   const summary = buildBasePerformanceSummary(params.durationMs, "partial");
-  const schemaNames = params.tocXml ? [...new Set(extractXmlAttributes(params.tocXml, "schema"))] : [];
+  const inspection = buildIosExportInspectionManifest({ tocXml: params.tocXml, exportXml: params.exportXml });
+  const schemaNames = inspection.schemaNames;
   const exportText = `${params.tocXml ?? ""}\n${params.exportXml ?? ""}`.toLowerCase();
   const hitchMentions = (exportText.match(/hitch/g) ?? []).length;
   const frameMentions = (exportText.match(/frame/g) ?? []).length;
@@ -599,8 +617,8 @@ export function summarizeIosPerformance(params: {
   const topHotspots = params.template === "time-profiler" && params.exportXml ? buildIosHotspotsFromRows(params.exportXml) : [];
   const topCpu = topProcesses[0];
   const hasCpuSignal = topProcesses.length > 0 || topHotspots.length > 0;
-  const tocTargetProcess = extractIosTocTargetProcess(params.tocXml);
-  const captureScope = extractIosTocCaptureScope(params.tocXml);
+  const tocTargetProcess = inspection.targetProcess;
+  const captureScope = inspection.captureScope;
   const timeProfilerScopeNote = captureScope === "attached_process" && tocTargetProcess
     ? `This Time Profiler window was attached to ${tocTargetProcess}.`
     : "This Time Profiler window was not app-scoped; treat the CPU ranking as all-process simulator context rather than direct app attribution.";

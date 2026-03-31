@@ -21,6 +21,7 @@ import {
   resolveRepoPath,
 } from "./harness-config.js";
 import {
+  buildIosExportInspectionManifest,
   buildAndroidPerformanceData,
   buildIosPerformanceData,
   buildPerformanceMarkdownReport,
@@ -94,6 +95,8 @@ function buildIosPerformanceTranscript(params: {
   deviceId: string;
   appId?: string;
   attachTarget?: string;
+  tocXml?: string;
+  exportXml?: string;
   executions?: Array<{ label: string; execution: CommandExecution }>;
 }): string {
   const lines = [
@@ -111,6 +114,14 @@ function buildIosPerformanceTranscript(params: {
     lines.push(`exitCode.${item.label}=${String(item.execution.exitCode)}`);
     lines.push(`stdout.${item.label}=${JSON.stringify(item.execution.stdout.slice(0, 400))}`);
     lines.push(`stderr.${item.label}=${JSON.stringify(item.execution.stderr.slice(0, 400))}`);
+  }
+
+  if (params.tocXml || params.exportXml) {
+    const inspection = buildIosExportInspectionManifest({ tocXml: params.tocXml, exportXml: params.exportXml });
+    lines.push(`captureScope=${inspection.captureScope}`);
+    lines.push(`targetProcess=${inspection.targetProcess ?? ""}`);
+    lines.push(`schemaNames=${inspection.schemaNames.join(",")}`);
+    lines.push(`rowCount=${String(inspection.rowCount)}`);
   }
 
   return `${lines.join(String.fromCharCode(10))}${String.fromCharCode(10)}`;
@@ -795,6 +806,8 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
       deviceId,
       appId,
       attachTarget,
+      tocXml,
+      exportXml,
       executions: [
         { label: plan.steps[0]?.label ?? "record", execution: recordExecution },
         { label: plan.steps[1]?.label ?? "toc", execution: tocExecution },

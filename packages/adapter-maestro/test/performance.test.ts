@@ -6,7 +6,7 @@ import { classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPer
 import type { DoctorCheck } from "@mobile-e2e-mcp/contracts";
 import { buildCapabilityProfile } from "../src/capability-model.ts";
 import { buildAndroidPerformancePlan, buildIosPerformancePlan, resolveAndroidPerformancePlanStrategy, resolveTraceProcessorPath } from "../src/performance-runtime.ts";
-import { buildPerformanceNextSuggestions, parseTraceProcessorTsv, summarizeAndroidPerformance, summarizeIosPerformance } from "../src/performance-model.ts";
+import { buildIosExportInspectionManifest, buildPerformanceNextSuggestions, parseTraceProcessorTsv, summarizeAndroidPerformance, summarizeIosPerformance } from "../src/performance-model.ts";
 import { buildFailureReason } from "../src/runtime-shared.ts";
 
 const fixtureRoot = path.resolve(import.meta.dirname, "fixtures", "performance");
@@ -278,6 +278,54 @@ test("summarizeIosPerformance includes aggregated allocation fields and pressure
   assert.equal(summary.memory.allocationCountByProcess?.MyApp, 3);
   assert.equal(summary.memory.memoryPressureSignal, "growth_spike");
   assert.equal(summary.memory.topAllocationCategories?.[0], "VM: ImageIO 4 MB");
+});
+
+test("buildIosExportInspectionManifest reports capture scope, target process, schemas, and row count", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><info><target><process type="attached" name="Expo Go"/></target></info><data><table schema="allocations"/><table schema="cpu-profile"/></data></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node><schema name="allocations"></schema><row><process fmt="Expo Go (123)"/></row><row><process fmt="Expo Go (123)"/></row></node></trace-query-result>`;
+
+  const manifest = buildIosExportInspectionManifest({ tocXml, exportXml });
+
+  assert.equal(manifest.captureScope, "attached_process");
+  assert.equal(manifest.targetProcess, "Expo Go");
+  assert.deepEqual(manifest.schemaNames, ["allocations", "cpu-profile"]);
+  assert.equal(manifest.rowCount, 2);
+});
+
+test("buildIosExportInspectionManifest stays honest when export rows are absent", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><info><target><process type="all-processes" name="Simulator"/></target></info><data><table schema="time-profile"/></data></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node><schema name="time-profile"></schema></node></trace-query-result>`;
+
+  const manifest = buildIosExportInspectionManifest({ tocXml, exportXml });
+
+  assert.equal(manifest.captureScope, "all_processes");
+  assert.equal(manifest.targetProcess, "Simulator");
+  assert.deepEqual(manifest.schemaNames, ["time-profile"]);
+  assert.equal(manifest.rowCount, 0);
+});
+
+test("buildIosExportInspectionManifest reports capture scope, target process, schemas, and row count", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><info><target><process type="attached" name="Expo Go"/></target></info><data><table schema="allocations"/><table schema="cpu-profile"/></data></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node><schema name="allocations"></schema><row><process fmt="Expo Go (123)"/></row><row><process fmt="Expo Go (123)"/></row></node></trace-query-result>`;
+
+  const manifest = buildIosExportInspectionManifest({ tocXml, exportXml });
+
+  assert.equal(manifest.captureScope, "attached_process");
+  assert.equal(manifest.targetProcess, "Expo Go");
+  assert.deepEqual(manifest.schemaNames, ["allocations", "cpu-profile"]);
+  assert.equal(manifest.rowCount, 2);
+});
+
+test("buildIosExportInspectionManifest stays honest when export rows are absent", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><info><target><process type="all-processes" name="Simulator"/></target></info><data><table schema="time-profile"/></data></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node><schema name="time-profile"></schema></node></trace-query-result>`;
+
+  const manifest = buildIosExportInspectionManifest({ tocXml, exportXml });
+
+  assert.equal(manifest.captureScope, "all_processes");
+  assert.equal(manifest.targetProcess, "Simulator");
+  assert.deepEqual(manifest.schemaNames, ["time-profile"]);
+  assert.equal(manifest.rowCount, 0);
 });
 
 test("summarizeAndroidPerformance labels slice and counter fallbacks as heuristic", () => {
