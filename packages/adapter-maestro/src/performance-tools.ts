@@ -36,7 +36,7 @@ import {
   buildTraceProcessorShellCommand,
   resolveTraceProcessorPath,
 } from "./performance-runtime.js";
-import { buildFailureReason, buildExecutionEvidence, executeRunner, type CommandExecution } from "./runtime-shared.js";
+import { buildFailureReason, buildExecutionEvidence, executeRunner, shellEscape, type CommandExecution } from "./runtime-shared.js";
 
 const DEFAULT_DEVICE_COMMAND_TIMEOUT_MS = 5000;
 
@@ -83,6 +83,37 @@ async function runCommandSafely(command: string[], repoRoot: string, timeoutMs =
 
 async function checkCommandAvailable(repoRoot: string, command: string[], timeoutMs = DEFAULT_DEVICE_COMMAND_TIMEOUT_MS): Promise<CommandExecution> {
   return runCommandSafely(command, repoRoot, timeoutMs);
+}
+
+function buildIosPerformanceTranscript(params: {
+  plan: {
+    template: IosPerformanceTemplate;
+    templateName: string;
+    steps: Array<{ label: string; command: string[] }>;
+  };
+  deviceId: string;
+  appId?: string;
+  attachTarget?: string;
+  executions?: Array<{ label: string; execution: CommandExecution }>;
+}): string {
+  const lines = [
+    `template=${params.plan.template}`,
+    `templateName=${params.plan.templateName}`,
+    `deviceId=${params.deviceId}`,
+    `appId=${params.appId ?? ""}`,
+    `attachTarget=${params.attachTarget ?? ""}`,
+  ];
+
+  for (const step of params.plan.steps) {
+    lines.push(`command.${step.label}=${step.command.map((part) => shellEscape(part)).join(" ")}`);
+  }
+  for (const item of params.executions ?? []) {
+    lines.push(`exitCode.${item.label}=${String(item.execution.exitCode)}`);
+    lines.push(`stdout.${item.label}=${JSON.stringify(item.execution.stdout.slice(0, 400))}`);
+    lines.push(`stderr.${item.label}=${JSON.stringify(item.execution.stderr.slice(0, 400))}`);
+  }
+
+  return `${lines.join(String.fromCharCode(10))}${String.fromCharCode(10)}`;
 }
 
 function reasonCodeForExecution(execution: CommandExecution): ReasonCode {
@@ -649,9 +680,17 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
   const supportLevel: "partial" = "partial";
 
   await mkdir(path.resolve(repoRoot, plan.outputPath), { recursive: true });
-  const plannedArtifactPaths = [plan.artifacts.traceBundlePath, plan.artifacts.tocPath, plan.artifacts.exportPath, plan.artifacts.summaryPath, plan.artifacts.reportPath].filter((value): value is string => Boolean(value));
+  const plannedArtifactPaths = [plan.artifacts.traceBundlePath, plan.artifacts.tocPath, plan.artifacts.exportPath, plan.artifacts.rawAnalysisPath, plan.artifacts.summaryPath, plan.artifacts.reportPath].filter((value): value is string => Boolean(value));
 
   if (input.dryRun) {
+    if (plan.artifacts.rawAnalysisPath) {
+      await writeFile(path.resolve(repoRoot, plan.artifacts.rawAnalysisPath), buildIosPerformanceTranscript({
+        plan,
+        deviceId,
+        appId,
+        attachTarget,
+      }), "utf8");
+    }
     const summary = summarizeIosPerformance({ durationMs: plan.durationMs, template: plan.template });
     const data = buildIosPerformanceData({
       dryRun: true,
@@ -676,7 +715,7 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
-      artifacts: [],
+      artifacts: plan.artifacts.rawAnalysisPath ? [plan.artifacts.rawAnalysisPath] : [],
       data,
       nextSuggestions: [
         "Run measure_ios_performance without dryRun to capture an xctrace bundle.",
@@ -688,6 +727,15 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
 
   const recordExecution = await runCommandSafely(plan.steps[0].command, repoRoot, plan.durationMs + 30000);
   if (recordExecution.exitCode !== 0) {
+    if (plan.artifacts.rawAnalysisPath) {
+      await writeFile(path.resolve(repoRoot, plan.artifacts.rawAnalysisPath), buildIosPerformanceTranscript({
+        plan,
+        deviceId,
+        appId,
+        attachTarget,
+        executions: [{ label: plan.steps[0]?.label ?? "record", execution: recordExecution }],
+      }), "utf8");
+    }
     const summary = summarizeIosPerformance({ durationMs: plan.durationMs, template: plan.template });
     const data = buildIosPerformanceData({
       dryRun: false,
@@ -701,10 +749,10 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
       commands: plan.steps.map((step) => step.command),
       exitCode: recordExecution.exitCode,
       supportLevel,
-      artifactPaths: [],
+      artifactPaths: plan.artifacts.rawAnalysisPath ? [plan.artifacts.rawAnalysisPath] : [],
       artifactsByKind: plan.artifacts,
       summary,
-      evidence: undefined,
+      evidence: plan.artifacts.rawAnalysisPath ? buildPerformanceEvidence([plan.artifacts.rawAnalysisPath], supportLevel) : undefined,
     });
     return {
       status: "failed",
@@ -712,7 +760,7 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
-      artifacts: [],
+      artifacts: plan.artifacts.rawAnalysisPath ? [plan.artifacts.rawAnalysisPath] : [],
       data,
       nextSuggestions: buildIosRecordFailureSuggestions(appId, plan.template, `${recordExecution.stderr}\n${recordExecution.stdout}`, attachTarget),
     };
@@ -739,6 +787,21 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
   } else {
     status = "partial";
     reasonCode = reasonCodeForExecution(exportExecution);
+  }
+
+  if (plan.artifacts.rawAnalysisPath) {
+    await writeFile(path.resolve(repoRoot, plan.artifacts.rawAnalysisPath), buildIosPerformanceTranscript({
+      plan,
+      deviceId,
+      appId,
+      attachTarget,
+      executions: [
+        { label: plan.steps[0]?.label ?? "record", execution: recordExecution },
+        { label: plan.steps[1]?.label ?? "toc", execution: tocExecution },
+        { label: plan.steps[2]?.label ?? "export", execution: exportExecution },
+      ],
+    }), "utf8");
+    artifactPaths.push(plan.artifacts.rawAnalysisPath);
   }
 
   const summary = summarizeIosPerformance({ durationMs: plan.durationMs, template: plan.template, tocXml, exportXml });
