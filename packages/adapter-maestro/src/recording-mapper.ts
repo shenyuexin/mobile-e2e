@@ -350,6 +350,7 @@ export function mapRawEventsToRecordedSteps(
         actionIntent: {
           actionType: "wait_for_ui",
           timeoutMs: 3000,
+          ...(autoWaitTarget.identifier ? { identifier: autoWaitTarget.identifier } : {}),
           text: autoWaitTarget.text,
           resourceId: autoWaitTarget.id,
         },
