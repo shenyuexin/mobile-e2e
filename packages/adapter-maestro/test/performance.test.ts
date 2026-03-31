@@ -168,6 +168,8 @@ test("measureIosPerformanceWithMaestro previews iOS dry-run output", async () =>
   assert.equal(result.data.supportLevel, "partial");
   assert.equal(result.data.captureMode, "time_window");
   assert.equal(result.data.template, "time-profiler");
+  assert.equal(result.data.artifactsByKind.rawAnalysisPath?.endsWith(".analysis.txt"), true);
+  assert.equal(result.data.artifactPaths.some((item) => item.endsWith(".analysis.txt")), true);
   assert.equal(result.data.evidence?.some((item) => item.kind === "performance_trace"), true);
 });
 
@@ -187,7 +189,9 @@ test("measureIosPerformanceWithMaestro returns configuration failure when xcrun 
     assert.equal(result.status, "failed");
     assert.equal(result.reasonCode, "CONFIGURATION_ERROR");
     assert.equal(result.data.supportLevel, "partial");
-    assert.equal(result.artifacts.length, 0);
+    assert.equal(result.artifacts.length, 1);
+    assert.equal(result.artifacts[0]?.endsWith(".analysis.txt"), true);
+    assert.equal(result.data.artifactPaths[0]?.endsWith(".analysis.txt"), true);
     assert.match(result.nextSuggestions[0] ?? "", /xctrace recording failed/i);
   } finally {
     process.env.PATH = originalPath;

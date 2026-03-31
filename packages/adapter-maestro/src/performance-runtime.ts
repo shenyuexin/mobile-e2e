@@ -72,6 +72,7 @@ function buildIosArtifacts(outputRoot: string, runnerProfile: RunnerProfile, tem
     traceBundlePath: path.posix.join(outputRoot, `${prefix}.${template}.trace`),
     tocPath: path.posix.join(outputRoot, `${prefix}.${template}.toc.xml`),
     exportPath: path.posix.join(outputRoot, `${prefix}.${template}.export.xml`),
+    rawAnalysisPath: path.posix.join(outputRoot, `${prefix}.${template}.analysis.txt`),
     summaryPath: path.posix.join(outputRoot, `${prefix}.${template}.summary.json`),
     reportPath: path.posix.join(outputRoot, `${prefix}.${template}.md`),
   };
