@@ -331,7 +331,7 @@ function selectPreferredProcessName(primary: string | undefined, fallback: strin
 }
 
 function buildIosHotspotsFromRows(exportXml: string): PerformanceHotspot[] {
-  const totals = new Map<string, { totalDurMs: number; occurrences: number }>();
+  const totals = new Map<string, { processName?: string; totalDurMs: number; occurrences: number }>();
   for (const row of parseXmlRows(exportXml)) {
     const weightRaw = extractXmlAttributeValue(row, "weight", "fmt");
     const frameName = extractXmlAttributeValue(row, "frame", "name");
@@ -342,14 +342,22 @@ function buildIosHotspotsFromRows(exportXml: string): PerformanceHotspot[] {
     if (weightMs === undefined) {
       continue;
     }
-    const key = decodeXmlEntities(frameName).trim();
-    const previous = totals.get(key) ?? { totalDurMs: 0, occurrences: 0 };
+    const decodedFrameName = decodeXmlEntities(frameName).trim();
+    const processName = normalizeIosProcessName(extractXmlAttributeValue(row, "process", "fmt"));
+    const normalizedProcessName = processName === "<unknown>" ? undefined : processName;
+    const key = `${normalizedProcessName ?? "<unknown>"}::${decodedFrameName}`;
+    const previous = totals.get(key) ?? { processName: normalizedProcessName, totalDurMs: 0, occurrences: 0 };
     previous.totalDurMs += weightMs;
     previous.occurrences += 1;
     totals.set(key, previous);
   }
   return [...totals.entries()]
-    .map(([name, value]) => ({ name, totalDurMs: Number(value.totalDurMs.toFixed(2)), occurrences: value.occurrences }))
+    .map(([key, value]) => ({
+      name: key.split("::")[1] ?? key,
+      processName: value.processName,
+      totalDurMs: Number(value.totalDurMs.toFixed(2)),
+      occurrences: value.occurrences,
+    }))
     .sort((left, right) => (right.totalDurMs ?? 0) - (left.totalDurMs ?? 0))
     .slice(0, 5);
 }
