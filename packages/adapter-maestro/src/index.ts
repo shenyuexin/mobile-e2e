@@ -293,9 +293,11 @@ import {
   runFlowWithRuntime,
 } from "./flow-runtime.js";
 import {
+  buildIosAppScopeNote as buildIosAppScopeNoteFromPerformanceTools,
   isPerfettoShellProbeAvailable as isPerfettoShellProbeAvailableFromPerformanceTools,
   measureAndroidPerformanceWithRuntime,
   measureIosPerformanceWithRuntime,
+  shouldResolveIosAttachTarget as shouldResolveIosAttachTargetFromPerformanceTools,
 } from "./performance-tools.js";
 import {
   buildLogSummary as buildLogSummaryWithSessionState,
@@ -728,6 +730,18 @@ export async function collectDebugEvidenceWithMaestro(input: CollectDebugEvidenc
 
 export function isPerfettoShellProbeAvailable(execution: CommandExecution): boolean {
   return isPerfettoShellProbeAvailableFromPerformanceTools(execution);
+}
+
+export function buildIosAppScopeNote(appId?: string, attachTarget?: string): string {
+  return buildIosAppScopeNoteFromPerformanceTools(appId, attachTarget);
+}
+
+export function shouldResolveIosAttachTarget(params: {
+  dryRun?: boolean;
+  template: IosPerformanceTemplate;
+  appId?: string;
+}): boolean {
+  return shouldResolveIosAttachTargetFromPerformanceTools(params);
 }
 
 export async function measureAndroidPerformanceWithMaestro(input: MeasureAndroidPerformanceInput): Promise<ToolResult<MeasureAndroidPerformanceData>> {

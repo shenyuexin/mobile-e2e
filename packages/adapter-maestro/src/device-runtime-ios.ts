@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { probeIdbAvailability } from "./ui-runtime.js";
 import type { DeviceRuntimePlatformHooks } from "./device-runtime-platform.js";
+import type { CommandExecution } from "./runtime-shared.js";
 import { executeRunner, shellEscape } from "./runtime-shared.js";
 
 const DEFAULT_DEVICE_COMMAND_TIMEOUT_MS = 5000;
@@ -68,14 +69,19 @@ export function extractIosSimulatorProcessId(launchctlOutput: string, appId: str
 }
 
 async function queryIosSimulatorProcessId(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
-  const execution = await executeRunner([
-    "xcrun",
-    "simctl",
-    "spawn",
-    deviceId,
-    "launchctl",
-    "list",
-  ], repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS });
+  let execution: CommandExecution;
+  try {
+    execution = await executeRunner([
+      "xcrun",
+      "simctl",
+      "spawn",
+      deviceId,
+      "launchctl",
+      "list",
+    ], repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS });
+  } catch {
+    return undefined;
+  }
   if (execution.exitCode !== 0) {
     return undefined;
   }
@@ -87,13 +93,17 @@ export async function resolveIosSimulatorAttachTarget(repoRoot: string, deviceId
   if (existingPid) {
     return existingPid;
   }
-  await executeRunner([
-    "xcrun",
-    "simctl",
-    "launch",
-    deviceId,
-    appId,
-  ], repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS });
+  try {
+    await executeRunner([
+      "xcrun",
+      "simctl",
+      "launch",
+      deviceId,
+      appId,
+    ], repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS });
+  } catch {
+    return undefined;
+  }
   return queryIosSimulatorProcessId(repoRoot, deviceId, appId);
 }
 

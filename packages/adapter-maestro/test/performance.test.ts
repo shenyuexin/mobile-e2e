@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPerformanceWithMaestro, measureIosPerformanceWithMaestro, runDoctor } from "../src/index.ts";
+import { buildIosAppScopeNote, classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPerformanceWithMaestro, measureIosPerformanceWithMaestro, runDoctor, shouldResolveIosAttachTarget } from "../src/index.ts";
 import type { DoctorCheck } from "@mobile-e2e-mcp/contracts";
 import { IOS_PARTIAL_GROUP_FRONTIER, IOS_PARTIAL_TOOL_FRONTIER, buildCapabilityProfile } from "../src/capability-model.ts";
 import { extractIosSimulatorProcessId } from "../src/device-runtime-ios.ts";
@@ -89,6 +89,38 @@ test("buildIosPerformancePlan uses attach target when provided", () => {
     "--attach",
     "43127",
   ]);
+});
+
+test("buildIosPerformancePlan uses attach target for time-profiler when provided", () => {
+  const plan = buildIosPerformancePlan({ sessionId: "ios-time-profiler-attach", template: "time-profiler", appId: "host.exp.Exponent" }, "phase1", "sim-1", "43127");
+
+  assert.equal(plan.attachTarget, "43127");
+  assert.deepEqual(plan.steps[0]?.command.slice(0, 9), [
+    "xcrun",
+    "xctrace",
+    "record",
+    "--template",
+    "Time Profiler",
+    "--device",
+    "sim-1",
+    "--attach",
+    "43127",
+  ]);
+});
+
+test("shouldResolveIosAttachTarget includes time-profiler and memory only when app id exists", () => {
+  assert.equal(shouldResolveIosAttachTarget({ dryRun: false, template: "memory", appId: "host.exp.Exponent" }), true);
+  assert.equal(shouldResolveIosAttachTarget({ dryRun: false, template: "time-profiler", appId: "host.exp.Exponent" }), true);
+  assert.equal(shouldResolveIosAttachTarget({ dryRun: false, template: "animation-hitches", appId: "host.exp.Exponent" }), false);
+  assert.equal(shouldResolveIosAttachTarget({ dryRun: true, template: "time-profiler", appId: "host.exp.Exponent" }), false);
+  assert.equal(shouldResolveIosAttachTarget({ dryRun: false, template: "time-profiler", appId: undefined }), false);
+});
+
+test("buildIosAppScopeNote stays explicit when app-scoped attach could not be established", () => {
+  assert.match(
+    buildIosAppScopeNote("host.exp.Exponent", undefined),
+    /could not be attached by pid and may fall back to all-process capture/i,
+  );
 });
 
 test("buildCapabilityProfile locks the current iOS partial frontier", () => {
@@ -266,6 +298,16 @@ test("summarizeIosPerformance extracts top processes and hotspots from time prof
   assert.equal(summary.cpu.topHotspots[0]?.processName, "MyApp");
   assert.equal(summary.cpu.status !== "unknown", true);
   assert.match(summary.cpu.note, /not app-scoped/);
+});
+
+test("summarizeIosPerformance marks attached time profiler output as app-scoped", () => {
+  const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><info><target><process type="attached" name="MyApp"/></target></info><summary><duration>3.0</duration></summary><data><table schema="time-profile"/></data></run></trace-toc>`;
+  const exportXml = `<?xml version="1.0"?><trace-query-result><node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'><schema name="time-profile"></schema><row><process fmt="MyApp (123)"/><weight fmt="2.00 ms">2000000</weight><backtrace><frame name="MyAppMain"/></backtrace></row><row><process fmt="MyApp (123)"/><weight fmt="1.50 ms">1500000</weight><backtrace><frame name="MyHotLoop"/></backtrace></row></node></trace-query-result>`;
+
+  const summary = summarizeIosPerformance({ durationMs: 10, template: "time-profiler", tocXml, exportXml });
+
+  assert.equal(summary.cpu.topProcesses[0]?.name, "MyApp");
+  assert.doesNotMatch(summary.cpu.note ?? "", /not app-scoped/);
 });
 
 test("summarizeIosPerformance keeps duplicate frame names separate by process", () => {
