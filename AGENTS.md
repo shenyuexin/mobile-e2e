@@ -46,54 +46,38 @@ If your task adds or changes any of the following, you must read `docs/engineeri
 
 Do not rely on memory or prior sessions for these rules. Re-read the guideline in the current session before making changes.
 
-## 3) Monorepo Map
-
-- `packages/contracts`: shared types and tool/session result contracts
-- `packages/core`: policy engine, governance, session store/scheduler, execution coordination
-- `packages/adapter-maestro`: deterministic adapter implementation and UI execution helpers
-- `packages/adapter-vision`: OCR/vision fallback capability
-- `packages/mcp-server`: MCP server, tool registry, stdio server, dev CLI
-- `packages/cli`: CLI package boundary
-- `configs/profiles`: framework profile contracts
-- `configs/policies`: access/governance policy baselines
-- `flows/samples`: sample flow baselines
-
-## 4) Primary Runtime & Verification Commands
-
-From repo root:
-
-```bash
-pnpm install
-pnpm build
-pnpm typecheck
-pnpm test
-pnpm mcp:dev
-pnpm mcp:stdio
-```
-
-## 5) Global Invariants (Do Not Break)
+## 3) Global Invariants (Do Not Break)
 
 1. Deterministic path is primary; visual fallback is bounded and explicit.
 2. Tool responses are structured and machine-consumable (not raw string-only outputs).
 3. Session and policy context must remain auditable.
 4. Failure paths should preserve evidence quality (artifacts/timeline context).
 
-## 6) Recommended Edit Strategy
+## 4) Recommended Edit Strategy
 
 1. Identify target package boundary first.
 2. Mirror existing naming and file placement conventions.
 3. Update docs near changed behavior (README/docs/tests notes) when behavior changes.
 4. Re-run relevant verification commands before proposing changes.
 
-## 6.5) Commit Message Expectations
+## 5) Canonical References
 
-- Commit messages should include a concise semantic-style title plus body text explaining **why** the change is needed.
-- Do not stop at a title-only commit message when the change affects behavior, architecture, release automation, policy, or developer workflow.
-- Good default pattern:
-  - Title: `type(scope): short summary`
-  - Body: 1-2 short paragraphs or bullets covering why the change was made, what boundary or workflow it affects, and any important rollout/review context.
+Use these as source-of-truth references instead of duplicating details in this file:
 
-## 6.6) Release Doc-Sync Guardrail (README is not always required)
+- `README.md` / `README.zh-CN.md` for monorepo map and runtime/verification commands
+- `CONTRIBUTING.md` and `.github/PULL_REQUEST_TEMPLATE.md` for commit/PR quality expectations
+- `tests/README.md` for test-layer validation scope
+
+## 6) Where to Go Deeper
+
+- `docs/engineering/ai-first-capability-expansion-guideline.md`
+- `docs/architecture/overview.md`
+- `docs/architecture/architecture.md`
+- `docs/architecture/capability-map.md`
+- `docs/architecture/governance-security.md`
+- `tests/README.md`
+
+### 6.6) Release Doc-Sync Guardrail (README is not always required)
 
 Use a layered **doc-sync** check for releases: PR gate first, pre-tag drift-check second, and tag-workflow warning fallback.
 Do not hard-block tag publishing solely because README was not edited.
@@ -102,11 +86,3 @@ Canonical policy, trigger paths, and exemptions are maintained in:
 
 - `docs/delivery/npm-release-and-git-tagging.zh-CN.md`
 
-## 7) Where to Go Deeper
-
-- `docs/engineering/ai-first-capability-expansion-guideline.md`
-- `docs/architecture/overview.md`
-- `docs/architecture/architecture.md`
-- `docs/architecture/capability-map.md`
-- `docs/architecture/governance-security.md`
-- `tests/README.md`
