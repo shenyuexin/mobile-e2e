@@ -5,6 +5,7 @@ import test from "node:test";
 import { classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPerformanceWithMaestro, measureIosPerformanceWithMaestro, runDoctor } from "../src/index.ts";
 import type { DoctorCheck } from "@mobile-e2e-mcp/contracts";
 import { buildCapabilityProfile } from "../src/capability-model.ts";
+import { extractIosSimulatorProcessId } from "../src/device-runtime-ios.ts";
 import { buildAndroidPerformancePlan, buildIosPerformancePlan, resolveAndroidPerformancePlanStrategy, resolveTraceProcessorPath } from "../src/performance-runtime.ts";
 import { buildIosExportInspectionManifest, buildPerformanceNextSuggestions, parseTraceProcessorTsv, summarizeAndroidPerformance, summarizeIosPerformance } from "../src/performance-model.ts";
 import { buildFailureReason } from "../src/runtime-shared.ts";
@@ -88,6 +89,16 @@ test("buildIosPerformancePlan uses attach target when provided", () => {
     "--attach",
     "43127",
   ]);
+});
+
+test("extractIosSimulatorProcessId parses launchctl output for app pid", () => {
+  const pid = extractIosSimulatorProcessId([
+    "PID\tStatus\tLabel",
+    "4242\t0\tcom.example.app",
+    "101\t0\tcom.apple.springboard",
+  ].join("\n"), "com.example.app");
+
+  assert.equal(pid, "4242");
 });
 
 test("resolveTraceProcessorPath discovers common fallback paths", () => {
