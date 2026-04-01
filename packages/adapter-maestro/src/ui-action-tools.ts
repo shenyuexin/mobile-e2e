@@ -833,6 +833,54 @@ export async function typeIntoElementWithMaestroTool(
     };
   }
 
+  if (
+    typeResult.status === "success"
+    && runtimeHooks.verifyTypedPostcondition
+    && !input.dryRun
+    && resolution.matchedNode
+  ) {
+    const selection = await loadHarnessSelection(
+      repoRoot,
+      platform,
+      runnerProfile,
+      input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH,
+    );
+    const deviceId =
+      input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(platform);
+    const verification = await runtimeHooks.verifyTypedPostcondition({
+      repoRoot,
+      deviceId,
+      resolvedNode: resolution.matchedNode,
+      resolvedPoint: resolution.resolvedPoint,
+      typedValue: input.value,
+      runtimeHooks,
+    });
+    if (!verification.verified && verification.reasonCode) {
+      return {
+        status: "partial",
+        reasonCode: verification.reasonCode,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts:
+          resolveResult.attempts + focusResult.attempts + typeResult.attempts + 1,
+        artifacts: resolveResult.artifacts,
+        data: {
+          dryRun: false,
+          runnerProfile,
+          query,
+          value: input.value,
+          resolution,
+          commands: [...commands, verification.command],
+          exitCode: verification.exitCode,
+          supportLevel: resolveResult.data.supportLevel,
+        },
+        nextSuggestions: [
+          "The iOS field could not be re-verified after typing. Refresh the hierarchy, confirm focus stayed on the target field, and retry type_into_element.",
+        ],
+      };
+    }
+  }
+
   return {
     status: typeResult.status,
     reasonCode:
