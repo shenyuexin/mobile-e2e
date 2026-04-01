@@ -108,6 +108,24 @@ export function buildIosNativeLocatorCandidate(
   };
 }
 
+export function isIosEditableNode(node: InspectUiNode | undefined): boolean {
+  const className = node?.className?.toLowerCase();
+  return className === "textfield"
+    || className === "securetextfield"
+    || className === "edittext";
+}
+
+export function extractIosEditableNodeValue(node: InspectUiNode | undefined): string | undefined {
+  if (!isIosEditableNode(node)) {
+    return undefined;
+  }
+  const className = node?.className?.toLowerCase();
+  if (className === "securetextfield") {
+    return undefined;
+  }
+  return node?.text;
+}
+
 export function parseAndroidUiHierarchyNodes(xml: string): InspectUiNode[] {
   const nodes: InspectUiNode[] = [];
   const nodeRegex = /<node([^>]*)\/?>(?:<\/node>)?/g;
