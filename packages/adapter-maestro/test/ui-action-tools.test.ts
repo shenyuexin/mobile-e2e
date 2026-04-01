@@ -94,6 +94,112 @@ test("tapResolvedTarget returns partial when resolved coordinates are missing", 
   assert.equal(tapResult.data.command.length, 0);
 });
 
+test("tapResolvedTarget stops on iOS describe-point mismatch before coordinate tap", async () => {
+  const resolveResult: ToolResult<ScrollAndResolveUiTargetData> = {
+    status: "success",
+    reasonCode: REASON_CODES.ok,
+    sessionId: "scroll-ios-mismatch",
+    durationMs: 1,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      dryRun: false,
+      runnerProfile: "phase1",
+      outputPath: "artifacts/ui-dumps/test/ios.json",
+      query: { resourceId: "login-submit-button" },
+      maxSwipes: 1,
+      swipeDirection: "up",
+      swipeDurationMs: 250,
+      swipesPerformed: 1,
+      commandHistory: [["capture"], ["swipe"]],
+      exitCode: 0,
+      result: { query: { resourceId: "login-submit-button" }, totalMatches: 1, matches: [] },
+      resolution: {
+        status: "resolved",
+        matchCount: 1,
+        query: { resourceId: "login-submit-button" },
+        matches: [],
+        matchedNode: { resourceId: "login-submit-button", className: "Button", text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[240,620][360,680]" },
+        resolvedBounds: { left: 240, top: 620, right: 360, bottom: 680, width: 120, height: 60, center: { x: 300, y: 650 } },
+        resolvedPoint: { x: 300, y: 650 },
+      },
+      supportLevel: "full",
+    },
+    nextSuggestions: [],
+  };
+
+  const tapResult = await uiActionToolInternals.tapResolvedTarget({
+    sessionId: "scroll-ios-mismatch",
+    platform: "ios",
+    resourceId: "login-submit-button",
+    dryRun: false,
+  }, resolveResult, {
+    verifyResolvedIosPoint: async () => ({
+      verified: false,
+      command: ["describe-point", "300", "650"],
+      exitCode: 0,
+      reasonCode: REASON_CODES.noMatch,
+    }),
+  });
+
+  assert.equal(tapResult.status, "partial");
+  assert.equal(tapResult.reasonCode, REASON_CODES.noMatch);
+  assert.deepEqual(tapResult.data.command, ["describe-point", "300", "650"]);
+});
+
+test("tapResolvedTarget continues on iOS when describe-point agrees", async () => {
+  const resolveResult: ToolResult<ScrollAndResolveUiTargetData> = {
+    status: "success",
+    reasonCode: REASON_CODES.ok,
+    sessionId: "scroll-ios-verified",
+    durationMs: 1,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      dryRun: true,
+      runnerProfile: "phase1",
+      outputPath: "artifacts/ui-dumps/test/ios.json",
+      query: { resourceId: "login-submit-button" },
+      maxSwipes: 1,
+      swipeDirection: "up",
+      swipeDurationMs: 250,
+      swipesPerformed: 1,
+      commandHistory: [["capture"], ["swipe"]],
+      exitCode: 0,
+      result: { query: { resourceId: "login-submit-button" }, totalMatches: 1, matches: [] },
+      resolution: {
+        status: "resolved",
+        matchCount: 1,
+        query: { resourceId: "login-submit-button" },
+        matches: [],
+        matchedNode: { resourceId: "login-submit-button", className: "Button", text: "Continue", clickable: true, enabled: true, scrollable: false, bounds: "[240,620][360,680]" },
+        resolvedBounds: { left: 240, top: 620, right: 360, bottom: 680, width: 120, height: 60, center: { x: 300, y: 650 } },
+        resolvedPoint: { x: 300, y: 650 },
+      },
+      supportLevel: "full",
+    },
+    nextSuggestions: [],
+  };
+
+  const tapResult = await uiActionToolInternals.tapResolvedTarget({
+    sessionId: "scroll-ios-verified",
+    platform: "ios",
+    resourceId: "login-submit-button",
+    dryRun: true,
+  }, resolveResult, {
+    verifyResolvedIosPoint: async () => ({
+      verified: true,
+      command: ["describe-point", "300", "650"],
+      exitCode: 0,
+      reasonCode: REASON_CODES.ok,
+    }),
+  });
+
+  assert.equal(tapResult.status, "success");
+  assert.equal(tapResult.data.command.includes("300"), true);
+  assert.equal(tapResult.data.command.includes("650"), true);
+});
+
 test("verifyResolvedIosPoint keeps identifier-backed match when describe-point agrees", async () => {
   const verification = await uiActionToolInternals.verifyResolvedIosPoint({
     repoRoot: process.cwd(),

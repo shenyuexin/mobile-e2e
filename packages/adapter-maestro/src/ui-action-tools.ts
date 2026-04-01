@@ -3,6 +3,7 @@ import type {
   ScrollAndResolveUiTargetInput,
   ScrollAndTapElementData,
   ScrollAndTapElementInput,
+  ReasonCode,
   TapData,
   TapElementData,
   TapElementInput,
@@ -60,6 +61,9 @@ import { resolveUiTargetWithMaestroTool } from "./ui-inspection-tools.js";
 async function tapResolvedTarget(
   input: ScrollAndTapElementInput,
   resolveResult: ToolResult<ScrollAndResolveUiTargetData>,
+  overrides?: {
+    verifyResolvedIosPoint?: typeof verifyResolvedIosPoint;
+  },
 ): Promise<ToolResult<TapElementData>> {
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const resolution = resolveResult.data.resolution;
@@ -91,6 +95,55 @@ async function tapResolvedTarget(
         resolution,
       ),
     };
+  }
+
+  if (input.platform === "ios" && !input.dryRun) {
+    const repoRoot = resolveRepoPath();
+    const runtimeHooks = resolveUiRuntimePlatformHooks(input.platform);
+    const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+    const selection = await loadHarnessSelection(
+      repoRoot,
+      input.platform,
+      runnerProfile,
+      input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH,
+    );
+    const deviceId =
+      input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(input.platform);
+    const verify = overrides?.verifyResolvedIosPoint ?? verifyResolvedIosPoint;
+    const verification = await verify({
+      repoRoot,
+      deviceId,
+      resolvedNode: resolution.matchedNode,
+      resolvedPoint: resolution.resolvedPoint,
+      runtimeHooks,
+    });
+    if (!verification.verified && verification.reasonCode) {
+      return {
+        status: "partial",
+        reasonCode: verification.reasonCode,
+        sessionId: input.sessionId,
+        durationMs: 0,
+        attempts: 1,
+        artifacts: resolveResult.artifacts,
+        data: {
+          dryRun: false,
+          runnerProfile,
+          query: resolveResult.data.query,
+          matchCount: resolution.matchCount,
+          resolution,
+          matchedNode: resolution.matchedNode,
+          resolvedBounds: resolution.resolvedBounds,
+          resolvedX: resolution.resolvedPoint.x,
+          resolvedY: resolution.resolvedPoint.y,
+          command: verification.command,
+          exitCode: verification.exitCode,
+          supportLevel: resolveResult.data.supportLevel,
+        },
+        nextSuggestions: [
+          "The resolved iOS selector could not be confirmed at the target point. Refresh the hierarchy or scroll the element into a cleaner viewport before retrying.",
+        ],
+      };
+    }
   }
 
   const tapResult = await tapWithMaestroTool({
@@ -136,7 +189,7 @@ async function verifyResolvedIosPoint(params: {
   resolvedPoint: { x: number; y: number };
   runtimeHooks: UiRuntimePlatformHooks;
   executeDescribePointCommand?: typeof executeUiActionCommand;
-}): Promise<{ verified: boolean; command: string[]; exitCode: number | null; reasonCode?: string }> {
+}): Promise<{ verified: boolean; command: string[]; exitCode: number | null; reasonCode?: ReasonCode }> {
   const expected = buildIosNativeLocatorCandidate(params.resolvedNode);
   const command = params.runtimeHooks.buildDescribePointCommand?.(
     params.deviceId,
