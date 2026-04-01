@@ -1,12 +1,15 @@
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
-import type { UiRuntimePlatformHooks, UiRuntimeProbeAction } from "./ui-runtime-platform.js";
+import { buildIosNativeLocatorCandidate, parseIosInspectNodes } from "./ui-model.js";
+import type { UiResolvedPointVerificationParams, UiResolvedPointVerificationResult, UiRuntimePlatformHooks, UiRuntimeProbeAction } from "./ui-runtime-platform.js";
 import {
   buildIdbCommand,
   buildIosUiDescribePointCommand,
   buildIosSwipeCommand,
   buildIosUiDescribeCommand,
+  executeUiActionCommand,
   probeIdbAvailability,
 } from "./ui-runtime.js";
+import { buildFailureReason } from "./runtime-shared.js";
 
 function buildProbeSuggestion(action: UiRuntimeProbeAction): string {
   if (action === "inspect_ui") {
@@ -18,6 +21,56 @@ function buildProbeSuggestion(action: UiRuntimeProbeAction): string {
   return "iOS type_text requires idb. Install fb-idb and idb_companion, or set IDB_CLI_PATH/IDB_COMPANION_PATH before retrying.";
 }
 
+export async function verifyResolvedIosPointWithHooks(
+  params: UiResolvedPointVerificationParams & {
+    executeDescribePointCommand?: typeof executeUiActionCommand;
+  },
+): Promise<UiResolvedPointVerificationResult> {
+  const expected = buildIosNativeLocatorCandidate(params.resolvedNode);
+  const command = params.runtimeHooks.buildDescribePointCommand?.(
+    params.deviceId,
+    params.resolvedPoint.x,
+    params.resolvedPoint.y,
+  ) ?? [];
+  if (!expected || command.length === 0) {
+    return { verified: false, command, exitCode: null };
+  }
+
+  const executeDescribePoint = params.executeDescribePointCommand ?? executeUiActionCommand;
+  const actionResult = await executeDescribePoint({
+    repoRoot: params.repoRoot,
+    command,
+    requiresProbe: params.runtimeHooks.requiresProbe,
+    probeRuntimeAvailability: params.runtimeHooks.probeRuntimeAvailability,
+  });
+  if (!actionResult.execution) {
+    return {
+      verified: false,
+      command,
+      exitCode: actionResult.probeExecution?.exitCode ?? null,
+      reasonCode: params.runtimeHooks.probeFailureReasonCode,
+    };
+  }
+  if (actionResult.execution.exitCode !== 0) {
+    return {
+      verified: false,
+      command,
+      exitCode: actionResult.execution.exitCode,
+      reasonCode: buildFailureReason(actionResult.execution.stderr, actionResult.execution.exitCode),
+    };
+  }
+
+  const pointNode = parseIosInspectNodes(actionResult.execution.stdout)[0];
+  const actual = buildIosNativeLocatorCandidate(pointNode);
+  const verified = actual?.kind === expected.kind && actual.value === expected.value;
+  return {
+    verified,
+    command,
+    exitCode: actionResult.execution.exitCode,
+    reasonCode: verified ? REASON_CODES.ok : REASON_CODES.noMatch,
+  };
+}
+
 export function createIosUiRuntimeHooks(): UiRuntimePlatformHooks {
   return {
     platform: "ios",
@@ -25,6 +78,7 @@ export function createIosUiRuntimeHooks(): UiRuntimePlatformHooks {
     probeFailureReasonCode: REASON_CODES.configurationError,
     buildTapCommand: (deviceId, x, y) => buildIdbCommand(["ui", "tap", String(x), String(y), "--udid", deviceId]),
     buildDescribePointCommand: (deviceId, x, y) => buildIosUiDescribePointCommand(deviceId, x, y),
+    verifyResolvedPoint: verifyResolvedIosPointWithHooks,
     buildTypeTextCommand: (deviceId, text) => buildIdbCommand(["ui", "text", text, "--udid", deviceId]),
     buildSwipeCommand: (deviceId, swipe) => buildIosSwipeCommand(deviceId, swipe),
     buildHierarchyCapturePreviewCommand: (deviceId) => buildIosUiDescribeCommand(deviceId),
