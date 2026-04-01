@@ -30,8 +30,11 @@ export interface UiSwipeCoordinates {
 }
 
 export interface IosNativeLocatorCandidate {
-  kind: "identifier";
-  value: string;
+  kind: "identifier" | "semantic";
+  value?: string;
+  text?: string;
+  contentDesc?: string;
+  className?: string;
 }
 
 export interface WaitForUiReadFailureState {
@@ -97,10 +100,26 @@ export function hasQueryUiSelector(query: QueryUiSelector): boolean {
 
 export function buildIosNativeLocatorCandidate(
   node: InspectUiNode | undefined,
-  _query?: QueryUiSelector,
+  query?: QueryUiSelector,
 ): IosNativeLocatorCandidate | undefined {
   if (!node?.resourceId) {
-    return undefined;
+    const semanticText = query?.text && node?.text === query.text ? node.text : undefined;
+    const semanticContentDesc = query?.contentDesc && node?.contentDesc === query.contentDesc ? node.contentDesc : undefined;
+    const semanticClassName = query?.className && node?.className === query.className ? node.className : undefined;
+    if (!(semanticText && (semanticClassName || semanticContentDesc))) {
+      return undefined;
+    }
+    const candidate: IosNativeLocatorCandidate = {
+      kind: "semantic",
+      text: semanticText,
+    };
+    if (semanticContentDesc) {
+      candidate.contentDesc = semanticContentDesc;
+    }
+    if (semanticClassName) {
+      candidate.className = semanticClassName;
+    }
+    return candidate;
   }
   return {
     kind: "identifier",

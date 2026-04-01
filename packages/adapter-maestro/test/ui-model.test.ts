@@ -353,6 +353,27 @@ test("buildIosNativeLocatorCandidate rejects label-only iOS nodes", () => {
   assert.equal(candidate, undefined);
 });
 
+test("buildIosNativeLocatorCandidate builds exact semantic fallback for query-backed label-only control", () => {
+  const candidate = buildIosNativeLocatorCandidate(
+    {
+      className: "Button",
+      text: "Continue",
+      contentDesc: "Continue",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[40,300][280,380]",
+    },
+    { text: "Continue", className: "Button", clickable: true },
+  );
+
+  assert.deepEqual(candidate, {
+    kind: "semantic",
+    text: "Continue",
+    className: "Button",
+  });
+});
+
 test("buildIosNativeLocatorCandidate prefers identifier over text-only selector signals", () => {
   const candidate = buildIosNativeLocatorCandidate(
     {

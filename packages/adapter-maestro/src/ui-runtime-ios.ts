@@ -26,7 +26,7 @@ export async function verifyResolvedIosPointWithHooks(
     executeDescribePointCommand?: typeof executeUiActionCommand;
   },
 ): Promise<UiResolvedPointVerificationResult> {
-  const expected = buildIosNativeLocatorCandidate(params.resolvedNode);
+  const expected = buildIosNativeLocatorCandidate(params.resolvedNode, params.resolvedQuery);
   const command = params.runtimeHooks.buildDescribePointCommand?.(
     params.deviceId,
     params.resolvedPoint.x,
@@ -61,8 +61,12 @@ export async function verifyResolvedIosPointWithHooks(
   }
 
   const pointNode = parseIosInspectNodes(actionResult.execution.stdout)[0];
-  const actual = buildIosNativeLocatorCandidate(pointNode);
-  const verified = actual?.kind === expected.kind && actual.value === expected.value;
+  const actual = buildIosNativeLocatorCandidate(pointNode, params.resolvedQuery);
+  const verified = actual?.kind === expected.kind
+    && actual.value === expected.value
+    && actual.text === expected.text
+    && actual.contentDesc === expected.contentDesc
+    && actual.className === expected.className;
   return {
     verified,
     command,
@@ -106,9 +110,9 @@ export async function verifyTypedIosPostconditionWithHooks(
   }
 
   const pointNode = parseIosInspectNodes(actionResult.execution.stdout)[0];
-  const actual = buildIosNativeLocatorCandidate(pointNode);
-  const expected = buildIosNativeLocatorCandidate(params.resolvedNode);
-  if (!actual || !expected || actual.value !== expected.value) {
+  const actual = buildIosNativeLocatorCandidate(pointNode, params.resolvedQuery);
+  const expected = buildIosNativeLocatorCandidate(params.resolvedNode, params.resolvedQuery);
+  if (!actual || !expected || actual.kind !== expected.kind || actual.value !== expected.value || actual.text !== expected.text || actual.contentDesc !== expected.contentDesc || actual.className !== expected.className) {
     return {
       verified: false,
       command: baseVerification.command,

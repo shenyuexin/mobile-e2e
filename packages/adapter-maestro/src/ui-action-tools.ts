@@ -115,6 +115,7 @@ async function tapResolvedTarget(
       repoRoot,
       deviceId,
       resolvedNode: resolution.matchedNode,
+      resolvedQuery: resolveResult.data.query,
       resolvedPoint: resolution.resolvedPoint,
       runtimeHooks,
     });
@@ -551,6 +552,7 @@ export async function tapElementWithMaestroTool(
       repoRoot,
       deviceId,
       resolvedNode: resolution.matchedNode,
+      resolvedQuery: query,
       resolvedPoint: resolution.resolvedPoint,
       runtimeHooks,
     });
@@ -762,6 +764,7 @@ export async function typeIntoElementWithMaestroTool(
       repoRoot,
       deviceId,
       resolvedNode: resolution.matchedNode,
+      resolvedQuery: query,
       resolvedPoint: resolution.resolvedPoint,
       runtimeHooks,
     });
@@ -851,6 +854,7 @@ export async function typeIntoElementWithMaestroTool(
       repoRoot,
       deviceId,
       resolvedNode: resolution.matchedNode,
+      resolvedQuery: query,
       resolvedPoint: resolution.resolvedPoint,
       typedValue: input.value,
       runtimeHooks,
