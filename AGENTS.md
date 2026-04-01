@@ -20,6 +20,7 @@ Core execution model:
 4. `.planning/PROJECT.md`, `.planning/ROADMAP.md`, `.planning/STATE.md` when the task is non-trivial or depends on current execution context
 5. `.planning/PLANNING-PROTOCOL.md` when the task adds, inserts, completes, or re-scopes planned work
 6. Live repo delta-check (`git ls-files` + targeted file reads)
+7. For implementation lookup, use `repomix-output.xml` for broad context first, then use Serena for symbol-level discovery (`find_symbol`, `find_referencing_symbols`, `get_symbols_overview`) and impact analysis
 
 Do not treat `repomix-output.xml` as the only source of truth.
 
