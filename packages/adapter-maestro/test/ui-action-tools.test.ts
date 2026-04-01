@@ -93,3 +93,93 @@ test("tapResolvedTarget returns partial when resolved coordinates are missing", 
   assert.equal(tapResult.data.resolvedX, undefined);
   assert.equal(tapResult.data.command.length, 0);
 });
+
+test("verifyResolvedIosPoint keeps identifier-backed match when describe-point agrees", async () => {
+  const verification = await uiActionToolInternals.verifyResolvedIosPoint({
+    repoRoot: process.cwd(),
+    deviceId: "ios-sim-1",
+    resolvedNode: {
+      resourceId: "login-submit-button",
+      className: "Button",
+      text: "Continue",
+      contentDesc: "Continue",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[40,300][280,380]",
+    },
+    resolvedPoint: { x: 120, y: 340 },
+    runtimeHooks: {
+      platform: "ios",
+      requiresProbe: true,
+      probeFailureReasonCode: REASON_CODES.configurationError,
+      buildTapCommand: () => ["tap"],
+      buildDescribePointCommand: () => ["describe-point", "120", "340"],
+      buildTypeTextCommand: () => ["type"],
+      buildSwipeCommand: () => ["swipe"],
+      buildHierarchyCapturePreviewCommand: () => ["describe-all"],
+      probeUnavailableSuggestion: () => "probe unavailable",
+      tapDryRunSuggestion: "tap dry",
+      tapFailureSuggestion: "tap failed",
+      typeTextDryRunSuggestion: "type dry",
+      typeTextFailureSuggestion: "type failed",
+    },
+    executeDescribePointCommand: async () => ({
+      command: ["describe-point", "120", "340"],
+      probeExecution: { exitCode: 0, stdout: "ok", stderr: "" },
+      execution: {
+        exitCode: 0,
+        stdout: JSON.stringify([{ identifier: "login-submit-button", type: "Button", AXLabel: "Continue", frame: { x: 40, y: 300, width: 240, height: 80 } }]),
+        stderr: "",
+      },
+    }),
+  });
+
+  assert.equal(verification.verified, true);
+  assert.deepEqual(verification.command, ["describe-point", "120", "340"]);
+});
+
+test("verifyResolvedIosPoint reports mismatch when describe-point returns different identifier", async () => {
+  const verification = await uiActionToolInternals.verifyResolvedIosPoint({
+    repoRoot: process.cwd(),
+    deviceId: "ios-sim-1",
+    resolvedNode: {
+      resourceId: "login-submit-button",
+      className: "Button",
+      text: "Continue",
+      contentDesc: "Continue",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[40,300][280,380]",
+    },
+    resolvedPoint: { x: 120, y: 340 },
+    runtimeHooks: {
+      platform: "ios",
+      requiresProbe: true,
+      probeFailureReasonCode: REASON_CODES.configurationError,
+      buildTapCommand: () => ["tap"],
+      buildDescribePointCommand: () => ["describe-point", "120", "340"],
+      buildTypeTextCommand: () => ["type"],
+      buildSwipeCommand: () => ["swipe"],
+      buildHierarchyCapturePreviewCommand: () => ["describe-all"],
+      probeUnavailableSuggestion: () => "probe unavailable",
+      tapDryRunSuggestion: "tap dry",
+      tapFailureSuggestion: "tap failed",
+      typeTextDryRunSuggestion: "type dry",
+      typeTextFailureSuggestion: "type failed",
+    },
+    executeDescribePointCommand: async () => ({
+      command: ["describe-point", "120", "340"],
+      probeExecution: { exitCode: 0, stdout: "ok", stderr: "" },
+      execution: {
+        exitCode: 0,
+        stdout: JSON.stringify([{ identifier: "other-button", type: "Button", AXLabel: "Continue", frame: { x: 40, y: 300, width: 240, height: 80 } }]),
+        stderr: "",
+      },
+    }),
+  });
+
+  assert.equal(verification.verified, false);
+  assert.equal(verification.reasonCode, REASON_CODES.noMatch);
+});

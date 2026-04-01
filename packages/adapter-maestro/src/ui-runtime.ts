@@ -366,6 +366,10 @@ export function buildIosUiDescribeCommand(deviceId: string): string[] {
   return buildIdbCommand(["ui", "describe-all", "--udid", deviceId, "--json", "--nested"]);
 }
 
+export function buildIosUiDescribePointCommand(deviceId: string, x: number, y: number): string[] {
+  return buildIdbCommand(["ui", "describe-point", String(x), String(y), "--udid", deviceId, "--json", "--nested"]);
+}
+
 export function buildIosSwipeCommand(deviceId: string, swipe: { start: { x: number; y: number }; end: { x: number; y: number }; durationMs: number }): string[] {
   return buildIdbCommand(["ui", "swipe", String(swipe.start.x), String(swipe.start.y), String(swipe.end.x), String(swipe.end.y), "--duration", String(swipe.durationMs / 1000), "--udid", deviceId]);
 }

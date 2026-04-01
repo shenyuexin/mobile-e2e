@@ -23,9 +23,11 @@ import {
   resolveRepoPath,
 } from "./harness-config.js";
 import {
+  buildIosNativeLocatorCandidate,
   buildNonExecutedUiTargetResolution,
   buildScrollSwipeCoordinates,
   hasQueryUiSelector,
+  parseIosInspectNodes,
   reasonCodeForResolutionStatus,
 } from "./ui-model.js";
 import {
@@ -35,6 +37,7 @@ import {
   executeUiActionCommand,
   runUiScrollResolveLoop,
 } from "./ui-runtime.js";
+import type { UiRuntimePlatformHooks } from "./ui-runtime-platform.js";
 import { resolveUiRuntimePlatformHooks } from "./ui-runtime-platform.js";
 import {
   buildFailureReason,
@@ -126,8 +129,62 @@ async function tapResolvedTarget(
   };
 }
 
+async function verifyResolvedIosPoint(params: {
+  repoRoot: string;
+  deviceId: string;
+  resolvedNode: NonNullable<TapElementData["matchedNode"]>;
+  resolvedPoint: { x: number; y: number };
+  runtimeHooks: UiRuntimePlatformHooks;
+  executeDescribePointCommand?: typeof executeUiActionCommand;
+}): Promise<{ verified: boolean; command: string[]; exitCode: number | null; reasonCode?: string }> {
+  const expected = buildIosNativeLocatorCandidate(params.resolvedNode);
+  const command = params.runtimeHooks.buildDescribePointCommand?.(
+    params.deviceId,
+    params.resolvedPoint.x,
+    params.resolvedPoint.y,
+  ) ?? [];
+  if (!expected || command.length === 0) {
+    return { verified: false, command, exitCode: null };
+  }
+
+  const executeDescribePoint = params.executeDescribePointCommand ?? executeUiActionCommand;
+  const actionResult = await executeDescribePoint({
+    repoRoot: params.repoRoot,
+    command,
+    requiresProbe: params.runtimeHooks.requiresProbe,
+    probeRuntimeAvailability: params.runtimeHooks.probeRuntimeAvailability,
+  });
+  if (!actionResult.execution) {
+    return {
+      verified: false,
+      command,
+      exitCode: actionResult.probeExecution?.exitCode ?? null,
+      reasonCode: params.runtimeHooks.probeFailureReasonCode,
+    };
+  }
+  if (actionResult.execution.exitCode !== 0) {
+    return {
+      verified: false,
+      command,
+      exitCode: actionResult.execution.exitCode,
+      reasonCode: buildFailureReason(actionResult.execution.stderr, actionResult.execution.exitCode),
+    };
+  }
+
+  const pointNode = parseIosInspectNodes(actionResult.execution.stdout)[0];
+  const actual = buildIosNativeLocatorCandidate(pointNode);
+  const verified = actual?.kind === expected.kind && actual.value === expected.value;
+  return {
+    verified,
+    command,
+    exitCode: actionResult.execution.exitCode,
+    reasonCode: verified ? REASON_CODES.ok : REASON_CODES.noMatch,
+  };
+}
+
 export const uiActionToolInternals = {
   tapResolvedTarget,
+  verifyResolvedIosPoint,
 };
 
 export async function tapWithMaestroTool(

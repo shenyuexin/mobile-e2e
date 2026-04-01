@@ -2,6 +2,7 @@ import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import type { UiRuntimePlatformHooks, UiRuntimeProbeAction } from "./ui-runtime-platform.js";
 import {
   buildIdbCommand,
+  buildIosUiDescribePointCommand,
   buildIosSwipeCommand,
   buildIosUiDescribeCommand,
   probeIdbAvailability,
@@ -23,6 +24,7 @@ export function createIosUiRuntimeHooks(): UiRuntimePlatformHooks {
     requiresProbe: true,
     probeFailureReasonCode: REASON_CODES.configurationError,
     buildTapCommand: (deviceId, x, y) => buildIdbCommand(["ui", "tap", String(x), String(y), "--udid", deviceId]),
+    buildDescribePointCommand: (deviceId, x, y) => buildIosUiDescribePointCommand(deviceId, x, y),
     buildTypeTextCommand: (deviceId, text) => buildIdbCommand(["ui", "text", text, "--udid", deviceId]),
     buildSwipeCommand: (deviceId, swipe) => buildIosSwipeCommand(deviceId, swipe),
     buildHierarchyCapturePreviewCommand: (deviceId) => buildIosUiDescribeCommand(deviceId),
