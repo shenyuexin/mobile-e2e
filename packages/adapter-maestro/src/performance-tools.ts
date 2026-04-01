@@ -172,13 +172,23 @@ function buildIosTemplateSuggestion(template: IosPerformanceTemplate): string {
   return "Inspect the exported Time Profiler tables next; this template is best for CPU-heavy windows.";
 }
 
-function buildIosAppScopeNote(appId?: string, attachTarget?: string): string {
+export function buildIosAppScopeNote(appId?: string, attachTarget?: string): string {
   if (attachTarget && appId) {
     return `iOS MVP note: appId '${appId}' was attached by pid ${attachTarget} for this run, but other templates may still fall back to all-process capture.`;
   }
   return appId
-    ? `iOS MVP note: appId '${appId}' is currently used for labeling only; xctrace capture still records all processes in the selected time window.`
+    ? `iOS MVP note: appId '${appId}' could not be attached by pid and may fall back to all-process capture.`
     : "iOS MVP note: xctrace capture records all processes in the selected time window unless a narrower launch/attach flow is added later.";
+}
+
+export function shouldResolveIosAttachTarget(params: {
+  dryRun?: boolean;
+  template: IosPerformanceTemplate;
+  appId?: string;
+}): boolean {
+  return !params.dryRun
+    && Boolean(params.appId)
+    && (params.template === "memory" || params.template === "time-profiler");
 }
 
 function buildIosRecordFailureSuggestions(appId: string | undefined, template: IosPerformanceTemplate, stderr: string, attachTarget?: string): string[] {
@@ -647,7 +657,11 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
   const deviceId = input.deviceId ?? selection.deviceId ?? DEFAULT_IOS_SIMULATOR_UDID;
   const appId = input.appId ?? selection.appId;
   const requestedTemplate = input.template ?? "time-profiler";
-  const attachTarget = !input.dryRun && requestedTemplate === "memory" && appId
+  const attachTarget = shouldResolveIosAttachTarget({
+    dryRun: input.dryRun,
+    template: requestedTemplate,
+    appId,
+  })
     ? await resolveIosSimulatorAttachTarget(repoRoot, deviceId, appId)
     : undefined;
   const plan = buildIosPerformancePlan({ ...input, appId }, runnerProfile, deviceId, attachTarget);
