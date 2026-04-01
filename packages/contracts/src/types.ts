@@ -207,6 +207,7 @@ export interface ToolCapability {
   supportLevel: CapabilitySupportLevel;
   note: string;
   requiresSession?: boolean;
+  promotionGate?: SupportPromotionGate;
 }
 
 export interface CapabilityGroup {
@@ -214,6 +215,13 @@ export interface CapabilityGroup {
   supportLevel: CapabilitySupportLevel;
   toolNames: string[];
   note?: string;
+  promotionGate?: SupportPromotionGate;
+}
+
+export interface SupportPromotionGate {
+  blocked: boolean;
+  requiredProofLanes: Array<"simulator" | "real_device">;
+  blockingReasons: string[];
 }
 
 export interface CapabilityProfile {
