@@ -4,6 +4,8 @@ import { probeIdbAvailability } from "./ui-runtime.js";
 import type { DeviceRuntimePlatformHooks } from "./device-runtime-platform.js";
 import { executeRunner, shellEscape } from "./runtime-shared.js";
 
+const DEFAULT_DEVICE_COMMAND_TIMEOUT_MS = 5000;
+
 function buildIosLogPredicateForApp(appId: string): string {
   const escaped = appId.replaceAll("'", "\\'");
   return `eventMessage CONTAINS[c] '${escaped}' OR processImagePath CONTAINS[c] '${escaped}' OR senderImagePath CONTAINS[c] '${escaped}'`;
@@ -50,6 +52,49 @@ async function listArtifacts(rootPath: string, repoRoot: string): Promise<string
 
 async function runIdbPreflight(repoRoot: string): Promise<void> {
   await probeIdbAvailability(repoRoot).catch(() => undefined);
+}
+
+export function extractIosSimulatorProcessId(launchctlOutput: string, appId: string): string | undefined {
+  const lines = launchctlOutput.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
+  const match = lines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .find((line) => line.includes(appId));
+  if (!match) {
+    return undefined;
+  }
+  const pid = match.split(String.fromCharCode(9))[0]?.trim();
+  return pid && /^\d+$/.test(pid) ? pid : undefined;
+}
+
+async function queryIosSimulatorProcessId(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
+  const execution = await executeRunner([
+    "xcrun",
+    "simctl",
+    "spawn",
+    deviceId,
+    "launchctl",
+    "list",
+  ], repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS });
+  if (execution.exitCode !== 0) {
+    return undefined;
+  }
+  return extractIosSimulatorProcessId(execution.stdout, appId);
+}
+
+export async function resolveIosSimulatorAttachTarget(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
+  const existingPid = await queryIosSimulatorProcessId(repoRoot, deviceId, appId);
+  if (existingPid) {
+    return existingPid;
+  }
+  await executeRunner([
+    "xcrun",
+    "simctl",
+    "launch",
+    deviceId,
+    appId,
+  ], repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS });
+  return queryIosSimulatorProcessId(repoRoot, deviceId, appId);
 }
 
 export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {

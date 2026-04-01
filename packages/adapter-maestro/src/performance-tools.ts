@@ -20,6 +20,7 @@ import {
   loadHarnessSelection,
   resolveRepoPath,
 } from "./harness-config.js";
+import { resolveIosSimulatorAttachTarget } from "./device-runtime-ios.js";
 import {
   buildIosExportInspectionManifest,
   buildAndroidPerformanceData,
@@ -141,40 +142,6 @@ async function resolveAndroidSdkLevel(repoRoot: string, deviceId: string): Promi
   }
   const parsed = Number.parseInt(execution.stdout.trim(), 10);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-async function resolveIosSimulatorProcessId(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
-  const execution = await runCommandSafely([
-    "xcrun",
-    "simctl",
-    "spawn",
-    deviceId,
-    "launchctl",
-    "list",
-  ], repoRoot, DEFAULT_DEVICE_COMMAND_TIMEOUT_MS);
-  if (execution.exitCode !== 0) {
-    return undefined;
-  }
-  const lines = execution.stdout.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
-  const match = lines
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .find((line) => line.includes(appId));
-  if (!match) {
-    return undefined;
-  }
-  const pid = match.split(String.fromCharCode(9))[0]?.trim();
-  return pid && /^\d+$/.test(pid) ? pid : undefined;
-}
-
-async function launchIosSimulatorApp(repoRoot: string, deviceId: string, appId: string): Promise<CommandExecution> {
-  return runCommandSafely([
-    "xcrun",
-    "simctl",
-    "launch",
-    deviceId,
-    appId,
-  ], repoRoot, DEFAULT_DEVICE_COMMAND_TIMEOUT_MS);
 }
 
 export function isPerfettoShellProbeAvailable(execution: CommandExecution): boolean {
@@ -680,13 +647,9 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
   const deviceId = input.deviceId ?? selection.deviceId ?? DEFAULT_IOS_SIMULATOR_UDID;
   const appId = input.appId ?? selection.appId;
   const requestedTemplate = input.template ?? "time-profiler";
-  let attachTarget = !input.dryRun && requestedTemplate === "memory" && appId
-    ? await resolveIosSimulatorProcessId(repoRoot, deviceId, appId)
+  const attachTarget = !input.dryRun && requestedTemplate === "memory" && appId
+    ? await resolveIosSimulatorAttachTarget(repoRoot, deviceId, appId)
     : undefined;
-  if (!input.dryRun && requestedTemplate === "memory" && appId && !attachTarget) {
-    await launchIosSimulatorApp(repoRoot, deviceId, appId);
-    attachTarget = await resolveIosSimulatorProcessId(repoRoot, deviceId, appId);
-  }
   const plan = buildIosPerformancePlan({ ...input, appId }, runnerProfile, deviceId, attachTarget);
   const supportLevel: "partial" = "partial";
 
