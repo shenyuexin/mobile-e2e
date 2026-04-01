@@ -10,6 +10,7 @@ export interface UiRuntimePlatformHooks {
   requiresProbe: boolean;
   probeFailureReasonCode: ReasonCode;
   buildTapCommand: (deviceId: string, x: number, y: number) => string[];
+  buildDescribePointCommand?: (deviceId: string, x: number, y: number) => string[];
   buildTypeTextCommand: (deviceId: string, text: string) => string[];
   buildSwipeCommand: (deviceId: string, swipe: { start: { x: number; y: number }; end: { x: number; y: number }; durationMs: number }) => string[];
   buildHierarchyCapturePreviewCommand: (deviceId: string) => string[];
