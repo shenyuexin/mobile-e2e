@@ -6,6 +6,28 @@ const FULL: CapabilitySupportLevel = "full";
 const PARTIAL: CapabilitySupportLevel = "partial";
 const UNSUPPORTED: CapabilitySupportLevel = "unsupported";
 
+export const IOS_PARTIAL_TOOL_FRONTIER = [
+  "capture_js_console_logs",
+  "capture_js_network_events",
+  "measure_ios_performance",
+  "inspect_ui",
+  "reset_app_state",
+  "start_record_session",
+  "get_record_session_status",
+  "end_record_session",
+  "cancel_record_session",
+  "record_screen",
+] as const;
+
+export const IOS_PARTIAL_GROUP_FRONTIER = [
+  "app_lifecycle",
+  "recording_and_replay",
+  "artifacts_and_diagnostics",
+  "ui_inspection",
+] as const;
+
+const IOS_PROOF_GATE_NOTE = "Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established.";
+
 function buildToolCapability(toolName: string, supportLevel: CapabilitySupportLevel, note: string, requiresSession = true): ToolCapability {
   return { toolName, supportLevel, note, requiresSession };
 }
@@ -51,8 +73,8 @@ function buildAndroidToolCapabilities(): ToolCapability[] {
 
 function buildIosToolCapabilities(): ToolCapability[] {
   return [
-    buildToolCapability("capture_js_console_logs", PARTIAL, "JS console capture requires a running Metro inspector target and is available when the RN/Expo debug runtime is attached.", false),
-    buildToolCapability("capture_js_network_events", PARTIAL, "JS network capture requires a running Metro inspector target and is available when the RN/Expo debug runtime is attached.", false),
+    buildToolCapability("capture_js_console_logs", PARTIAL, `JS console capture requires a running Metro inspector target and is available when the RN/Expo debug runtime is attached. ${IOS_PROOF_GATE_NOTE}`, false),
+    buildToolCapability("capture_js_network_events", PARTIAL, `JS network capture requires a running Metro inspector target and is available when the RN/Expo debug runtime is attached. ${IOS_PROOF_GATE_NOTE}`, false),
     buildToolCapability("collect_debug_evidence", FULL, "iOS simulator debug evidence summarization is supported through log and crash digest capture."),
     buildToolCapability("describe_capabilities", FULL, "Capability discovery is fully supported for iOS sessions and simulators.", false),
     buildToolCapability("collect_diagnostics", FULL, "iOS simulator diagnostics bundle capture is supported."),
@@ -61,23 +83,23 @@ function buildIosToolCapabilities(): ToolCapability[] {
     buildToolCapability("get_logs", FULL, "iOS simulator log capture is supported."),
     buildToolCapability("request_manual_handoff", FULL, "iOS sessions can record explicit operator handoff checkpoints for OTP, consent, and protected-page workflows."),
     buildToolCapability("measure_android_performance", UNSUPPORTED, "Android Perfetto performance capture is not available on iOS targets."),
-    buildToolCapability("measure_ios_performance", PARTIAL, "iOS time-window performance capture is partial: Time Profiler is real-validated on simulator, Allocations can be real-validated via attach-to-app, and Animation Hitches remains platform-limited on current simulator/runtime combinations."),
-    buildToolCapability("inspect_ui", PARTIAL, "iOS can capture hierarchy artifacts through idb, but downstream query and action parity remains partial."),
+    buildToolCapability("measure_ios_performance", PARTIAL, `iOS time-window performance capture is partial: Time Profiler is real-validated on simulator, Allocations can be real-validated via attach-to-app, and Animation Hitches remains platform-limited on current simulator/runtime combinations. ${IOS_PROOF_GATE_NOTE}`),
+    buildToolCapability("inspect_ui", PARTIAL, `iOS can capture hierarchy artifacts through idb, but downstream query and action parity remains partial. ${IOS_PROOF_GATE_NOTE}`),
     buildToolCapability("query_ui", FULL, "iOS query_ui can filter captured hierarchy nodes through idb-backed structured matching."),
     buildToolCapability("resolve_ui_target", FULL, "iOS target resolution can resolve structured hierarchy matches through idb-backed capture."),
     buildToolCapability("scroll_and_resolve_ui_target", FULL, "iOS scroll-assisted target resolution is supported through idb hierarchy capture and swipe gestures."),
     buildToolCapability("install_app", FULL, "iOS simulator app installation is supported."),
     buildToolCapability("launch_app", FULL, "iOS simulator app launch is supported."),
-    buildToolCapability("reset_app_state", PARTIAL, "iOS simulator app reset is supported with strategy-specific caveats (simctl uninstall/reinstall and keychain reset)."),
-    buildToolCapability("start_record_session", PARTIAL, "iOS simulator recording supports bounded simulator-log capture plus idb snapshot association (tap/type-first)."),
-    buildToolCapability("get_record_session_status", PARTIAL, "iOS recording status reporting is available with platform-specific guidance when capture remains sparse."),
-    buildToolCapability("end_record_session", PARTIAL, "iOS recording supports bounded semantic mapping and flow export with confidence warnings."),
-    buildToolCapability("cancel_record_session", PARTIAL, "iOS recording cancellation is supported for simulator log and snapshot capture workers."),
+    buildToolCapability("reset_app_state", PARTIAL, `iOS simulator app reset is supported with strategy-specific caveats (simctl uninstall/reinstall and keychain reset). ${IOS_PROOF_GATE_NOTE}`),
+    buildToolCapability("start_record_session", PARTIAL, `iOS simulator recording supports bounded simulator-log capture plus idb snapshot association (tap/type-first). ${IOS_PROOF_GATE_NOTE}`),
+    buildToolCapability("get_record_session_status", PARTIAL, `iOS recording status reporting is available with platform-specific guidance when capture remains sparse. ${IOS_PROOF_GATE_NOTE}`),
+    buildToolCapability("end_record_session", PARTIAL, `iOS recording supports bounded semantic mapping and flow export with confidence warnings. ${IOS_PROOF_GATE_NOTE}`),
+    buildToolCapability("cancel_record_session", PARTIAL, `iOS recording cancellation is supported for simulator log and snapshot capture workers. ${IOS_PROOF_GATE_NOTE}`),
     buildToolCapability("list_devices", FULL, "iOS simulator discovery is supported.", false),
     buildToolCapability("start_session", FULL, "iOS session initialization is supported.", false),
     buildToolCapability("run_flow", FULL, "iOS flow execution is supported, subject to current runner-profile constraints."),
     buildToolCapability("take_screenshot", FULL, "iOS simulator screenshot capture is supported."),
-    buildToolCapability("record_screen", PARTIAL, "iOS simulator screen recording is supported through simctl io recordVideo."),
+    buildToolCapability("record_screen", PARTIAL, `iOS simulator screen recording is supported through simctl io recordVideo. ${IOS_PROOF_GATE_NOTE}`),
     buildToolCapability("tap", FULL, "Direct iOS coordinate tap is supported through idb when the simulator companion is available."),
     buildToolCapability("tap_element", FULL, "iOS element tap is supported after idb-backed target resolution."),
     buildToolCapability("terminate_app", FULL, "iOS simulator app termination is supported."),

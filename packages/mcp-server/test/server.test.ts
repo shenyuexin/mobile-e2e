@@ -1288,6 +1288,48 @@ test("server invoke supports measure_ios_performance animation-hitches dry-run",
   assert.equal(result.data.template, "animation-hitches");
 });
 
+test("server invoke describe_capabilities keeps the current iOS partial frontier locked", async () => {
+  const server = createServer();
+  const result = await server.invoke("describe_capabilities", {
+    platform: "ios",
+    runnerProfile: "phase1",
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  const partialTools = result.data.capabilities.toolCapabilities
+    .filter((tool) => tool.supportLevel === "partial")
+    .map((tool) => tool.toolName)
+    .sort();
+  const partialGroups = result.data.capabilities.groups
+    .filter((group) => group.supportLevel === "partial")
+    .map((group) => group.groupName)
+    .sort();
+
+  assert.deepEqual(partialTools, [
+    "cancel_record_session",
+    "capture_js_console_logs",
+    "capture_js_network_events",
+    "end_record_session",
+    "get_record_session_status",
+    "inspect_ui",
+    "measure_ios_performance",
+    "record_screen",
+    "reset_app_state",
+    "start_record_session",
+  ]);
+  assert.deepEqual(partialGroups, [
+    "app_lifecycle",
+    "artifacts_and_diagnostics",
+    "recording_and_replay",
+    "ui_inspection",
+  ]);
+  assert.match(
+    result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance")?.note ?? "",
+    /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./,
+  );
+});
+
 test("server invoke supports list_js_debug_targets dry-run", async () => {
   const server = createServer();
   const result = await server.invoke("list_js_debug_targets", {

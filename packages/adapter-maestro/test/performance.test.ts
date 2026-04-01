@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPerformanceWithMaestro, measureIosPerformanceWithMaestro, runDoctor } from "../src/index.ts";
 import type { DoctorCheck } from "@mobile-e2e-mcp/contracts";
-import { buildCapabilityProfile } from "../src/capability-model.ts";
+import { IOS_PARTIAL_GROUP_FRONTIER, IOS_PARTIAL_TOOL_FRONTIER, buildCapabilityProfile } from "../src/capability-model.ts";
 import { extractIosSimulatorProcessId } from "../src/device-runtime-ios.ts";
 import { buildAndroidPerformancePlan, buildIosPerformancePlan, resolveAndroidPerformancePlanStrategy, resolveTraceProcessorPath } from "../src/performance-runtime.ts";
 import { buildIosExportInspectionManifest, buildPerformanceNextSuggestions, parseTraceProcessorTsv, summarizeAndroidPerformance, summarizeIosPerformance } from "../src/performance-model.ts";
@@ -89,6 +89,27 @@ test("buildIosPerformancePlan uses attach target when provided", () => {
     "--attach",
     "43127",
   ]);
+});
+
+test("buildCapabilityProfile locks the current iOS partial frontier", () => {
+  const profile = buildCapabilityProfile("ios", "phase1");
+
+  const partialTools = profile.toolCapabilities
+    .filter((tool) => tool.supportLevel === "partial")
+    .map((tool) => tool.toolName)
+    .sort();
+  const partialGroups = profile.groups
+    .filter((group) => group.supportLevel === "partial")
+    .map((group) => group.groupName)
+    .sort();
+
+  assert.deepEqual(partialTools, [...IOS_PARTIAL_TOOL_FRONTIER].sort());
+  assert.deepEqual(partialGroups, [...IOS_PARTIAL_GROUP_FRONTIER].sort());
+
+  const inspectNote = profile.toolCapabilities.find((tool) => tool.toolName === "inspect_ui")?.note ?? "";
+  const perfNote = profile.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance")?.note ?? "";
+  assert.match(inspectNote, /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./);
+  assert.match(perfNote, /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./);
 });
 
 test("extractIosSimulatorProcessId parses launchctl output for app pid", () => {
