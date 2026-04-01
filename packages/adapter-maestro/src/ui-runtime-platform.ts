@@ -1,9 +1,24 @@
-import type { Platform, ReasonCode } from "@mobile-e2e-mcp/contracts";
+import type { InspectUiNode, Platform, ReasonCode, UiPoint } from "@mobile-e2e-mcp/contracts";
 import type { CommandExecution } from "./runtime-shared.js";
 import { createAndroidUiRuntimeHooks } from "./ui-runtime-android.js";
 import { createIosUiRuntimeHooks } from "./ui-runtime-ios.js";
 
 export type UiRuntimeProbeAction = "inspect_ui" | "tap" | "type_text";
+
+export interface UiResolvedPointVerificationResult {
+  verified: boolean;
+  command: string[];
+  exitCode: number | null;
+  reasonCode?: ReasonCode;
+}
+
+export interface UiResolvedPointVerificationParams {
+  repoRoot: string;
+  deviceId: string;
+  resolvedNode: InspectUiNode;
+  resolvedPoint: UiPoint;
+  runtimeHooks: UiRuntimePlatformHooks;
+}
 
 export interface UiRuntimePlatformHooks {
   platform: Platform;
@@ -11,6 +26,7 @@ export interface UiRuntimePlatformHooks {
   probeFailureReasonCode: ReasonCode;
   buildTapCommand: (deviceId: string, x: number, y: number) => string[];
   buildDescribePointCommand?: (deviceId: string, x: number, y: number) => string[];
+  verifyResolvedPoint?: (params: UiResolvedPointVerificationParams) => Promise<UiResolvedPointVerificationResult>;
   buildTypeTextCommand: (deviceId: string, text: string) => string[];
   buildSwipeCommand: (deviceId: string, swipe: { start: { x: number; y: number }; end: { x: number; y: number }; durationMs: number }) => string[];
   buildHierarchyCapturePreviewCommand: (deviceId: string) => string[];
