@@ -215,6 +215,7 @@ test("verifyResolvedIosPoint keeps identifier-backed match when describe-point a
       scrollable: false,
       bounds: "[40,300][280,380]",
     },
+    resolvedQuery: { resourceId: "login-submit-button", text: "Continue" },
     resolvedPoint: { x: 120, y: 340 },
     runtimeHooks: {
       platform: "ios",
@@ -260,6 +261,7 @@ test("verifyResolvedIosPoint reports mismatch when describe-point returns differ
       scrollable: false,
       bounds: "[40,300][280,380]",
     },
+    resolvedQuery: { resourceId: "login-submit-button", text: "Continue" },
     resolvedPoint: { x: 120, y: 340 },
     runtimeHooks: {
       platform: "ios",
@@ -291,6 +293,51 @@ test("verifyResolvedIosPoint reports mismatch when describe-point returns differ
   assert.equal(verification.reasonCode, REASON_CODES.noMatch);
 });
 
+test("verifyResolvedIosPoint accepts exact semantic fallback when query-backed label control matches", async () => {
+  const verification = await uiActionToolInternals.verifyResolvedIosPoint({
+    repoRoot: process.cwd(),
+    deviceId: "ios-sim-1",
+    resolvedNode: {
+      className: "Button",
+      text: "Continue",
+      contentDesc: "Continue",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[40,300][280,380]",
+    },
+    resolvedQuery: { text: "Continue", className: "Button", clickable: true },
+    resolvedPoint: { x: 120, y: 340 },
+    runtimeHooks: {
+      platform: "ios",
+      requiresProbe: true,
+      probeFailureReasonCode: REASON_CODES.configurationError,
+      buildTapCommand: () => ["tap"],
+      buildDescribePointCommand: () => ["describe-point", "120", "340"],
+      buildTypeTextCommand: () => ["type"],
+      buildSwipeCommand: () => ["swipe"],
+      buildHierarchyCapturePreviewCommand: () => ["describe-all"],
+      probeUnavailableSuggestion: () => "probe unavailable",
+      tapDryRunSuggestion: "tap dry",
+      tapFailureSuggestion: "tap failed",
+      typeTextDryRunSuggestion: "type dry",
+      typeTextFailureSuggestion: "type failed",
+    },
+    executeDescribePointCommand: async () => ({
+      command: ["describe-point", "120", "340"],
+      probeExecution: { exitCode: 0, stdout: "ok", stderr: "" },
+      execution: {
+        exitCode: 0,
+        stdout: JSON.stringify([{ type: "Button", AXLabel: "Continue", frame: { x: 40, y: 300, width: 240, height: 80 } }]),
+        stderr: "",
+      },
+    }),
+  });
+
+  assert.equal(verification.verified, true);
+  assert.equal(verification.reasonCode, REASON_CODES.ok);
+});
+
 test("verifyTypedIosPostconditionWithHooks accepts updated text field value", async () => {
   const verification = await verifyTypedIosPostconditionWithHooks({
     repoRoot: process.cwd(),
@@ -305,6 +352,7 @@ test("verifyTypedIosPostconditionWithHooks accepts updated text field value", as
       scrollable: false,
       bounds: "[40,220][320,280]",
     },
+    resolvedQuery: { resourceId: "login-email-input", text: "Email" },
     resolvedPoint: { x: 120, y: 250 },
     typedValue: "new@example.com",
     runtimeHooks: {
@@ -351,6 +399,7 @@ test("verifyTypedIosPostconditionWithHooks accepts secure field without echoed v
       scrollable: false,
       bounds: "[40,300][320,360]",
     },
+    resolvedQuery: { resourceId: "login-password-input", text: "Password" },
     resolvedPoint: { x: 120, y: 330 },
     typedValue: "super-secret",
     runtimeHooks: {

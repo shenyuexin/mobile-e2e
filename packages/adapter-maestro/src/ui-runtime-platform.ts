@@ -1,4 +1,4 @@
-import type { InspectUiNode, Platform, ReasonCode, UiPoint } from "@mobile-e2e-mcp/contracts";
+import type { InspectUiNode, Platform, QueryUiSelector, ReasonCode, UiPoint } from "@mobile-e2e-mcp/contracts";
 import type { CommandExecution } from "./runtime-shared.js";
 import { createAndroidUiRuntimeHooks } from "./ui-runtime-android.js";
 import { createIosUiRuntimeHooks } from "./ui-runtime-ios.js";
@@ -16,6 +16,7 @@ export interface UiResolvedPointVerificationParams {
   repoRoot: string;
   deviceId: string;
   resolvedNode: InspectUiNode;
+  resolvedQuery: QueryUiSelector;
   resolvedPoint: UiPoint;
   runtimeHooks: UiRuntimePlatformHooks;
 }
