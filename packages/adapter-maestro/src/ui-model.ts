@@ -29,6 +29,11 @@ export interface UiSwipeCoordinates {
   durationMs: number;
 }
 
+export interface IosNativeLocatorCandidate {
+  kind: "identifier";
+  value: string;
+}
+
 export interface WaitForUiReadFailureState {
   consecutiveFailures: number;
   maxConsecutiveFailures: number;
@@ -88,6 +93,19 @@ export function hasQueryUiSelector(query: QueryUiSelector): boolean {
     || query.text !== undefined
     || query.className !== undefined
     || query.clickable !== undefined;
+}
+
+export function buildIosNativeLocatorCandidate(
+  node: InspectUiNode | undefined,
+  _query?: QueryUiSelector,
+): IosNativeLocatorCandidate | undefined {
+  if (!node?.resourceId) {
+    return undefined;
+  }
+  return {
+    kind: "identifier",
+    value: node.resourceId,
+  };
 }
 
 export function parseAndroidUiHierarchyNodes(xml: string): InspectUiNode[] {
