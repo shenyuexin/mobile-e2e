@@ -1328,6 +1328,15 @@ test("server invoke describe_capabilities keeps the current iOS partial frontier
     result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance")?.note ?? "",
     /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./,
   );
+  const perfTool = result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance") as ({ promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
+  assert.deepEqual(
+    perfTool?.promotionGate,
+    {
+      blocked: true,
+      requiredProofLanes: ["simulator", "real_device"],
+      blockingReasons: ["Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established."],
+    },
+  );
 });
 
 test("server invoke supports list_js_debug_targets dry-run", async () => {

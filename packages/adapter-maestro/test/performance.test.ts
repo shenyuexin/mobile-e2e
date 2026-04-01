@@ -106,10 +106,25 @@ test("buildCapabilityProfile locks the current iOS partial frontier", () => {
   assert.deepEqual(partialTools, [...IOS_PARTIAL_TOOL_FRONTIER].sort());
   assert.deepEqual(partialGroups, [...IOS_PARTIAL_GROUP_FRONTIER].sort());
 
-  const inspectNote = profile.toolCapabilities.find((tool) => tool.toolName === "inspect_ui")?.note ?? "";
-  const perfNote = profile.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance")?.note ?? "";
+  const inspectTool = profile.toolCapabilities.find((tool) => tool.toolName === "inspect_ui") as ({ note?: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
+  const perfTool = profile.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance") as ({ note?: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
+  const diagnosticsGroup = profile.groups.find((group) => group.groupName === "artifacts_and_diagnostics") as ({ promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
+  const inspectNote = inspectTool?.note ?? "";
+  const perfNote = perfTool?.note ?? "";
+  const inspectGate = inspectTool?.promotionGate;
+  const diagnosticsGate = diagnosticsGroup?.promotionGate;
   assert.match(inspectNote, /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./);
   assert.match(perfNote, /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./);
+  assert.deepEqual(inspectGate, {
+    blocked: true,
+    requiredProofLanes: ["simulator", "real_device"],
+    blockingReasons: ["Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established."],
+  });
+  assert.deepEqual(diagnosticsGate, {
+    blocked: true,
+    requiredProofLanes: ["simulator", "real_device"],
+    blockingReasons: ["Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established."],
+  });
 });
 
 test("extractIosSimulatorProcessId parses launchctl output for app pid", () => {

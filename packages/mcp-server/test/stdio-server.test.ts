@@ -136,7 +136,7 @@ test("handleRequest supports tools/call alias for describe_capabilities", async 
     data: {
       capabilities: {
         platform: string;
-        toolCapabilities: Array<{ toolName: string; supportLevel: string }>;
+        toolCapabilities: Array<{ toolName: string; supportLevel: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } }>;
         ocrFallback?: {
           hostRequirement: string;
           configuredProviders: string[];
@@ -151,6 +151,39 @@ test("handleRequest supports tools/call alias for describe_capabilities", async 
   assert.equal(typedResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "tap_element")?.supportLevel, "full");
   assert.equal(typedResult.data.capabilities.ocrFallback?.hostRequirement, "darwin");
   assert.equal(Array.isArray(typedResult.data.capabilities.ocrFallback?.configuredProviders), true);
+});
+
+test("handleRequest describe_capabilities carries iOS promotion gate through stdio", async () => {
+  const result = await handleRequest({
+    id: 71,
+    method: "tools/call",
+    params: {
+      name: "describe_capabilities",
+      arguments: {
+        sessionId: "stdio-capabilities-ios",
+        platform: "ios",
+        runnerProfile: "phase1",
+      },
+    },
+  });
+  const typedResult = result as {
+    status: string;
+    reasonCode: string;
+    data: {
+      capabilities: {
+        toolCapabilities: Array<{ toolName: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } }>;
+      };
+    };
+  };
+
+  assert.deepEqual(
+    typedResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "inspect_ui")?.promotionGate,
+    {
+      blocked: true,
+      requiredProofLanes: ["simulator", "real_device"],
+      blockingReasons: ["Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established."],
+    },
+  );
 });
 
 test("handleRequest supports m2e_ prefixed tool alias", async () => {

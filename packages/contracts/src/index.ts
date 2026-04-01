@@ -27,6 +27,7 @@ export type {
   CaptureJsNetworkEventsInput,
   CancelRecordSessionData,
   CancelRecordSessionInput,
+  SupportPromotionGate,
   CollectDebugEvidenceData,
   CollectDebugEvidenceInput,
   CompareAgainstBaselineData,
