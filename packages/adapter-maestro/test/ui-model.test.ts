@@ -14,8 +14,10 @@ import {
   detectViewportBounds,
   diffAmbiguousCandidates,
   buildInspectUiSummary,
+  extractIosEditableNodeValue,
   buildIosNativeLocatorCandidate,
   hasQueryUiSelector,
+  isIosEditableNode,
   isWaitConditionMet,
   normalizeQueryUiSelector,
   parseAndroidUiHierarchyNodes,
@@ -368,6 +370,37 @@ test("buildIosNativeLocatorCandidate prefers identifier over text-only selector 
 
   assert.equal(candidate?.kind, "identifier");
   assert.equal(candidate?.value, "login-email-input");
+});
+
+test("isIosEditableNode recognizes text-capable iOS controls", () => {
+  assert.equal(isIosEditableNode({ className: "TextField", clickable: true, enabled: true, scrollable: false }), true);
+  assert.equal(isIosEditableNode({ className: "SecureTextField", clickable: true, enabled: true, scrollable: false }), true);
+  assert.equal(isIosEditableNode({ className: "Button", clickable: true, enabled: true, scrollable: false }), false);
+});
+
+test("extractIosEditableNodeValue reads observable value but hides secure field content", () => {
+  assert.equal(
+    extractIosEditableNodeValue({
+      className: "TextField",
+      text: "demo@example.com",
+      contentDesc: "Email",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+    }),
+    "demo@example.com",
+  );
+  assert.equal(
+    extractIosEditableNodeValue({
+      className: "SecureTextField",
+      text: "••••••",
+      contentDesc: "Password",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+    }),
+    undefined,
+  );
 });
 
 test("parseIosInspectSummary falls back to empty summary for invalid JSON", () => {
