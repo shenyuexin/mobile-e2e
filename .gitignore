@@ -75,6 +75,7 @@ coverage/
 .sisyphus/
 .worktrees/
 .planning/
+.serena/
 
 # Optional open-source scope trimming (internal/phase artifacts)
 # NOTE: For already tracked files, run `git rm --cached <path>` to stop publishing.
