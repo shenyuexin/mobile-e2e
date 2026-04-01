@@ -20,6 +20,10 @@ export interface UiResolvedPointVerificationParams {
   runtimeHooks: UiRuntimePlatformHooks;
 }
 
+export interface UiTypedPostconditionVerificationParams extends UiResolvedPointVerificationParams {
+  typedValue: string;
+}
+
 export interface UiRuntimePlatformHooks {
   platform: Platform;
   requiresProbe: boolean;
@@ -27,6 +31,7 @@ export interface UiRuntimePlatformHooks {
   buildTapCommand: (deviceId: string, x: number, y: number) => string[];
   buildDescribePointCommand?: (deviceId: string, x: number, y: number) => string[];
   verifyResolvedPoint?: (params: UiResolvedPointVerificationParams) => Promise<UiResolvedPointVerificationResult>;
+  verifyTypedPostcondition?: (params: UiTypedPostconditionVerificationParams) => Promise<UiResolvedPointVerificationResult>;
   buildTypeTextCommand: (deviceId: string, text: string) => string[];
   buildSwipeCommand: (deviceId: string, swipe: { start: { x: number; y: number }; end: { x: number; y: number }; durationMs: number }) => string[];
   buildHierarchyCapturePreviewCommand: (deviceId: string) => string[];
