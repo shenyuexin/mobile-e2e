@@ -14,6 +14,7 @@ import {
   detectViewportBounds,
   diffAmbiguousCandidates,
   buildInspectUiSummary,
+  buildIosNativeLocatorCandidate,
   hasQueryUiSelector,
   isWaitConditionMet,
   normalizeQueryUiSelector,
@@ -310,6 +311,63 @@ test("parseIosInspectNodes prefers stable identifiers over name-derived pseudo i
   const textResult = { query: textQuery, ...queryUiNodes(nodes, textQuery) };
   assert.equal(textResult.totalMatches, 2);
   assert.equal(buildUiTargetResolution(textQuery, textResult, "full").status, "ambiguous");
+});
+
+test("buildIosNativeLocatorCandidate uses stable identifier-backed iOS nodes", () => {
+  const candidate = buildIosNativeLocatorCandidate(
+    {
+      resourceId: "login-submit-button",
+      className: "Button",
+      text: "Continue",
+      contentDesc: "Continue",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[40,300][280,380]",
+    },
+    { resourceId: "login-submit-button", text: "Continue" },
+  );
+
+  assert.deepEqual(candidate, {
+    kind: "identifier",
+    value: "login-submit-button",
+  });
+});
+
+test("buildIosNativeLocatorCandidate rejects label-only iOS nodes", () => {
+  const candidate = buildIosNativeLocatorCandidate(
+    {
+      className: "StaticText",
+      text: "Continue",
+      contentDesc: "Continue",
+      clickable: false,
+      enabled: true,
+      scrollable: false,
+      bounds: "[110,330][190,350]",
+    },
+    { text: "Continue" },
+  );
+
+  assert.equal(candidate, undefined);
+});
+
+test("buildIosNativeLocatorCandidate prefers identifier over text-only selector signals", () => {
+  const candidate = buildIosNativeLocatorCandidate(
+    {
+      resourceId: "login-email-input",
+      className: "TextField",
+      text: "Email",
+      contentDesc: "Email",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[40,220][320,280]",
+    },
+    { text: "Email", contentDesc: "Email", resourceId: "login-email-input" },
+  );
+
+  assert.equal(candidate?.kind, "identifier");
+  assert.equal(candidate?.value, "login-email-input");
 });
 
 test("parseIosInspectSummary falls back to empty summary for invalid JSON", () => {
