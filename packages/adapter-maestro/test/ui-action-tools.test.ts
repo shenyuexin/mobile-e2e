@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { REASON_CODES, type ToolResult, type ScrollAndResolveUiTargetData } from "@mobile-e2e-mcp/contracts";
 import { uiActionToolInternals } from "../src/ui-action-tools.ts";
+import { verifyTypedIosPostconditionWithHooks } from "../src/ui-runtime-ios.ts";
 
 test("tapResolvedTarget reuses resolved coordinates from scroll result", async () => {
   const resolveResult: ToolResult<ScrollAndResolveUiTargetData> = {
@@ -288,4 +289,96 @@ test("verifyResolvedIosPoint reports mismatch when describe-point returns differ
 
   assert.equal(verification.verified, false);
   assert.equal(verification.reasonCode, REASON_CODES.noMatch);
+});
+
+test("verifyTypedIosPostconditionWithHooks accepts updated text field value", async () => {
+  const verification = await verifyTypedIosPostconditionWithHooks({
+    repoRoot: process.cwd(),
+    deviceId: "ios-sim-1",
+    resolvedNode: {
+      resourceId: "login-email-input",
+      className: "TextField",
+      text: "old@example.com",
+      contentDesc: "Email",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[40,220][320,280]",
+    },
+    resolvedPoint: { x: 120, y: 250 },
+    typedValue: "new@example.com",
+    runtimeHooks: {
+      platform: "ios",
+      requiresProbe: true,
+      probeFailureReasonCode: REASON_CODES.configurationError,
+      buildTapCommand: () => ["tap"],
+      buildDescribePointCommand: () => ["describe-point", "120", "250"],
+      buildTypeTextCommand: () => ["type"],
+      buildSwipeCommand: () => ["swipe"],
+      buildHierarchyCapturePreviewCommand: () => ["describe-all"],
+      probeUnavailableSuggestion: () => "probe unavailable",
+      tapDryRunSuggestion: "tap dry",
+      tapFailureSuggestion: "tap failed",
+      typeTextDryRunSuggestion: "type dry",
+      typeTextFailureSuggestion: "type failed",
+    },
+    executeDescribePointCommand: async () => ({
+      command: ["describe-point", "120", "250"],
+      probeExecution: { exitCode: 0, stdout: "ok", stderr: "" },
+      execution: {
+        exitCode: 0,
+        stdout: JSON.stringify([{ identifier: "login-email-input", type: "TextField", value: "new@example.com", AXLabel: "Email", frame: { x: 40, y: 220, width: 280, height: 60 } }]),
+        stderr: "",
+      },
+    }),
+  });
+
+  assert.equal(verification.verified, true);
+  assert.equal(verification.reasonCode, REASON_CODES.ok);
+});
+
+test("verifyTypedIosPostconditionWithHooks accepts secure field without echoed value", async () => {
+  const verification = await verifyTypedIosPostconditionWithHooks({
+    repoRoot: process.cwd(),
+    deviceId: "ios-sim-1",
+    resolvedNode: {
+      resourceId: "login-password-input",
+      className: "SecureTextField",
+      text: undefined,
+      contentDesc: "Password",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[40,300][320,360]",
+    },
+    resolvedPoint: { x: 120, y: 330 },
+    typedValue: "super-secret",
+    runtimeHooks: {
+      platform: "ios",
+      requiresProbe: true,
+      probeFailureReasonCode: REASON_CODES.configurationError,
+      buildTapCommand: () => ["tap"],
+      buildDescribePointCommand: () => ["describe-point", "120", "330"],
+      buildTypeTextCommand: () => ["type"],
+      buildSwipeCommand: () => ["swipe"],
+      buildHierarchyCapturePreviewCommand: () => ["describe-all"],
+      probeUnavailableSuggestion: () => "probe unavailable",
+      tapDryRunSuggestion: "tap dry",
+      tapFailureSuggestion: "tap failed",
+      typeTextDryRunSuggestion: "type dry",
+      typeTextFailureSuggestion: "type failed",
+    },
+    executeDescribePointCommand: async () => ({
+      command: ["describe-point", "120", "330"],
+      probeExecution: { exitCode: 0, stdout: "ok", stderr: "" },
+      execution: {
+        exitCode: 0,
+        stdout: JSON.stringify([{ identifier: "login-password-input", type: "SecureTextField", AXLabel: "Password", frame: { x: 40, y: 300, width: 280, height: 60 } }]),
+        stderr: "",
+      },
+    }),
+  });
+
+  assert.equal(verification.verified, true);
+  assert.equal(verification.reasonCode, REASON_CODES.ok);
 });
