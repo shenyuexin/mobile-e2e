@@ -588,6 +588,53 @@ export async function tapElementWithMaestroTool(
     };
   }
 
+  if (platform === "ios" && !input.dryRun) {
+    const repoRoot = resolveRepoPath();
+    const runtimeHooks = resolveUiRuntimePlatformHooks(platform);
+    const selection = await loadHarnessSelection(
+      repoRoot,
+      platform,
+      runnerProfile,
+      input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH,
+    );
+    const deviceId =
+      input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(platform);
+    const verification = await verifyResolvedIosPoint({
+      repoRoot,
+      deviceId,
+      resolvedNode: resolution.matchedNode,
+      resolvedPoint: resolution.resolvedPoint,
+      runtimeHooks,
+    });
+    if (!verification.verified && verification.reasonCode) {
+      return {
+        status: "partial",
+        reasonCode: verification.reasonCode,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: resolveResult.attempts + 1,
+        artifacts: resolveResult.artifacts,
+        data: {
+          dryRun: false,
+          runnerProfile,
+          query,
+          matchCount: resolution.matchCount,
+          resolution,
+          matchedNode: resolution.matchedNode,
+          resolvedBounds: resolution.resolvedBounds,
+          resolvedX: resolution.resolvedPoint.x,
+          resolvedY: resolution.resolvedPoint.y,
+          command: verification.command,
+          exitCode: verification.exitCode,
+          supportLevel: resolveResult.data.supportLevel,
+        },
+        nextSuggestions: [
+          "The resolved iOS selector could not be confirmed at the target point. Refresh the hierarchy or scroll the element into a cleaner viewport before retrying tap_element.",
+        ],
+      };
+    }
+  }
+
   const tapResult = await tapWithMaestroTool({
     sessionId: input.sessionId,
     platform,
@@ -750,6 +797,49 @@ export async function typeIntoElementWithMaestroTool(
         resolution,
       ),
     };
+  }
+
+  if (platform === "ios" && !input.dryRun && resolution.matchedNode) {
+    const repoRoot = resolveRepoPath();
+    const runtimeHooks = resolveUiRuntimePlatformHooks(platform);
+    const selection = await loadHarnessSelection(
+      repoRoot,
+      platform,
+      runnerProfile,
+      input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH,
+    );
+    const deviceId =
+      input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(platform);
+    const verification = await verifyResolvedIosPoint({
+      repoRoot,
+      deviceId,
+      resolvedNode: resolution.matchedNode,
+      resolvedPoint: resolution.resolvedPoint,
+      runtimeHooks,
+    });
+    if (!verification.verified && verification.reasonCode) {
+      return {
+        status: "partial",
+        reasonCode: verification.reasonCode,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: resolveResult.attempts + 1,
+        artifacts: resolveResult.artifacts,
+        data: {
+          dryRun: false,
+          runnerProfile,
+          query,
+          value: input.value,
+          resolution,
+          commands: [verification.command],
+          exitCode: verification.exitCode,
+          supportLevel: resolveResult.data.supportLevel,
+        },
+        nextSuggestions: [
+          "The resolved iOS selector could not be confirmed at the focus point. Refresh the hierarchy or scroll the element into a cleaner viewport before retrying type_into_element.",
+        ],
+      };
+    }
   }
 
   const focusResult = await tapWithMaestroTool({
