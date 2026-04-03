@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
+import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { tmpdir } from "node:os";
 import { buildIosAppScopeNote, classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPerformanceWithMaestro, measureIosPerformanceWithMaestro, runDoctor, shouldResolveIosAttachTarget } from "../src/index.ts";
 import type { DoctorCheck } from "@mobile-e2e-mcp/contracts";
 import { IOS_PARTIAL_GROUP_FRONTIER, IOS_PARTIAL_TOOL_FRONTIER, buildCapabilityProfile } from "../src/capability-model.ts";
@@ -11,6 +13,18 @@ import { buildIosExportInspectionManifest, buildPerformanceNextSuggestions, pars
 import { buildFailureReason } from "../src/runtime-shared.ts";
 
 const fixtureRoot = path.resolve(import.meta.dirname, "fixtures", "performance");
+
+async function installFakeXcrun(script: string): Promise<() => void> {
+  const binDir = await mkdtemp(path.join(tmpdir(), "mobile-e2e-xcrun-"));
+  const xcrunPath = path.join(binDir, "xcrun");
+  await writeFile(xcrunPath, script, "utf8");
+  await chmod(xcrunPath, 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+  return () => {
+    process.env.PATH = originalPath;
+  };
+}
 
 test("isPerfettoShellProbeAvailable rejects missing sentinel output", () => {
   assert.equal(isPerfettoShellProbeAvailable({ exitCode: 0, stdout: "missing\n", stderr: "" }), false);
@@ -140,6 +154,7 @@ test("buildCapabilityProfile locks the current iOS partial frontier", () => {
 
   const inspectTool = profile.toolCapabilities.find((tool) => tool.toolName === "inspect_ui") as ({ note?: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
   const perfTool = profile.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance") as ({ note?: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
+  const listDevicesTool = profile.toolCapabilities.find((tool) => tool.toolName === "list_devices") as ({ note?: string } | undefined);
   const diagnosticsGroup = profile.groups.find((group) => group.groupName === "artifacts_and_diagnostics") as ({ promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
   const inspectNote = inspectTool?.note ?? "";
   const perfNote = perfTool?.note ?? "";
@@ -147,6 +162,7 @@ test("buildCapabilityProfile locks the current iOS partial frontier", () => {
   const diagnosticsGate = diagnosticsGroup?.promotionGate;
   assert.match(inspectNote, /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./);
   assert.match(perfNote, /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./);
+  assert.match(listDevicesTool?.note ?? "", /physical-device discovery/);
   assert.deepEqual(inspectGate, {
     blocked: true,
     requiredProofLanes: ["simulator", "real_device"],
@@ -274,6 +290,80 @@ test("measureIosPerformanceWithMaestro returns configuration failure when xcrun 
     assert.match(result.nextSuggestions[0] ?? "", /xctrace recording failed/i);
   } finally {
     process.env.PATH = originalPath;
+  }
+});
+
+test("measureIosPerformanceWithMaestro attaches to a real-device pid when devicectl discovery succeeds", async () => {
+  const restorePath = await installFakeXcrun(`#!/bin/sh
+set -eu
+if [ "$1" = "devicectl" ] && [ "$2" = "device" ] && [ "$3" = "info" ] && [ "$4" = "apps" ]; then
+  printf '%s\n' 'Apps installed:' 'Name      Bundle Identifier     Version   Bundle Version' '-------   -------------------   -------   --------------' 'Mobitru   com.mobitru.demoapp   1.0       1'
+  exit 0
+fi
+if [ "$1" = "devicectl" ] && [ "$2" = "device" ] && [ "$3" = "info" ] && [ "$4" = "processes" ]; then
+  printf '%s\n' '10446   /private/var/containers/Bundle/Application/UUID/Mobitru.app/Mobitru'
+  exit 0
+fi
+if [ "$1" = "xctrace" ] && [ "$2" = "record" ]; then
+  printf '%s\n' 'record failed' >&2
+  exit 2
+fi
+exit 1
+`);
+
+  try {
+    const result = await measureIosPerformanceWithMaestro({
+      sessionId: "adapter-ios-performance-physical-attach",
+      runnerProfile: "phase1",
+      durationMs: 1000,
+      template: "time-profiler",
+      deviceId: "00008101-000D482C1E78001E",
+      appId: "com.mobitru.demoapp",
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.data.commands[0]?.includes("--attach"), true);
+    assert.equal(result.data.commands[0]?.includes("10446"), true);
+    assert.match(result.nextSuggestions[1] ?? "", /attached by pid 10446/i);
+  } finally {
+    restorePath();
+  }
+});
+
+test("measureIosPerformanceWithMaestro preserves all-process fallback when real-device pid discovery fails", async () => {
+  const restorePath = await installFakeXcrun(`#!/bin/sh
+set -eu
+if [ "$1" = "devicectl" ] && [ "$2" = "device" ] && [ "$3" = "info" ] && [ "$4" = "apps" ]; then
+  printf '%s\n' 'Apps installed:' 'Name      Bundle Identifier     Version   Bundle Version' '-------   -------------------   -------   --------------' 'Mobitru   com.mobitru.demoapp   1.0       1'
+  exit 0
+fi
+if [ "$1" = "devicectl" ] && [ "$2" = "device" ] && [ "$3" = "info" ] && [ "$4" = "processes" ]; then
+  printf '%s\n' '11452   /System/Library/CoreServices/SpringBoard.app/SpringBoard'
+  exit 0
+fi
+if [ "$1" = "xctrace" ] && [ "$2" = "record" ]; then
+  printf '%s\n' "Cannot handle a target type of 'All Processes'" >&2
+  exit 2
+fi
+exit 1
+`);
+
+  try {
+    const result = await measureIosPerformanceWithMaestro({
+      sessionId: "adapter-ios-performance-physical-fallback",
+      runnerProfile: "phase1",
+      durationMs: 1000,
+      template: "memory",
+      deviceId: "00008101-000D482C1E78001E",
+      appId: "com.mobitru.demoapp",
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.data.commands[0]?.includes("--all-processes"), true);
+    assert.match(result.nextSuggestions[0] ?? "", /cannot record All Processes/i);
+    assert.match(result.nextSuggestions[1] ?? "", /could not be attached by pid/i);
+  } finally {
+    restorePath();
   }
 });
 
