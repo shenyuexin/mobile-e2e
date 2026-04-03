@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isIosPhysicalDeviceId } from "./device-runtime.js";
 import { probeIdbAvailability } from "./ui-runtime.js";
 import type { DeviceRuntimePlatformHooks } from "./device-runtime-platform.js";
 import type { CommandExecution } from "./runtime-shared.js";
@@ -111,9 +112,22 @@ export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
   return {
     platform: "ios",
     buildLaunchCommand: ({ runnerProfile, deviceId, appId, launchUrl }) => (
-      runnerProfile === "phase1"
-        ? ["xcrun", "simctl", "openurl", deviceId, launchUrl ?? ""]
-        : ["xcrun", "simctl", "launch", deviceId, appId]
+      isIosPhysicalDeviceId(deviceId)
+        ? [
+          "xcrun",
+          "devicectl",
+          "device",
+          "process",
+          "launch",
+          "--device",
+          deviceId,
+          ...(runnerProfile === "phase1" && launchUrl ? ["--payload-url", launchUrl] : []),
+          ...(runnerProfile === "phase1" ? [] : ["--terminate-existing"]),
+          appId,
+        ]
+        : runnerProfile === "phase1"
+          ? ["xcrun", "simctl", "openurl", deviceId, launchUrl ?? ""]
+          : ["xcrun", "simctl", "launch", deviceId, appId]
     ),
     buildInstallCommand: ({ deviceId, artifactPath }) => ["xcrun", "simctl", "install", deviceId, artifactPath],
     buildResetPlan: ({ strategy, deviceId, appId, artifactPath }) => {

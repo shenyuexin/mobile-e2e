@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergeIosPhysicalDevices, parseIosDevicectlDevices, parseIosXctraceDevices } from "../src/device-runtime.ts";
+import { isIosPhysicalDeviceId, mergeIosPhysicalDevices, parseIosDevicectlDevices, parseIosXctraceDevices } from "../src/device-runtime.ts";
+import { createIosDeviceRuntimeHooks } from "../src/device-runtime-ios.ts";
 
 test("parseIosXctraceDevices extracts available physical iOS devices from xctrace output", () => {
   const devices = parseIosXctraceDevices(`
@@ -77,5 +78,48 @@ test("mergeIosPhysicalDevices prefers xctrace UDID but upgrades availability fro
       state: "Connected",
       available: true,
     },
+  ]);
+});
+
+test("isIosPhysicalDeviceId distinguishes simulator UUIDs from real-device UDIDs", () => {
+  assert.equal(isIosPhysicalDeviceId("00008101-000D482C1E78001E"), true);
+  assert.equal(isIosPhysicalDeviceId("7FAAF425-69B6-49B6-8CC4-297FA9DAEA88"), false);
+});
+
+test("createIosDeviceRuntimeHooks uses devicectl launch for physical devices", () => {
+  const hooks = createIosDeviceRuntimeHooks();
+  const command = hooks.buildLaunchCommand({
+    runnerProfile: "native_ios",
+    deviceId: "00008101-000D482C1E78001E",
+    appId: "com.mobitru.demoapp",
+  });
+
+  assert.deepEqual(command, [
+    "xcrun",
+    "devicectl",
+    "device",
+    "process",
+    "launch",
+    "--device",
+    "00008101-000D482C1E78001E",
+    "--terminate-existing",
+    "com.mobitru.demoapp",
+  ]);
+});
+
+test("createIosDeviceRuntimeHooks keeps simctl launch for simulators", () => {
+  const hooks = createIosDeviceRuntimeHooks();
+  const command = hooks.buildLaunchCommand({
+    runnerProfile: "native_ios",
+    deviceId: "7FAAF425-69B6-49B6-8CC4-297FA9DAEA88",
+    appId: "com.mobitru.demoapp",
+  });
+
+  assert.deepEqual(command, [
+    "xcrun",
+    "simctl",
+    "launch",
+    "7FAAF425-69B6-49B6-8CC4-297FA9DAEA88",
+    "com.mobitru.demoapp",
   ]);
 });
