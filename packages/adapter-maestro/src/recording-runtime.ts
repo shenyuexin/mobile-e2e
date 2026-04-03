@@ -7,6 +7,7 @@ import {
 	type EndRecordSessionData,
 	type EndRecordSessionInput,
 	type GetRecordSessionStatusInput,
+	type Platform,
 	type RawRecordedEvent,
 	REASON_CODES,
 	type RecordSessionStatusData,
@@ -39,6 +40,9 @@ import {
 } from "./recording-runtime-android.js";
 import {
 	choosePreferredIosDeviceId,
+	choosePreferredIosPhysicalDeviceId,
+	choosePreferredIosRecordingRuntimeDeviceId,
+	isIosPhysicalRecordingDeviceId,
 	parseIosRawInputEvents,
 	parseSimctlDeviceEntries,
 } from "./recording-runtime-ios.js";
@@ -138,6 +142,20 @@ function mapRecordedEventTimestamp(
 		return new Date(eventMonotonicMs).toISOString();
 	}
 	return mapMonotonicToIso(startedAt, eventMonotonicMs, anchorMonotonicMs);
+}
+
+export function shouldRejectEmptyPhysicalIosRecording(
+	platform: Platform,
+	deviceId: string,
+	capturedEventCount: number,
+	stepCount: number,
+): boolean {
+	return (
+		platform === "ios" &&
+		isIosPhysicalRecordingDeviceId(deviceId) &&
+		capturedEventCount === 0 &&
+		stepCount === 0
+	);
 }
 
 export async function startRecordSessionWithMaestro(
@@ -540,6 +558,55 @@ export async function endRecordSessionWithMaestro(
 	let flowPath: string | undefined;
 	let replayDryRun: EndRecordSessionData["report"]["replayDryRun"];
 	const warnings = [...mapped.warnings, ...contextSnapshot.warnings];
+	const endedAt = new Date().toISOString();
+	if (
+		shouldRejectEmptyPhysicalIosRecording(
+			recordSession.platform,
+			recordSession.deviceId,
+			capturedEvents.length,
+			mapped.steps.length,
+		)
+	) {
+		warnings.push(
+			"No actionable events were captured for this iOS physical-device recording session. Export is skipped to avoid a false-positive replay flow.",
+		);
+		await persistRecordSessionState(repoRoot, input.recordSessionId, {
+			status: "ended",
+			endedAt,
+			flowPath: undefined,
+			warnings,
+			pid: undefined,
+			snapshotPid: undefined,
+		});
+
+		return {
+			status: "partial",
+			reasonCode: REASON_CODES.flowFailed,
+			sessionId: recordSession.sessionId,
+			durationMs: Date.now() - startTime,
+			attempts: 1,
+			artifacts: [
+				buildRecordSessionRelativePath(input.recordSessionId),
+				recordSession.rawEventsPath,
+				buildRecordedStepsRelativePath(input.recordSessionId),
+			],
+			data: {
+				recordSessionId: input.recordSessionId,
+				status: "ended",
+				endedAt,
+				report: {
+					stepCount: 0,
+					warnings,
+					confidenceSummary: { high: 0, medium: 0, low: 0 },
+					reviewRequired: true,
+				},
+			},
+			nextSuggestions: [
+				"Interact on the iOS physical device while recording (tap/type/swipe), then retry end_record_session.",
+				"If capture remains empty, verify idb/devicectl availability and review artifacts/record-events/*.jsonl plus artifacts/record-snapshots/*.",
+			],
+		};
+	}
 	if (input.autoExport !== false) {
 		const targetFlowPath =
 			input.outputPath ??
@@ -584,7 +651,6 @@ export async function endRecordSessionWithMaestro(
 		},
 		{ high: 0, medium: 0, low: 0 },
 	);
-	const endedAt = new Date().toISOString();
 	await persistRecordSessionState(repoRoot, input.recordSessionId, {
 		status: "ended",
 		endedAt,
@@ -712,6 +778,10 @@ export const recordingRuntimeInternals = {
 	parseIosRawInputEvents,
 	parseSimctlDeviceEntries,
 	choosePreferredIosDeviceId,
+	choosePreferredIosPhysicalDeviceId,
+	choosePreferredIosRecordingRuntimeDeviceId,
+	isIosPhysicalRecordingDeviceId,
+	shouldRejectEmptyPhysicalIosRecording,
 	deriveViewportSizeFromXml,
 	deriveViewportSizeFromSnapshot,
 	normalizeEventsToViewport,

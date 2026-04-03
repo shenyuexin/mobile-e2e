@@ -17,6 +17,10 @@ export const IOS_PARTIAL_TOOL_FRONTIER = [
   "end_record_session",
   "cancel_record_session",
   "record_screen",
+  "tap",
+  "tap_element",
+  "type_text",
+  "type_into_element",
 ] as const;
 
 export const IOS_PARTIAL_GROUP_FRONTIER = [
@@ -24,6 +28,7 @@ export const IOS_PARTIAL_GROUP_FRONTIER = [
   "recording_and_replay",
   "artifacts_and_diagnostics",
   "ui_inspection",
+  "ui_actions",
 ] as const;
 
 const IOS_PROOF_GATE_NOTE = "Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established.";
@@ -100,20 +105,20 @@ function buildIosToolCapabilities(): ToolCapability[] {
     buildToolCapability("install_app", FULL, "iOS simulator app installation is supported."),
     buildToolCapability("launch_app", FULL, "iOS simulator app launch is supported."),
     buildToolCapability("reset_app_state", PARTIAL, `iOS simulator app reset is supported with strategy-specific caveats (simctl uninstall/reinstall and keychain reset). ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
-    buildToolCapability("start_record_session", PARTIAL, `iOS simulator recording supports bounded simulator-log capture plus idb snapshot association (tap/type-first). ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
+    buildToolCapability("start_record_session", PARTIAL, `iOS recording supports bounded target selection across simulators and discoverable physical devices; simulator sessions include log-stream event capture while physical-device sessions currently rely on snapshot/context evidence and may produce sparse raw-event streams. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
     buildToolCapability("get_record_session_status", PARTIAL, `iOS recording status reporting is available with platform-specific guidance when capture remains sparse. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
     buildToolCapability("end_record_session", PARTIAL, `iOS recording supports bounded semantic mapping and flow export with confidence warnings. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
-    buildToolCapability("cancel_record_session", PARTIAL, `iOS recording cancellation is supported for simulator log and snapshot capture workers. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
+    buildToolCapability("cancel_record_session", PARTIAL, `iOS recording cancellation is supported for simulator/physical-device capture workers and snapshot loops. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
     buildToolCapability("list_devices", FULL, "iOS simulator and physical-device discovery are supported when local Apple tooling can enumerate them.", false),
     buildToolCapability("start_session", FULL, "iOS session initialization is supported.", false),
     buildToolCapability("run_flow", FULL, "iOS flow execution is supported, subject to current runner-profile constraints."),
     buildToolCapability("take_screenshot", FULL, "iOS simulator screenshot capture is supported."),
     buildToolCapability("record_screen", PARTIAL, `iOS simulator screen recording is supported through simctl io recordVideo. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
-    buildToolCapability("tap", FULL, "Direct iOS coordinate tap is supported through idb when the simulator companion is available."),
-    buildToolCapability("tap_element", FULL, "iOS element tap is supported after idb-backed target resolution."),
+    buildToolCapability("tap", PARTIAL, `Direct iOS coordinate tap is simulator-first through idb; physical-device execution depends on signed driver-backed flow/runtime paths and can fail when signing is not configured. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
+    buildToolCapability("tap_element", PARTIAL, `iOS element tap is simulator-first after idb-backed target resolution; physical-device execution remains proof-gated. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
     buildToolCapability("terminate_app", FULL, "iOS simulator app termination is supported."),
-    buildToolCapability("type_text", FULL, "Direct iOS text input is supported through idb when the simulator companion is available."),
-    buildToolCapability("type_into_element", FULL, "iOS element text input is supported after idb-backed target resolution."),
+    buildToolCapability("type_text", PARTIAL, `Direct iOS text input is simulator-first through idb; physical-device execution depends on signed driver-backed flow/runtime paths and can fail when signing is not configured. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
+    buildToolCapability("type_into_element", PARTIAL, `iOS element text input is simulator-first after idb-backed target resolution; physical-device execution remains proof-gated. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
     buildToolCapability("wait_for_ui", FULL, "iOS wait_for_ui actively polls simulator hierarchy through idb capture."),
     buildToolCapability("end_session", FULL, "iOS session shutdown is supported."),
   ];

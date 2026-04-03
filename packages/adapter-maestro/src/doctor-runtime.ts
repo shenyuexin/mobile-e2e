@@ -398,7 +398,7 @@ async function collectInstallStateChecks(repoRoot: string): Promise<DoctorCheck[
 
   try {
     const iosPackage = await executeRunner(
-      ["xcrun", "simctl", "get_app_container", process.env.SIM_UDID ?? DEFAULT_IOS_SIMULATOR_UDID, "com.epam.mobitru.demoapp"],
+      ["xcrun", "simctl", "get_app_container", process.env.SIM_UDID ?? DEFAULT_IOS_SIMULATOR_UDID, "com.mobitru.demoapp"],
       repoRoot,
       process.env,
     );
@@ -407,8 +407,8 @@ async function collectInstallStateChecks(repoRoot: string): Promise<DoctorCheck[
       status: iosPackage.exitCode === 0 ? "pass" : "warn",
       detail:
         iosPackage.exitCode === 0
-          ? "com.epam.mobitru.demoapp is installed on the selected iOS simulator."
-          : "com.epam.mobitru.demoapp is not confirmed as installed on the selected iOS simulator.",
+          ? "com.mobitru.demoapp is installed on the selected iOS simulator."
+          : "com.mobitru.demoapp is not confirmed as installed on the selected iOS simulator.",
     });
   } catch {
     checks.push({

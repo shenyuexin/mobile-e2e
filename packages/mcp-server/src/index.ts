@@ -560,7 +560,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
   }),
   defineToolDescriptor({
     name: "start_record_session",
-    description: "Start passive Android recording for manual on-device interactions.",
+    description: "Start passive recording for manual interactions on Android or iOS targets.",
     handler: startRecordSession,
     policy: { enforced: true, requiredScopes: ["write"] },
     session: { required: false },
@@ -736,7 +736,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
   }),
   defineToolDescriptor({
     name: "list_devices",
-    description: "List Android devices and iOS simulators.",
+    description: "List Android devices and iOS simulators/physical devices.",
     handler: listDevices,
     policy: { enforced: true, requiredScopes: ["read"] },
     session: { required: false },

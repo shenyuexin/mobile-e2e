@@ -36,14 +36,19 @@ class PhaseReport(TypedDict):
 
 ROOT = Path(__file__).resolve().parents[2]
 PHASE2_RN_ANDROID_ROOT = Path(
-    os.environ.get("PHASE2_RN_ANDROID_ARTIFACT_ROOT", str(ROOT / "artifacts/phase2-rn-android"))
+    os.environ.get(
+        "PHASE2_RN_ANDROID_ARTIFACT_ROOT", str(ROOT / "artifacts/phase2-rn-android")
+    )
 )
 ARTIFACT_ROOTS = {
     "react-native-ios": ROOT / "artifacts/phase1-ios",
-    "react-native-android": PHASE2_RN_ANDROID_ROOT if PHASE2_RN_ANDROID_ROOT.exists() else ROOT / "artifacts/phase1-android",
+    "react-native-android": PHASE2_RN_ANDROID_ROOT
+    if PHASE2_RN_ANDROID_ROOT.exists()
+    else ROOT / "artifacts/phase1-android",
     "flutter-android": ROOT / "artifacts/phase3-flutter-android",
     "native-android": ROOT / "artifacts/phase3-native-android",
     "native-ios": ROOT / "artifacts/phase3-native-ios",
+    "native-ios-real-device": ROOT / "artifacts/phase3-native-ios-real-device",
 }
 PLATFORM_SAMPLES = {
     "react-native-ios": "rn-login-demo",
@@ -51,6 +56,7 @@ PLATFORM_SAMPLES = {
     "flutter-android": "mobitru-flutter",
     "native-android": "mobitru-native",
     "native-ios": "mobitru-native",
+    "native-ios-real-device": "mobitru-native",
 }
 REPORT_DIR = ROOT / "reports"
 JSON_OUT = REPORT_DIR / "phase-sample-report.json"
@@ -96,10 +102,16 @@ def collect_platform(platform: str, root: Path) -> PlatformReport:
         runs.append(
             {
                 "run": run_dir.name,
-                "flow": (run_dir / "flow.txt").read_text().strip() if (run_dir / "flow.txt").exists() else None,
+                "flow": (run_dir / "flow.txt").read_text().strip()
+                if (run_dir / "flow.txt").exists()
+                else None,
                 "result": result,
-                "maestro_out": str(maestro_out.relative_to(ROOT)) if maestro_out.exists() else None,
-                "final_image": str((run_dir / "final.jpg").relative_to(ROOT)) if (run_dir / "final.jpg").exists() else None,
+                "maestro_out": str(maestro_out.relative_to(ROOT))
+                if maestro_out.exists()
+                else None,
+                "final_image": str((run_dir / "final.jpg").relative_to(ROOT))
+                if (run_dir / "final.jpg").exists()
+                else None,
             }
         )
 
@@ -153,8 +165,20 @@ def collect_scheduler_metrics(platform: str) -> dict[str, float | int]:
 
     queue_wait_values.sort()
     if queue_wait_values:
-        p50_index = max(0, min(len(queue_wait_values) - 1, (len(queue_wait_values) * 50 + 99) // 100 - 1))
-        p95_index = max(0, min(len(queue_wait_values) - 1, (len(queue_wait_values) * 95 + 99) // 100 - 1))
+        p50_index = max(
+            0,
+            min(
+                len(queue_wait_values) - 1,
+                (len(queue_wait_values) * 50 + 99) // 100 - 1,
+            ),
+        )
+        p95_index = max(
+            0,
+            min(
+                len(queue_wait_values) - 1,
+                (len(queue_wait_values) * 95 + 99) // 100 - 1,
+            ),
+        )
         p50_value = queue_wait_values[p50_index]
         p95_value = queue_wait_values[p95_index]
         max_value = queue_wait_values[-1]
@@ -177,9 +201,20 @@ def main() -> None:
     artifact_roots = selected_artifact_roots()
     report: PhaseReport = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
-        "phase": os.environ.get("PHASE_REPORT_PHASE", "Phase 2/3 sample validation report"),
-        "samples": sorted({PLATFORM_SAMPLES[platform] for platform in artifact_roots if platform in PLATFORM_SAMPLES}),
-        "platforms": [collect_platform(platform, root) for platform, root in artifact_roots.items()],
+        "phase": os.environ.get(
+            "PHASE_REPORT_PHASE", "Phase 2/3 sample validation report"
+        ),
+        "samples": sorted(
+            {
+                PLATFORM_SAMPLES[platform]
+                for platform in artifact_roots
+                if platform in PLATFORM_SAMPLES
+            }
+        ),
+        "platforms": [
+            collect_platform(platform, root)
+            for platform, root in artifact_roots.items()
+        ],
     }
 
     _ = JSON_OUT.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
@@ -197,7 +232,9 @@ def main() -> None:
             f"| {platform['platform']} | {platform['passed_runs']} | {platform['total_runs']} | {platform['pass_rate']:.0%} | {platform['status']} |"
         )
     lines.extend(["", "## Scheduler Metrics", ""])
-    lines.append("| Platform | Queue p50 ms | Queue p95 ms | Queue max ms | Lease conflicts | Stale recoveries |")
+    lines.append(
+        "| Platform | Queue p50 ms | Queue p95 ms | Queue max ms | Lease conflicts | Stale recoveries |"
+    )
     lines.append("|---|---:|---:|---:|---:|---:|")
     for platform in report["platforms"]:
         metrics = platform["scheduler_metrics"]

@@ -57,6 +57,9 @@ export function buildFailureReason(stderr: string, exitCode: number | null): Rea
   if (combined.includes("not supported on this platform")) {
     return REASON_CODES.deviceUnavailable;
   }
+  if (combined.includes("fbsimulatorlifecyclecommands protocol")) {
+    return REASON_CODES.unsupportedOperation;
+  }
   if (combined.includes("install_failed_version_downgrade") || combined.includes("failed to install")) {
     return REASON_CODES.configurationError;
   }

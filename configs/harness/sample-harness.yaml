@@ -36,7 +36,7 @@ phase3_validations:
     runner_script: scripts/dev/run-sample-phase-matrix.sh
     sample_name: mobitru-native
     artifact_root: artifacts/phase3-native-ios
-    app_id: com.epam.mobitru.demoapp
+    app_id: com.mobitru.demoapp
     run_count_default: 1
     flows:
       - flows/samples/native/mobitru-ios-login.yaml

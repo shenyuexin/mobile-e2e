@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { DeviceInfo } from "@mobile-e2e-mcp/contracts";
+import { isIosPhysicalDeviceId, listAvailableDevices } from "./device-runtime.js";
 import { buildDefaultDeviceId } from "./harness-config.js";
 import type {
 	ParsedRawEvent,
@@ -20,6 +22,48 @@ export interface SimctlDeviceEntry {
 	udid: string;
 	state: string;
 	isAvailable: boolean;
+}
+
+export function isIosPhysicalRecordingDeviceId(deviceId: string): boolean {
+	return isIosPhysicalDeviceId(deviceId);
+}
+
+export function choosePreferredIosPhysicalDeviceId(
+	devices: Array<{ id: string; available: boolean }>,
+	requestedDeviceId?: string,
+): string | undefined {
+	if (requestedDeviceId) {
+		const requested = devices.find(
+			(device) => device.id === requestedDeviceId && device.available,
+		);
+		return requested?.id;
+	}
+	return devices.find((device) => device.available)?.id;
+}
+
+export function choosePreferredIosRecordingRuntimeDeviceId(
+	devices: DeviceInfo[],
+	requestedDeviceId?: string,
+): string | undefined {
+	const availableDevices = devices.filter((device) => device.available);
+	if (requestedDeviceId) {
+		return availableDevices.find((device) => device.id === requestedDeviceId)?.id;
+	}
+	const preferredPhysical = availableDevices.find((device) =>
+		isIosPhysicalRecordingDeviceId(device.id),
+	);
+	if (preferredPhysical) {
+		return preferredPhysical.id;
+	}
+	const preferredBootedSimulator = availableDevices.find(
+		(device) =>
+			!isIosPhysicalRecordingDeviceId(device.id) &&
+			device.state.toLowerCase() === "booted",
+	);
+	if (preferredBootedSimulator) {
+		return preferredBootedSimulator.id;
+	}
+	return availableDevices[0]?.id;
 }
 
 function spawnDetachedShell(
@@ -84,16 +128,14 @@ export async function resolveIosRecordingDeviceId(
 	if (dryRun) {
 		return inputDeviceId ?? buildDefaultDeviceId("ios");
 	}
-	const listed = await executeRunner(
-		["xcrun", "simctl", "list", "devices", "--json"],
-		repoRoot,
-		process.env,
+	const discovered = await listAvailableDevices(repoRoot, true).catch(
+		() => undefined,
 	);
-	if (listed.exitCode !== 0) {
+	if (!discovered || discovered.ios.length === 0) {
 		return undefined;
 	}
-	return choosePreferredIosDeviceId(
-		parseSimctlDeviceEntries(listed.stdout),
+	return choosePreferredIosRecordingRuntimeDeviceId(
+		discovered.ios,
 		inputDeviceId,
 	);
 }
@@ -258,6 +300,7 @@ export async function startIosCaptureProcesses(
 	if (params.dryRun) {
 		return {};
 	}
+	const isPhysicalDevice = isIosPhysicalRecordingDeviceId(params.deviceId);
 	const idbProbe = await probeIdbAvailability(params.repoRoot);
 	if (!idbProbe || idbProbe.exitCode !== 0) {
 		return {
@@ -266,15 +309,18 @@ export async function startIosCaptureProcesses(
 		};
 	}
 
-	const iosLogStreamPredicate =
-		"eventMessage CONTAINS[c] 'touch' OR eventMessage CONTAINS[c] 'tap' OR eventMessage CONTAINS[c] 'keyboard' OR eventMessage CONTAINS[c] 'swipe'";
-	const shellCommand = `xcrun simctl spawn ${shellEscape(params.deviceId)} log stream --style compact --level info --predicate ${shellEscape(iosLogStreamPredicate)} > ${shellEscape(params.rawEventsAbsolutePath)} 2>&1`;
-	const pid = spawnDetachedShell(shellCommand, params.repoRoot, process.env);
-	if (!pid) {
-		return {
-			failureSuggestion:
-				"Failed to start iOS simulator event capture. Ensure xcrun simctl works and simulator is booted, then retry.",
-		};
+	let pid: number | undefined;
+	if (!isPhysicalDevice) {
+		const iosLogStreamPredicate =
+			"eventMessage CONTAINS[c] 'touch' OR eventMessage CONTAINS[c] 'tap' OR eventMessage CONTAINS[c] 'keyboard' OR eventMessage CONTAINS[c] 'swipe'";
+		const shellCommand = `xcrun simctl spawn ${shellEscape(params.deviceId)} log stream --style compact --level info --predicate ${shellEscape(iosLogStreamPredicate)} > ${shellEscape(params.rawEventsAbsolutePath)} 2>&1`;
+		pid = spawnDetachedShell(shellCommand, params.repoRoot, process.env);
+		if (!pid) {
+			return {
+				failureSuggestion:
+					"Failed to start iOS simulator event capture. Ensure xcrun simctl works and simulator is booted, then retry.",
+			};
+		}
 	}
 
 	const snapshotDirRelativePath = path.posix.join(
@@ -302,25 +348,25 @@ export async function startIosCaptureProcesses(
 export function createIosRecordingHooks(): RecordingPlatformHooks {
 	return {
 		platform: "ios",
-		captureChannels: ["simulator_logs", "ui_snapshots", "app_context"],
+		captureChannels: ["ios_events", "ui_snapshots", "app_context"],
 		resolveDeviceId: resolveIosRecordingDeviceId,
 		readCaptureStartMonotonicMs: async () => undefined,
 		startCaptureProcesses: startIosCaptureProcesses,
 		captureContextSnapshot: captureIosContextSnapshot,
 		parseRawEvents: parseIosRawInputEvents,
 		unavailableDeviceSuggestion:
-			"No available iOS simulator detected. Boot a simulator first (xcrun simctl list devices), then retry start_record_session.",
+			"No available iOS target detected. Provide a booted simulator UDID or a connected physical-device UDID, then retry start_record_session.",
 		startSuccessSuggestions: [
-			"Perform manual interactions on iOS simulator, then call end_record_session with the returned recordSessionId.",
-			"If event capture stays empty, verify simulator logs with `xcrun simctl spawn <udid> log stream --style compact`.",
+			"Perform manual interactions on the selected iOS target, then call end_record_session with the returned recordSessionId.",
+			"For simulator sessions, verify event capture with `xcrun simctl spawn <udid> log stream --style compact`; physical-device sessions currently rely on snapshot/context evidence and may produce sparse raw events.",
 		],
 		runningStatusSuggestions: [
-			"Continue interacting on iOS simulator, then call end_record_session to export flow.",
-			"If rawEventCount remains 0, confirm idb/simctl capture dependencies via doctor.",
+			"Continue interacting on the selected iOS target, then call end_record_session to export flow.",
+			"If rawEventCount remains 0, confirm idb/simctl/devicectl dependencies via doctor and review snapshot artifacts.",
 		],
 		endSessionNoFlowSuggestion:
-			"No flow was exported. Verify iOS simulator event capture (touch/keyboard) and idb snapshot availability, then retry recording.",
+			"No flow was exported. Verify iOS event capture (simulator log stream or physical-device app-context evidence) and idb snapshot availability, then retry recording.",
 		cancelSuggestion:
-			"iOS recording cancelled. Start a new session after confirming simulator and idb readiness.",
+			"iOS recording cancelled. Start a new session after confirming target readiness and idb availability.",
 	};
 }

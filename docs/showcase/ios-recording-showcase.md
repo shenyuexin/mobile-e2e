@@ -1,6 +1,6 @@
-# iOS Recording Showcase (Simulator)
+# iOS Recording Showcase (Simulator + Physical Device)
 
-This showcase demonstrates a reproducible iOS simulator record/replay loop:
+This showcase demonstrates a reproducible iOS record/replay loop:
 
 1. `start_record_session(platform=ios)`
 2. Manual interaction (tap/type/swipe)
@@ -11,10 +11,10 @@ This showcase demonstrates a reproducible iOS simulator record/replay loop:
 
 - `xcrun simctl` available
 - `idb` and `idb_companion` available
-- iOS simulator is booted
-- Target app installed on simulator
+- iOS simulator is booted **or** a physical iOS device is connected
+- Target app installed on the selected iOS target
 
-## Example sequence
+## Example sequence (simulator)
 
 Start recording:
 
@@ -29,6 +29,24 @@ Start recording:
   }
 }
 ```
+
+## Example sequence (physical device)
+
+Start recording:
+
+```json
+{
+  "name": "start_record_session",
+  "arguments": {
+    "sessionId": "ios-record-real-device-001",
+    "platform": "ios",
+    "deviceId": "<ios-physical-udid>",
+    "appId": "com.mobitru.demoapp"
+  }
+}
+```
+
+> Current truth: physical-device iOS recording is still partial and proof-gated. Raw event streams can be sparse; snapshot/context evidence remains the primary fallback signal.
 
 End + export:
 
@@ -66,6 +84,8 @@ Replay:
 
 ## Known limits
 
-- Current iOS capture is simulator-first and optimized for tap/type semantic mapping.
+- iOS target selection now supports simulator and discoverable physical devices.
+- Simulator capture still provides the richest raw event stream (`simctl log stream`).
+- Physical-device capture currently depends more on snapshot/context evidence and may emit sparse raw events.
 - Snapshot capture depends on idb hierarchy availability.
 - Low-confidence selector mapping may degrade to coordinate-based flow steps with warnings.

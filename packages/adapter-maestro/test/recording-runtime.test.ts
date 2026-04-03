@@ -230,6 +230,111 @@ test("choosePreferredIosDeviceId prefers requested then booted", () => {
   assert.equal(recordingRuntimeInternals.choosePreferredIosDeviceId(entries), "B");
 });
 
+test("isIosPhysicalRecordingDeviceId distinguishes simulator UUID and physical UDID", () => {
+  assert.equal(
+    recordingRuntimeInternals.isIosPhysicalRecordingDeviceId(
+      "ADA078B9-3C6B-4875-8B85-A7789F368816",
+    ),
+    false,
+  );
+  assert.equal(
+    recordingRuntimeInternals.isIosPhysicalRecordingDeviceId(
+      "00008110-001E195E3C61801E",
+    ),
+    true,
+  );
+});
+
+test("choosePreferredIosPhysicalDeviceId prefers requested available physical target", () => {
+  const selected = recordingRuntimeInternals.choosePreferredIosPhysicalDeviceId(
+    [
+      { id: "00008110-001E195E3C61801E", available: true },
+      { id: "00008130-001A2D123E54801E", available: true },
+    ],
+    "00008130-001A2D123E54801E",
+  );
+  assert.equal(selected, "00008130-001A2D123E54801E");
+});
+
+test("choosePreferredIosPhysicalDeviceId falls back to first available physical target", () => {
+  const selected = recordingRuntimeInternals.choosePreferredIosPhysicalDeviceId([
+    { id: "00008110-001E195E3C61801E", available: true },
+    { id: "00008130-001A2D123E54801E", available: false },
+  ]);
+  assert.equal(selected, "00008110-001E195E3C61801E");
+});
+
+test("choosePreferredIosRecordingRuntimeDeviceId prefers requested target when available", () => {
+  const selected =
+    recordingRuntimeInternals.choosePreferredIosRecordingRuntimeDeviceId(
+      [
+        {
+          id: "00008110-001E195E3C61801E",
+          platform: "ios",
+          state: "Connected",
+          available: true,
+        },
+        {
+          id: "ADA078B9-3C6B-4875-8B85-A7789F368816",
+          platform: "ios",
+          state: "Booted",
+          available: true,
+        },
+      ],
+      "ADA078B9-3C6B-4875-8B85-A7789F368816",
+    );
+  assert.equal(selected, "ADA078B9-3C6B-4875-8B85-A7789F368816");
+});
+
+test("choosePreferredIosRecordingRuntimeDeviceId prefers physical device when request missing", () => {
+  const selected =
+    recordingRuntimeInternals.choosePreferredIosRecordingRuntimeDeviceId([
+      {
+        id: "ADA078B9-3C6B-4875-8B85-A7789F368816",
+        platform: "ios",
+        state: "Booted",
+        available: true,
+      },
+      {
+        id: "00008110-001E195E3C61801E",
+        platform: "ios",
+        state: "Connected",
+        available: true,
+      },
+    ]);
+  assert.equal(selected, "00008110-001E195E3C61801E");
+});
+
+test("shouldRejectEmptyPhysicalIosRecording only rejects empty physical iOS captures", () => {
+  assert.equal(
+    recordingRuntimeInternals.shouldRejectEmptyPhysicalIosRecording(
+      "ios",
+      "00008110-001E195E3C61801E",
+      0,
+      0,
+    ),
+    true,
+  );
+  assert.equal(
+    recordingRuntimeInternals.shouldRejectEmptyPhysicalIosRecording(
+      "ios",
+      "ADA078B9-3C6B-4875-8B85-A7789F368816",
+      0,
+      0,
+    ),
+    false,
+  );
+  assert.equal(
+    recordingRuntimeInternals.shouldRejectEmptyPhysicalIosRecording(
+      "ios",
+      "00008110-001E195E3C61801E",
+      1,
+      1,
+    ),
+    false,
+  );
+});
+
 test("parseIosRawInputEvents extracts tap, type, and swipe", () => {
   const raw = [
     "2026-03-20 10:00:00.000 touch at (120, 300)",

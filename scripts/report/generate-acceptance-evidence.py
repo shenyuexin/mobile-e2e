@@ -13,7 +13,10 @@ ROOT = Path(__file__).resolve().parents[2]
 REPORT_DIR = ROOT / "reports"
 PHASE_REPORT = REPORT_DIR / "phase-sample-report.json"
 RUN_METADATA = Path(
-    os.environ.get("ACCEPTANCE_RUN_METADATA_PATH", str(REPORT_DIR / "self-hosted-run-metadata.json"))
+    os.environ.get(
+        "ACCEPTANCE_RUN_METADATA_PATH",
+        str(REPORT_DIR / "self-hosted-run-metadata.json"),
+    )
 )
 OUT_JSON = REPORT_DIR / "acceptance-evidence.json"
 OUT_MD = REPORT_DIR / "acceptance-evidence.md"
@@ -38,7 +41,9 @@ def collect_audit_files() -> list[str]:
     metadata = read_run_metadata()
     generated_at = metadata.get("generated_at")
     if generated_at:
-        threshold = datetime.fromisoformat(generated_at.replace("Z", "+00:00")).timestamp()
+        threshold = datetime.fromisoformat(
+            generated_at.replace("Z", "+00:00")
+        ).timestamp()
         return sorted(
             str(path.relative_to(ROOT))
             for path in audit_root.glob("*.json")
@@ -56,8 +61,11 @@ def collect_visual_evidence() -> list[str]:
         "artifacts/phase3-flutter-android/**/final.jpg",
         "artifacts/phase3-native-android/**/final.jpg",
         "artifacts/phase3-native-ios/**/final.jpg",
+        "artifacts/phase3-native-ios-real-device/**/final.jpg",
     ]:
-        visual_paths.extend(sorted(str(path.relative_to(ROOT)) for path in ROOT.glob(pattern)))
+        visual_paths.extend(
+            sorted(str(path.relative_to(ROOT)) for path in ROOT.glob(pattern))
+        )
     return visual_paths
 
 
@@ -96,31 +104,52 @@ def build_payload() -> dict:
         queue_p50_values.append(int(platform_metrics.get("queue_wait_p50_ms", 0) or 0))
         queue_p95_values.append(int(platform_metrics.get("queue_wait_p95_ms", 0) or 0))
         queue_max_values.append(int(platform_metrics.get("queue_wait_max_ms", 0) or 0))
-        scheduler_metrics["lease_conflict_count"] += int(platform_metrics.get("lease_conflict_count", 0) or 0)
-        scheduler_metrics["stale_lease_recovered_count"] += int(platform_metrics.get("stale_lease_recovered_count", 0) or 0)
+        scheduler_metrics["lease_conflict_count"] += int(
+            platform_metrics.get("lease_conflict_count", 0) or 0
+        )
+        scheduler_metrics["stale_lease_recovered_count"] += int(
+            platform_metrics.get("stale_lease_recovered_count", 0) or 0
+        )
 
     if queue_p50_values:
-        scheduler_metrics["queue_wait_p50_ms"] = sorted(queue_p50_values)[len(queue_p50_values) // 2]
+        scheduler_metrics["queue_wait_p50_ms"] = sorted(queue_p50_values)[
+            len(queue_p50_values) // 2
+        ]
     if queue_p95_values:
-        scheduler_metrics["queue_wait_p95_ms"] = sorted(queue_p95_values)[max(0, len(queue_p95_values) - 1)]
+        scheduler_metrics["queue_wait_p95_ms"] = sorted(queue_p95_values)[
+            max(0, len(queue_p95_values) - 1)
+        ]
     if queue_max_values:
         scheduler_metrics["queue_wait_max_ms"] = max(queue_max_values)
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "scope": {
-            "phase": metadata.get("phase", os.environ.get("ACCEPTANCE_PHASE", "Phase 3 real-run")),
-            "workstream": metadata.get("workstream", os.environ.get("ACCEPTANCE_WORKSTREAM", "sample-validation")),
-            "feature": metadata.get("feature", os.environ.get("ACCEPTANCE_FEATURE", "self-hosted real-run acceptance")),
+            "phase": metadata.get(
+                "phase", os.environ.get("ACCEPTANCE_PHASE", "Phase 3 real-run")
+            ),
+            "workstream": metadata.get(
+                "workstream",
+                os.environ.get("ACCEPTANCE_WORKSTREAM", "sample-validation"),
+            ),
+            "feature": metadata.get(
+                "feature",
+                os.environ.get("ACCEPTANCE_FEATURE", "self-hosted real-run acceptance"),
+            ),
         },
         "context": {
-            "environment": metadata.get("environment", os.environ.get("ACCEPTANCE_ENVIRONMENT", "local-self-hosted")),
+            "environment": metadata.get(
+                "environment",
+                os.environ.get("ACCEPTANCE_ENVIRONMENT", "local-self-hosted"),
+            ),
             "host": platform.node(),
             "platform": platform.platform(),
             "github_run_id": os.environ.get("GITHUB_RUN_ID"),
             "github_actor": os.environ.get("GITHUB_ACTOR"),
             "git_sha": os.environ.get("GITHUB_SHA"),
-            "run_metadata": str(RUN_METADATA.relative_to(ROOT)) if RUN_METADATA.exists() else None,
+            "run_metadata": str(RUN_METADATA.relative_to(ROOT))
+            if RUN_METADATA.exists()
+            else None,
         },
         "results": {
             "total_runs": total_runs,
@@ -130,7 +159,9 @@ def build_payload() -> dict:
             "scheduler_metrics": scheduler_metrics,
         },
         "artifacts": {
-            "phase_report_json": str(PHASE_REPORT.relative_to(ROOT)) if PHASE_REPORT.exists() else None,
+            "phase_report_json": str(PHASE_REPORT.relative_to(ROOT))
+            if PHASE_REPORT.exists()
+            else None,
             "audit_files": collect_audit_files(),
             "visual_evidence": collect_visual_evidence(),
         },

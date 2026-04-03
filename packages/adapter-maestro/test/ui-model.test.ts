@@ -805,15 +805,15 @@ test("buildCapabilityProfile stays honest across Android and iOS UI action suppo
   const iosProfile = buildCapabilityProfile("ios", "phase1");
 
   assert.equal(androidProfile.toolCapabilities.find((tool) => tool.toolName === "tap_element")?.supportLevel, "full");
-  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "tap")?.supportLevel, "full");
-  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "type_text")?.supportLevel, "full");
-  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "tap_element")?.supportLevel, "full");
-  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "type_into_element")?.supportLevel, "full");
+  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "tap")?.supportLevel, "partial");
+  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "type_text")?.supportLevel, "partial");
+  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "tap_element")?.supportLevel, "partial");
+  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "type_into_element")?.supportLevel, "partial");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "scroll_and_resolve_ui_target")?.supportLevel, "full");
   assert.equal(androidProfile.toolCapabilities.find((tool) => tool.toolName === "record_screen")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "reset_app_state")?.supportLevel, "partial");
-  assert.equal(iosProfile.groups.find((group) => group.groupName === "ui_actions")?.supportLevel, "full");
+  assert.equal(iosProfile.groups.find((group) => group.groupName === "ui_actions")?.supportLevel, "partial");
 });
 
 test("typeTextWithMaestro previews iOS idb text entry in dry-run mode", async () => {

@@ -1,7 +1,7 @@
-appId: com.epam.mobitru.demoapp
+appId: com.mobitru.demoapp
 ---
 - launchApp:
-    appId: com.epam.mobitru.demoapp
+    appId: com.mobitru.demoapp
     clearState: true
     clearKeychain: true
     stopApp: true

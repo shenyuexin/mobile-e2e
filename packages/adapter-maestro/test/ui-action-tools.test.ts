@@ -3,6 +3,7 @@ import test from "node:test";
 import { REASON_CODES, type ToolResult, type ScrollAndResolveUiTargetData } from "@mobile-e2e-mcp/contracts";
 import { uiActionToolInternals } from "../src/ui-action-tools.ts";
 import { verifyTypedIosPostconditionWithHooks } from "../src/ui-runtime-ios.ts";
+import { isIosSimulatorOnlyIdbActionError } from "../src/ui-runtime-ios.ts";
 
 test("tapResolvedTarget reuses resolved coordinates from scroll result", async () => {
   const resolveResult: ToolResult<ScrollAndResolveUiTargetData> = {
@@ -430,4 +431,14 @@ test("verifyTypedIosPostconditionWithHooks accepts secure field without echoed v
 
   assert.equal(verification.verified, true);
   assert.equal(verification.reasonCode, REASON_CODES.ok);
+});
+
+test("isIosSimulatorOnlyIdbActionError detects simulator-lifecycle protocol failures", () => {
+  assert.equal(
+    isIosSimulatorOnlyIdbActionError(
+      "Target doesn't conform to FBSimulatorLifecycleCommands protocol 00008101-000D482C1E78001E",
+    ),
+    true,
+  );
+  assert.equal(isIosSimulatorOnlyIdbActionError("some generic idb failure"), false);
 });

@@ -21,6 +21,11 @@ on:
         required: false
         default: true
         type: boolean
+      run_native_ios_real_device:
+        description: Run Phase 3 native iOS physical-device acceptance lane
+        required: false
+        default: false
+        type: boolean
       phase2_rn_android_runs:
         description: Phase 2 React Native Android dedicated acceptance run count
         required: false
@@ -48,6 +53,11 @@ on:
         type: string
       phase3_native_ios_runs:
         description: Phase 3 native iOS run count
+        required: false
+        default: "1"
+        type: string
+      phase3_native_ios_real_device_runs:
+        description: Phase 3 native iOS physical-device run count
         required: false
         default: "1"
         type: string
@@ -111,22 +121,26 @@ jobs:
             RAW_RUN_FLUTTER_ANDROID="${{ inputs.run_flutter_android }}"
             RAW_RUN_NATIVE_ANDROID="${{ inputs.run_native_android }}"
             RAW_RUN_NATIVE_IOS="${{ inputs.run_native_ios }}"
+            RAW_RUN_NATIVE_IOS_REAL_DEVICE="${{ inputs.run_native_ios_real_device }}"
             RAW_PHASE2_RN_ANDROID_RUNS="${{ inputs.phase2_rn_android_runs }}"
             RAW_PHASE1_IOS_RUNS="${{ inputs.phase1_ios_runs }}"
             RAW_PHASE1_ANDROID_RUNS="${{ inputs.phase1_android_runs }}"
             RAW_PHASE3_FLUTTER_RUNS="${{ inputs.phase3_flutter_runs }}"
             RAW_PHASE3_NATIVE_ANDROID_RUNS="${{ inputs.phase3_native_android_runs }}"
             RAW_PHASE3_NATIVE_IOS_RUNS="${{ inputs.phase3_native_ios_runs }}"
+            RAW_PHASE3_NATIVE_IOS_REAL_DEVICE_RUNS="${{ inputs.phase3_native_ios_real_device_runs }}"
           else
             RAW_RUN_FLUTTER_ANDROID="true"
             RAW_RUN_NATIVE_ANDROID="true"
             RAW_RUN_NATIVE_IOS="true"
+            RAW_RUN_NATIVE_IOS_REAL_DEVICE="false"
             RAW_PHASE2_RN_ANDROID_RUNS="1"
             RAW_PHASE1_IOS_RUNS="1"
             RAW_PHASE1_ANDROID_RUNS="1"
             RAW_PHASE3_FLUTTER_RUNS="1"
             RAW_PHASE3_NATIVE_ANDROID_RUNS="1"
             RAW_PHASE3_NATIVE_IOS_RUNS="1"
+            RAW_PHASE3_NATIVE_IOS_REAL_DEVICE_RUNS="1"
           fi
 
           bool_to_flag() {
@@ -140,12 +154,17 @@ jobs:
           echo "RUN_FLUTTER_ANDROID=$(bool_to_flag "$RAW_RUN_FLUTTER_ANDROID")" >> "$GITHUB_ENV"
           echo "RUN_NATIVE_ANDROID=$(bool_to_flag "$RAW_RUN_NATIVE_ANDROID")" >> "$GITHUB_ENV"
           echo "RUN_NATIVE_IOS=$(bool_to_flag "$RAW_RUN_NATIVE_IOS")" >> "$GITHUB_ENV"
+          echo "RUN_NATIVE_IOS_REAL_DEVICE=$(bool_to_flag "$RAW_RUN_NATIVE_IOS_REAL_DEVICE")" >> "$GITHUB_ENV"
           echo "PHASE2_RN_ANDROID_RUNS=$RAW_PHASE2_RN_ANDROID_RUNS" >> "$GITHUB_ENV"
           echo "PHASE1_IOS_RUNS=$RAW_PHASE1_IOS_RUNS" >> "$GITHUB_ENV"
           echo "PHASE1_ANDROID_RUNS=$RAW_PHASE1_ANDROID_RUNS" >> "$GITHUB_ENV"
           echo "PHASE3_FLUTTER_RUNS=$RAW_PHASE3_FLUTTER_RUNS" >> "$GITHUB_ENV"
           echo "PHASE3_NATIVE_ANDROID_RUNS=$RAW_PHASE3_NATIVE_ANDROID_RUNS" >> "$GITHUB_ENV"
           echo "PHASE3_NATIVE_IOS_RUNS=$RAW_PHASE3_NATIVE_IOS_RUNS" >> "$GITHUB_ENV"
+          echo "PHASE3_NATIVE_IOS_REAL_DEVICE_RUNS=$RAW_PHASE3_NATIVE_IOS_REAL_DEVICE_RUNS" >> "$GITHUB_ENV"
+          if [ -n "${{ vars.IOS_REAL_DEVICE_UDID }}" ]; then
+            echo "IOS_DEVICE_ID=${{ vars.IOS_REAL_DEVICE_UDID }}" >> "$GITHUB_ENV"
+          fi
 
           require_positive_int() {
             local key="$1"
@@ -162,6 +181,7 @@ jobs:
           require_positive_int "phase3_flutter_runs" "$RAW_PHASE3_FLUTTER_RUNS"
           require_positive_int "phase3_native_android_runs" "$RAW_PHASE3_NATIVE_ANDROID_RUNS"
           require_positive_int "phase3_native_ios_runs" "$RAW_PHASE3_NATIVE_IOS_RUNS"
+          require_positive_int "phase3_native_ios_real_device_runs" "$RAW_PHASE3_NATIVE_IOS_REAL_DEVICE_RUNS"
 
           {
             echo "## Real-device acceptance lane configuration"
@@ -169,15 +189,25 @@ jobs:
             echo "- run_flutter_android: \`$RAW_RUN_FLUTTER_ANDROID\`"
             echo "- run_native_android: \`$RAW_RUN_NATIVE_ANDROID\`"
             echo "- run_native_ios: \`$RAW_RUN_NATIVE_IOS\`"
+            echo "- run_native_ios_real_device: \`$RAW_RUN_NATIVE_IOS_REAL_DEVICE\`"
             echo "- phase2_rn_android_runs: \`$RAW_PHASE2_RN_ANDROID_RUNS\`"
             echo "- phase1_ios_runs: \`$RAW_PHASE1_IOS_RUNS\`"
             echo "- phase1_android_runs: \`$RAW_PHASE1_ANDROID_RUNS\`"
             echo "- phase3_flutter_runs: \`$RAW_PHASE3_FLUTTER_RUNS\`"
             echo "- phase3_native_android_runs: \`$RAW_PHASE3_NATIVE_ANDROID_RUNS\`"
             echo "- phase3_native_ios_runs: \`$RAW_PHASE3_NATIVE_IOS_RUNS\`"
+            echo "- phase3_native_ios_real_device_runs: \`$RAW_PHASE3_NATIVE_IOS_REAL_DEVICE_RUNS\`"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Run dedicated Phase 2 RN Android acceptance lane
         run: pnpm run validate:phase2-rn-android-acceptance
+      - name: Validate iOS physical-device lane prerequisites
+        if: env.RUN_NATIVE_IOS_REAL_DEVICE == '1'
+        run: |
+          if [ -z "${IOS_DEVICE_ID:-}" ]; then
+            echo "RUN_NATIVE_IOS_REAL_DEVICE is enabled but IOS_DEVICE_ID is not set." >&2
+            echo "Set repo variable IOS_REAL_DEVICE_UDID or provide IOS_DEVICE_ID on the self-hosted runner." >&2
+            exit 1
+          fi
       - name: Preserve dedicated Phase 2 lane evidence
         if: always()
         run: |
@@ -228,6 +258,8 @@ jobs:
             expected_platforms.add("native-android")
           if os.environ.get("RUN_NATIVE_IOS") == "1":
             expected_platforms.add("native-ios")
+          if os.environ.get("RUN_NATIVE_IOS_REAL_DEVICE") == "1":
+            expected_platforms.add("native-ios-real-device")
 
           no_go_entries = []
           no_data_expected_entries = []
@@ -277,6 +309,7 @@ jobs:
             echo "- Framework-profile lane note: current shared acceptance runner/report path proves Flutter Android lane first; Flutter iOS is outside this shared lane"
             echo "- Framework-profile status source: \`configs/profiles/native.yaml\` + \`configs/profiles/flutter.yaml\` remain \`validated-sample-baseline\`"
             echo "- Artifact bundle: \`real-device-acceptance-report-${{ github.run_id }}\`"
+            echo "- Optional iOS physical-device lane: \`native-ios-real-device\` (enabled via workflow input and UDID-aware env wiring)"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload acceptance report
         if: always()
@@ -303,3 +336,4 @@ jobs:
             artifacts/phase3-flutter-android/**
             artifacts/phase3-native-android/**
             artifacts/phase3-native-ios/**
+            artifacts/phase3-native-ios-real-device/**

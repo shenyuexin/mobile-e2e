@@ -29,7 +29,7 @@ Start recording:
 }
 ```
 
-iOS simulator recording example:
+iOS recording example (simulator):
 
 ```json
 {
@@ -41,6 +41,24 @@ iOS simulator recording example:
       "platform": "ios",
       "deviceId": "<ios-simulator-udid>",
       "appId": "com.example.ios",
+      "dryRun": false
+    }
+  }
+}
+```
+
+iOS recording example (physical device):
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "start_record_session",
+    "arguments": {
+      "sessionId": "record-login-ios-real-device-001",
+      "platform": "ios",
+      "deviceId": "<ios-physical-udid>",
+      "appId": "com.mobitru.demoapp",
       "dryRun": false
     }
   }
@@ -113,7 +131,7 @@ Use cases:
 - `expectedAppPhase`: strong post-run validation target (for example `detail` after login)
 
 For a compact quickstart version, also see `docs/guides/record-session-quickstart.md`.
-For iOS simulator demo evidence and reproducible steps, see `docs/showcase/ios-recording-showcase.md`.
+For iOS simulator/physical-device demo evidence and reproducible steps, see `docs/showcase/ios-recording-showcase.md`.
 
 ## 2) Action-record export path
 
@@ -156,9 +174,11 @@ Current mapping covers `launch_app`, `tap_element`, `type_into_element`, and `wa
 
 iOS passive recording notes:
 
-- Current iOS capture is simulator-first, focused on `tap`/`type`/bounded `swipe` semantic extraction.
+- Current iOS capture supports simulator and discoverable physical-device targets.
+- Simulator capture remains the richer event source for `tap`/`type`/bounded `swipe` semantic extraction.
+- Physical-device sessions currently rely more on snapshot/context evidence and may produce sparse raw-event streams.
 - iOS selector mapping prioritizes accessibility identifier/label/value-derived fields from idb hierarchy snapshots.
 - When selector confidence is low, export falls back to coordinate steps with warnings for auditability.
-- Required dependencies: `xcrun simctl`, `idb`, and `idb_companion`.
+- Required dependencies: `xcrun simctl`, `xcrun devicectl` (for physical-device discovery), `idb`, and `idb_companion`.
 
 For OEM-specific replay caveats and troubleshooting, see `docs/guides/vivo-oppo-multi-user-replay.md`.

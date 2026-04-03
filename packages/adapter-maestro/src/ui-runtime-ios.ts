@@ -21,6 +21,10 @@ function buildProbeSuggestion(action: UiRuntimeProbeAction): string {
   return "iOS type_text requires idb. Install fb-idb and idb_companion, or set IDB_CLI_PATH/IDB_COMPANION_PATH before retrying.";
 }
 
+export function isIosSimulatorOnlyIdbActionError(stderr: string): boolean {
+  return stderr.toLowerCase().includes("fbsimulatorlifecyclecommands protocol");
+}
+
 export async function verifyResolvedIosPointWithHooks(
   params: UiResolvedPointVerificationParams & {
     executeDescribePointCommand?: typeof executeUiActionCommand;
@@ -154,9 +158,9 @@ export function createIosUiRuntimeHooks(): UiRuntimePlatformHooks {
     buildHierarchyCapturePreviewCommand: (deviceId) => buildIosUiDescribeCommand(deviceId),
     probeRuntimeAvailability: async (repoRoot) => probeIdbAvailability(repoRoot),
     probeUnavailableSuggestion: buildProbeSuggestion,
-    tapDryRunSuggestion: "Run tap without dryRun to perform the actual iOS simulator coordinate tap through idb.",
-    tapFailureSuggestion: "Check the selected simulator coordinates and idb companion availability before retrying tap.",
-    typeTextDryRunSuggestion: "Run type_text without dryRun to perform iOS simulator text entry through idb.",
-    typeTextFailureSuggestion: "Check the selected simulator, focused element, and idb companion availability before retrying type_text.",
+    tapDryRunSuggestion: "Run tap without dryRun to perform iOS coordinate tap through idb (simulator-first path).",
+    tapFailureSuggestion: "If target is a physical iOS device and stderr mentions FBSimulatorLifecycleCommands, this direct idb tap path is simulator-scoped; use run_flow with signed iOS driver path instead.",
+    typeTextDryRunSuggestion: "Run type_text without dryRun to perform iOS text entry through idb (simulator-first path).",
+    typeTextFailureSuggestion: "If target is a physical iOS device and stderr mentions FBSimulatorLifecycleCommands, this direct idb type_text path is simulator-scoped; use run_flow with signed iOS driver path instead.",
   };
 }

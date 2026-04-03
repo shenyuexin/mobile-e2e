@@ -376,6 +376,16 @@ test("buildFailureReason maps real animation-hitches simulator fixture to device
   assert.equal(buildFailureReason(fixture, 2), "DEVICE_UNAVAILABLE");
 });
 
+test("buildFailureReason maps simulator-only idb action errors to unsupported operation", () => {
+  assert.equal(
+    buildFailureReason(
+      "Target doesn't conform to FBSimulatorLifecycleCommands protocol 00008101-000D482C1E78001E",
+      1,
+    ),
+    "UNSUPPORTED_OPERATION",
+  );
+});
+
 test("summarizeIosPerformance extracts top processes and hotspots from time profiler export", () => {
   const tocXml = `<?xml version="1.0"?><trace-toc><run number="1"><summary><duration>3.0</duration></summary></run></trace-toc>`;
   const exportXml = `<?xml version="1.0"?><trace-query-result><node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'><schema name="time-profile"></schema><row><process fmt="MyApp (123)"/><weight fmt="2.00 ms">2000000</weight><backtrace><frame name="MyAppMain"/></backtrace></row><row><process fmt="MyApp (123)"/><weight fmt="1.50 ms">1500000</weight><backtrace><frame name="MyHotLoop"/></backtrace></row><row><process fmt="WindowServer (511)"/><weight fmt="0.50 ms">500000</weight><backtrace><frame name="FrameInfoNotifyFuncIOShq"/></backtrace></row></node></trace-query-result>`;

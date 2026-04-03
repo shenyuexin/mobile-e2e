@@ -44,6 +44,8 @@ import {
   buildFailureReason,
   toRelativePath,
 } from "./runtime-shared.js";
+import { isIosPhysicalDeviceId } from "./device-runtime.js";
+import { isIosSimulatorOnlyIdbActionError } from "./ui-runtime-ios.js";
 import {
   buildMissingPlatformSuggestion,
   buildPlatformUiDumpOutputPath,
@@ -272,12 +274,26 @@ export async function tapWithMaestroTool(
   }
 
   const execution = actionResult.execution;
+  const simulatorOnlyIdbError =
+    input.platform === "ios"
+    && isIosPhysicalDeviceId(deviceId)
+    && isIosSimulatorOnlyIdbActionError(execution.stderr);
+  const tapReasonCode = simulatorOnlyIdbError
+    ? REASON_CODES.unsupportedOperation
+    : buildFailureReason(execution.stderr, execution.exitCode);
+  const tapSuggestions = execution.exitCode === 0
+    ? []
+    : simulatorOnlyIdbError
+      ? [
+        "Direct iOS tap via idb is simulator-scoped for this runtime path. For physical-device replay, use run_flow with Maestro iOS driver signing configured in Xcode.",
+      ]
+      : [runtimeHooks.tapFailureSuggestion];
   return {
     status: execution.exitCode === 0 ? "success" : "failed",
     reasonCode:
       execution.exitCode === 0
         ? REASON_CODES.ok
-        : buildFailureReason(execution.stderr, execution.exitCode),
+        : tapReasonCode,
     sessionId: input.sessionId,
     durationMs: Date.now() - startTime,
     attempts: 1,
@@ -290,8 +306,7 @@ export async function tapWithMaestroTool(
       command,
       exitCode: execution.exitCode,
     },
-    nextSuggestions:
-      execution.exitCode === 0 ? [] : [runtimeHooks.tapFailureSuggestion],
+    nextSuggestions: tapSuggestions,
   };
 }
 
@@ -378,12 +393,26 @@ export async function typeTextWithMaestroTool(
   }
 
   const execution = actionResult.execution;
+  const simulatorOnlyIdbError =
+    input.platform === "ios"
+    && isIosPhysicalDeviceId(deviceId)
+    && isIosSimulatorOnlyIdbActionError(execution.stderr);
+  const typeReasonCode = simulatorOnlyIdbError
+    ? REASON_CODES.unsupportedOperation
+    : buildFailureReason(execution.stderr, execution.exitCode);
+  const typeSuggestions = execution.exitCode === 0
+    ? []
+    : simulatorOnlyIdbError
+      ? [
+        "Direct iOS type_text via idb is simulator-scoped for this runtime path. For physical-device replay, use run_flow with Maestro iOS driver signing configured in Xcode.",
+      ]
+      : [runtimeHooks.typeTextFailureSuggestion];
   return {
     status: execution.exitCode === 0 ? "success" : "failed",
     reasonCode:
       execution.exitCode === 0
         ? REASON_CODES.ok
-        : buildFailureReason(execution.stderr, execution.exitCode),
+        : typeReasonCode,
     sessionId: input.sessionId,
     durationMs: Date.now() - startTime,
     attempts: 1,
@@ -395,8 +424,7 @@ export async function typeTextWithMaestroTool(
       command,
       exitCode: execution.exitCode,
     },
-    nextSuggestions:
-      execution.exitCode === 0 ? [] : [runtimeHooks.typeTextFailureSuggestion],
+    nextSuggestions: typeSuggestions,
   };
 }
 
