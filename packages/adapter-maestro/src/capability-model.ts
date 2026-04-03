@@ -104,7 +104,7 @@ function buildIosToolCapabilities(): ToolCapability[] {
     buildToolCapability("get_record_session_status", PARTIAL, `iOS recording status reporting is available with platform-specific guidance when capture remains sparse. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
     buildToolCapability("end_record_session", PARTIAL, `iOS recording supports bounded semantic mapping and flow export with confidence warnings. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
     buildToolCapability("cancel_record_session", PARTIAL, `iOS recording cancellation is supported for simulator log and snapshot capture workers. ${IOS_PROOF_GATE_NOTE}`, true, iosProofGate),
-    buildToolCapability("list_devices", FULL, "iOS simulator discovery is supported.", false),
+    buildToolCapability("list_devices", FULL, "iOS simulator and physical-device discovery are supported when local Apple tooling can enumerate them.", false),
     buildToolCapability("start_session", FULL, "iOS session initialization is supported.", false),
     buildToolCapability("run_flow", FULL, "iOS flow execution is supported, subject to current runner-profile constraints."),
     buildToolCapability("take_screenshot", FULL, "iOS simulator screenshot capture is supported."),
