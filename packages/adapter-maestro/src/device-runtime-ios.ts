@@ -56,6 +56,35 @@ async function runIdbPreflight(repoRoot: string): Promise<void> {
   await probeIdbAvailability(repoRoot).catch(() => undefined);
 }
 
+export function extractIosPhysicalAppName(devicectlAppsOutput: string, appId: string): string | undefined {
+  const lines = devicectlAppsOutput.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("Apps installed:") || line.startsWith("Name") || line.startsWith("---")) {
+      continue;
+    }
+    if (!line.includes(appId)) {
+      continue;
+    }
+    const name = line.split(/\t+| {2,}/)[0]?.trim();
+    return name || undefined;
+  }
+  return undefined;
+}
+
+export function extractIosPhysicalProcessId(devicectlProcessesOutput: string, appName: string): string | undefined {
+  const escapedAppName = appName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^(\\d+)\\s+.*?/${escapedAppName}\.app/${escapedAppName}\\s*$`, "i");
+  const lines = devicectlProcessesOutput.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
+  for (const rawLine of lines) {
+    const match = rawLine.trim().match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+  return undefined;
+}
+
 export function extractIosSimulatorProcessId(launchctlOutput: string, appId: string): string | undefined {
   const lines = launchctlOutput.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
   const match = lines
