@@ -209,6 +209,116 @@ function parseIosDevices(stdout: string, includeUnavailable: boolean): DeviceInf
   return Array.from(devicesByName.values()).filter((device) => includeUnavailable || device.available);
 }
 
+export function parseIosXctraceDevices(stdout: string, includeUnavailable: boolean): DeviceInfo[] {
+  const devices: DeviceInfo[] = [];
+  let currentSection: "devices" | "devices_offline" | "simulators" | undefined;
+  const lines = stdout.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+    if (line === "== Devices ==") {
+      currentSection = "devices";
+      continue;
+    }
+    if (line === "== Devices Offline ==") {
+      currentSection = "devices_offline";
+      continue;
+    }
+    if (line === "== Simulators ==") {
+      currentSection = "simulators";
+      continue;
+    }
+    if (currentSection !== "devices" && currentSection !== "devices_offline") {
+      continue;
+    }
+    const match = line.match(/^(.*?)\s*\(([^()]*)\)\s*\(([A-F0-9-]{10,})\)$/i);
+    if (!match) {
+      continue;
+    }
+    const [, rawName, , id] = match;
+    const name = rawName.trim();
+    const available = currentSection === "devices";
+    const device: DeviceInfo = {
+      id,
+      name,
+      platform: "ios",
+      state: available ? "Connected" : "Offline",
+      available,
+    };
+    if (includeUnavailable || device.available) {
+      devices.push(device);
+    }
+  }
+  return devices;
+}
+
+export function parseIosDevicectlDevices(stdout: string, includeUnavailable: boolean): DeviceInfo[] {
+  const devices: DeviceInfo[] = [];
+  const lines = stdout.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("Name") || line.startsWith("---") || line.startsWith("Failed to load")) {
+      continue;
+    }
+    const match = line.match(/^(.*?)\s{2,}\S+\s{2,}([A-F0-9-]{10,})\s{2,}(available \(paired\)|available|unavailable)\s{2,}.*$/i);
+    if (!match) {
+      continue;
+    }
+    const [, rawName, id, rawState] = match;
+    const available = rawState.toLowerCase().startsWith("available");
+    const device: DeviceInfo = {
+      id,
+      name: rawName.trim(),
+      platform: "ios",
+      state: available ? "Connected" : "Offline",
+      available,
+    };
+    if (includeUnavailable || device.available) {
+      devices.push(device);
+    }
+  }
+  return devices;
+}
+
+export function mergeIosPhysicalDevices(
+  xctraceDevices: DeviceInfo[],
+  devicectlDevices: DeviceInfo[],
+  includeUnavailable: boolean,
+): DeviceInfo[] {
+  const mergedByName = new Map<string, DeviceInfo>();
+  for (const device of xctraceDevices) {
+    if (device.name) {
+      mergedByName.set(device.name, device);
+    }
+  }
+  for (const device of devicectlDevices) {
+    const existing = device.name ? mergedByName.get(device.name) : undefined;
+    if (existing) {
+      mergedByName.set(device.name!, {
+        ...existing,
+        state: device.available ? device.state : existing.state,
+        available: device.available || existing.available,
+      });
+      continue;
+    }
+    if (device.name) {
+      mergedByName.set(device.name, device);
+    }
+  }
+  return [...mergedByName.values()].filter((device) => includeUnavailable || device.available);
+}
+
+function mergeIosDiscoveredDevices(simulatorDevices: DeviceInfo[], physicalDevices: DeviceInfo[]): DeviceInfo[] {
+  const merged = new Map<string, DeviceInfo>();
+  for (const device of [...physicalDevices, ...simulatorDevices]) {
+    const key = `${device.platform}:${device.id}`;
+    merged.set(key, device);
+  }
+  return [...merged.values()];
+}
+
 export async function listAvailableDevices(repoRoot: string, includeUnavailable = false): Promise<{ android: DeviceInfo[]; ios: DeviceInfo[]; status: "success" | "partial"; reasonCode: ReasonCode; nextSuggestions: string[] }> {
   let androidDevices: DeviceInfo[] = [];
   let iosDevices: DeviceInfo[] = [];
@@ -226,8 +336,41 @@ export async function listAvailableDevices(repoRoot: string, includeUnavailable 
   }
   try {
     const iosResult = await executeRunner(["xcrun", "simctl", "list", "devices", "available", "--json"], repoRoot, process.env);
-    iosDevices = iosResult.exitCode === 0 ? parseIosDevices(iosResult.stdout, includeUnavailable).map((device) => ({ ...device, capabilities: buildCapabilityProfile("ios", null) })) : [];
+    const simulatorDevices = iosResult.exitCode === 0 ? parseIosDevices(iosResult.stdout, includeUnavailable) : [];
     if (iosResult.exitCode !== 0) { status = "partial"; if (reasonCode === REASON_CODES.ok) reasonCode = REASON_CODES.deviceUnavailable; nextSuggestions.push("xcrun simctl returned an error while listing iOS simulators."); }
+    let physicalDevices: DeviceInfo[] = [];
+    try {
+      const xctraceResult = await executeRunner(["xcrun", "xctrace", "list", "devices"], repoRoot, process.env);
+      const xctraceDevices = xctraceResult.exitCode === 0 ? parseIosXctraceDevices(xctraceResult.stdout, true) : [];
+      if (xctraceResult.exitCode !== 0) {
+        status = "partial";
+        if (reasonCode === REASON_CODES.ok) reasonCode = REASON_CODES.deviceUnavailable;
+        nextSuggestions.push("xcrun xctrace returned an error while listing physical iOS devices.");
+      }
+      let devicectlDevices: DeviceInfo[] = [];
+      try {
+        const devicectlResult = await executeRunner(["xcrun", "devicectl", "list", "devices"], repoRoot, process.env);
+        devicectlDevices = devicectlResult.exitCode === 0 ? parseIosDevicectlDevices(devicectlResult.stdout, true) : [];
+        if (devicectlResult.exitCode !== 0) {
+          status = "partial";
+          if (reasonCode === REASON_CODES.ok) reasonCode = REASON_CODES.deviceUnavailable;
+          nextSuggestions.push("xcrun devicectl returned an error while listing physical iOS devices.");
+        }
+      } catch {
+        status = "partial";
+        if (reasonCode === REASON_CODES.ok) reasonCode = REASON_CODES.deviceUnavailable;
+        nextSuggestions.push("xcrun devicectl is unavailable in the current environment.");
+      }
+      physicalDevices = mergeIosPhysicalDevices(xctraceDevices, devicectlDevices, includeUnavailable);
+    } catch {
+      status = "partial";
+      if (reasonCode === REASON_CODES.ok) reasonCode = REASON_CODES.deviceUnavailable;
+      nextSuggestions.push("xcrun xctrace is unavailable in the current environment.");
+    }
+    iosDevices = mergeIosDiscoveredDevices(simulatorDevices, physicalDevices).map((device) => ({
+      ...device,
+      capabilities: buildCapabilityProfile("ios", null),
+    }));
   } catch {
     status = "partial"; if (reasonCode === REASON_CODES.ok) reasonCode = REASON_CODES.deviceUnavailable; nextSuggestions.push("xcrun simctl is unavailable in the current environment.");
   }
