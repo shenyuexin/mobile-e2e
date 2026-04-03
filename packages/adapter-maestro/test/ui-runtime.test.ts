@@ -47,6 +47,29 @@ test("executeUiActionCommand stops before execution when runtime probe fails", a
   assert.deepEqual(result.command, ["missing-command"]);
 });
 
+test("isDegenerateIosSnapshot detects root-only zero-area application payload", () => {
+  assert.equal(uiRuntimeInternals.isDegenerateIosSnapshot([
+    {
+      className: "Application",
+      clickable: false,
+      enabled: true,
+      scrollable: false,
+      bounds: "[0,0][0,0]",
+    },
+  ]), true);
+
+  assert.equal(uiRuntimeInternals.isDegenerateIosSnapshot([
+    {
+      className: "Application",
+      contentDesc: "Mobitru",
+      clickable: false,
+      enabled: true,
+      scrollable: false,
+      bounds: "[0,0][430,932]",
+    },
+  ]), false);
+});
+
 test("runUiWaitPollingLoop aborts after repeated retryable snapshot failures", async () => {
   let currentTime = 0;
   const outcome = await uiRuntimeInternals.runUiWaitPollingLoop({

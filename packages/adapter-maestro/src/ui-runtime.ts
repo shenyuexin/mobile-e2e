@@ -68,6 +68,17 @@ export interface IosUiSnapshotFailure {
   message: string;
 }
 
+export function isDegenerateIosSnapshot(nodes: InspectUiNode[]): boolean {
+  if (nodes.length !== 1) {
+    return false;
+  }
+  const root = nodes[0];
+  return root?.className === "Application"
+    && !root.text
+    && !root.contentDesc
+    && root.bounds === "[0,0][0,0]";
+}
+
 export interface UiActionExecutionResult {
   command: string[];
   execution?: CommandExecution;
@@ -420,6 +431,15 @@ export async function captureIosUiSnapshot(repoRoot: string, deviceId: string, s
     await writeFile(absoluteOutputPath, execution.stdout, "utf8");
   }
   const nodes = execution.exitCode === 0 ? parseIosInspectNodes(execution.stdout) : [];
+  if (execution.exitCode === 0 && isDegenerateIosSnapshot(nodes)) {
+    return {
+      reasonCode: REASON_CODES.deviceUnavailable,
+      exitCode: execution.exitCode,
+      outputPath: relativeOutputPath,
+      command,
+      message: "iOS hierarchy capture returned only a degenerate application root. The app may not be inspectable yet; retry after launch settles or verify the current simulator UI state.",
+    };
+  }
   const summary = execution.exitCode === 0 ? buildInspectUiSummary(nodes) : undefined;
   const queryResult = execution.exitCode === 0 ? queryUiNodes(nodes, query) : { totalMatches: 0, matches: [] as QueryUiMatch[] };
 
@@ -660,6 +680,7 @@ export async function runUiScrollResolveLoop(
 
 export const uiRuntimeInternals = {
   executeUiActionCommand,
+  isDegenerateIosSnapshot,
   runUiWaitPollingLoop,
   runUiScrollResolveLoop,
 };
