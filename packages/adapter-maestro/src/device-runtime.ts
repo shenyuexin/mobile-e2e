@@ -209,6 +209,10 @@ function parseIosDevices(stdout: string, includeUnavailable: boolean): DeviceInf
   return Array.from(devicesByName.values()).filter((device) => includeUnavailable || device.available);
 }
 
+export function isIosPhysicalDeviceId(deviceId: string): boolean {
+  return !/^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$/i.test(deviceId);
+}
+
 export function parseIosXctraceDevices(stdout: string, includeUnavailable: boolean): DeviceInfo[] {
   const devices: DeviceInfo[] = [];
   let currentSection: "devices" | "devices_offline" | "simulators" | undefined;
