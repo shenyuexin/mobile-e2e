@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { isIosPhysicalDeviceId, mergeIosPhysicalDevices, parseIosDevicectlDevices, parseIosXctraceDevices } from "../src/device-runtime.ts";
-import { createIosDeviceRuntimeHooks } from "../src/device-runtime-ios.ts";
+import { createIosDeviceRuntimeHooks, extractIosPhysicalAppName, extractIosPhysicalProcessId } from "../src/device-runtime-ios.ts";
 
 test("parseIosXctraceDevices extracts available physical iOS devices from xctrace output", () => {
   const devices = parseIosXctraceDevices(`
@@ -122,4 +122,24 @@ test("createIosDeviceRuntimeHooks keeps simctl launch for simulators", () => {
     "7FAAF425-69B6-49B6-8CC4-297FA9DAEA88",
     "com.mobitru.demoapp",
   ]);
+});
+
+test("extractIosPhysicalAppName parses devicectl app listing by bundle id", () => {
+  const appName = extractIosPhysicalAppName(`
+Apps installed:
+Name      Bundle Identifier     Version   Bundle Version
+-------   -------------------   -------   --------------
+Mobitru   com.mobitru.demoapp   1.0       1
+`, "com.mobitru.demoapp");
+
+  assert.equal(appName, "Mobitru");
+});
+
+test("extractIosPhysicalProcessId finds running app pid from devicectl process listing", () => {
+  const pid = extractIosPhysicalProcessId(`
+10446   /private/var/containers/Bundle/Application/EBFE2B02-1B06-4743-9200-70D737C8A7B0/Mobitru.app/Mobitru
+11452   /System/Library/CoreServices/SpringBoard.app/SpringBoard
+`, "Mobitru");
+
+  assert.equal(pid, "10446");
 });
