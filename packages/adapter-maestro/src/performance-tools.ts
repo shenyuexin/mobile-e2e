@@ -20,10 +20,10 @@ import {
   loadHarnessSelection,
   resolveRepoPath,
 } from "./harness-config.js";
-import { resolveIosSimulatorAttachTarget } from "./device-runtime-ios.js";
+import { resolveIosAttachTarget } from "./device-runtime-ios.js";
 import {
-  buildIosExportInspectionManifest,
   buildAndroidPerformanceData,
+  buildIosExportInspectionManifest,
   buildIosPerformanceData,
   buildPerformanceMarkdownReport,
   buildPerformanceNextSuggestions,
@@ -662,7 +662,7 @@ export async function measureIosPerformanceWithRuntime(input: MeasureIosPerforma
     template: requestedTemplate,
     appId,
   })
-    ? await resolveIosSimulatorAttachTarget(repoRoot, deviceId, appId)
+    ? await resolveIosAttachTarget(repoRoot, deviceId, appId)
     : undefined;
   const plan = buildIosPerformancePlan({ ...input, appId }, runnerProfile, deviceId, attachTarget);
   const supportLevel: "partial" = "partial";

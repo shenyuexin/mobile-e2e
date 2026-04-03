@@ -1,10 +1,9 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isIosPhysicalDeviceId } from "./device-runtime.js";
-import { probeIdbAvailability } from "./ui-runtime.js";
 import type { DeviceRuntimePlatformHooks } from "./device-runtime-platform.js";
-import type { CommandExecution } from "./runtime-shared.js";
-import { executeRunner, shellEscape } from "./runtime-shared.js";
+import { probeIdbAvailability } from "./ui-runtime.js";
+import { executeRunner, shellEscape, type CommandExecution } from "./runtime-shared.js";
 
 const DEFAULT_DEVICE_COMMAND_TIMEOUT_MS = 5000;
 
@@ -74,7 +73,7 @@ export function extractIosPhysicalAppName(devicectlAppsOutput: string, appId: st
 
 export function extractIosPhysicalProcessId(devicectlProcessesOutput: string, appName: string): string | undefined {
   const escapedAppName = appName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`^(\\d+)\\s+.*?/${escapedAppName}\.app/${escapedAppName}\\s*$`, "i");
+  const pattern = new RegExp(`^(\\d+)\\s+.*?/${escapedAppName}\\.app/${escapedAppName}\\s*$`, "i");
   const lines = devicectlProcessesOutput.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10));
   for (const rawLine of lines) {
     const match = rawLine.trim().match(pattern);
@@ -118,6 +117,48 @@ async function queryIosSimulatorProcessId(repoRoot: string, deviceId: string, ap
   return extractIosSimulatorProcessId(execution.stdout, appId);
 }
 
+async function queryIosPhysicalAppName(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
+  let execution: CommandExecution;
+  try {
+    execution = await executeRunner([
+      "xcrun",
+      "devicectl",
+      "device",
+      "info",
+      "apps",
+      "--device",
+      deviceId,
+    ], repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS });
+  } catch {
+    return undefined;
+  }
+  if (execution.exitCode !== 0) {
+    return undefined;
+  }
+  return extractIosPhysicalAppName(execution.stdout, appId);
+}
+
+async function queryIosPhysicalProcessId(repoRoot: string, deviceId: string, appName: string): Promise<string | undefined> {
+  let execution: CommandExecution;
+  try {
+    execution = await executeRunner([
+      "xcrun",
+      "devicectl",
+      "device",
+      "info",
+      "processes",
+      "--device",
+      deviceId,
+    ], repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS });
+  } catch {
+    return undefined;
+  }
+  if (execution.exitCode !== 0) {
+    return undefined;
+  }
+  return extractIosPhysicalProcessId(execution.stdout, appName);
+}
+
 export async function resolveIosSimulatorAttachTarget(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
   const existingPid = await queryIosSimulatorProcessId(repoRoot, deviceId, appId);
   if (existingPid) {
@@ -135,6 +176,20 @@ export async function resolveIosSimulatorAttachTarget(repoRoot: string, deviceId
     return undefined;
   }
   return queryIosSimulatorProcessId(repoRoot, deviceId, appId);
+}
+
+export async function resolveIosPhysicalAttachTarget(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
+  const appName = await queryIosPhysicalAppName(repoRoot, deviceId, appId);
+  if (!appName) {
+    return undefined;
+  }
+  return queryIosPhysicalProcessId(repoRoot, deviceId, appName);
+}
+
+export async function resolveIosAttachTarget(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
+  return isIosPhysicalDeviceId(deviceId)
+    ? resolveIosPhysicalAttachTarget(repoRoot, deviceId, appId)
+    : resolveIosSimulatorAttachTarget(repoRoot, deviceId, appId);
 }
 
 export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {

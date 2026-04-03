@@ -1,7 +1,25 @@
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { isIosPhysicalDeviceId, mergeIosPhysicalDevices, parseIosDevicectlDevices, parseIosXctraceDevices } from "../src/device-runtime.ts";
-import { createIosDeviceRuntimeHooks, extractIosPhysicalAppName, extractIosPhysicalProcessId } from "../src/device-runtime-ios.ts";
+import { createIosDeviceRuntimeHooks, extractIosPhysicalAppName, extractIosPhysicalProcessId, resolveIosAttachTarget, resolveIosPhysicalAttachTarget } from "../src/device-runtime-ios.ts";
+
+async function installFakeXcrun(script: string): Promise<{ binDir: string; restore: () => void }> {
+  const binDir = await mkdtemp(path.join(tmpdir(), "mobile-e2e-xcrun-"));
+  const xcrunPath = path.join(binDir, "xcrun");
+  await writeFile(xcrunPath, script, "utf8");
+  await chmod(xcrunPath, 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+  return {
+    binDir,
+    restore: () => {
+      process.env.PATH = originalPath;
+    },
+  };
+}
 
 test("parseIosXctraceDevices extracts available physical iOS devices from xctrace output", () => {
   const devices = parseIosXctraceDevices(`
@@ -142,4 +160,66 @@ test("extractIosPhysicalProcessId finds running app pid from devicectl process l
 `, "Mobitru");
 
   assert.equal(pid, "10446");
+});
+
+test("resolveIosPhysicalAttachTarget resolves a real-device pid from devicectl listings", async () => {
+  const fakeXcrun = await installFakeXcrun(`#!/bin/sh
+set -eu
+if [ "$1" = "devicectl" ] && [ "$2" = "device" ] && [ "$3" = "info" ] && [ "$4" = "apps" ]; then
+  printf '%s\n' 'Apps installed:' 'Name      Bundle Identifier     Version   Bundle Version' '-------   -------------------   -------   --------------' 'Mobitru   com.mobitru.demoapp   1.0       1'
+  exit 0
+fi
+if [ "$1" = "devicectl" ] && [ "$2" = "device" ] && [ "$3" = "info" ] && [ "$4" = "processes" ]; then
+  printf '%s\n' '10446   /private/var/containers/Bundle/Application/EBFE2B02-1B06-4743-9200-70D737C8A7B0/Mobitru.app/Mobitru' '11452   /System/Library/CoreServices/SpringBoard.app/SpringBoard'
+  exit 0
+fi
+exit 1
+`);
+
+  try {
+    const pid = await resolveIosPhysicalAttachTarget(process.cwd(), "00008101-000D482C1E78001E", "com.mobitru.demoapp");
+    assert.equal(pid, "10446");
+  } finally {
+    fakeXcrun.restore();
+  }
+});
+
+test("resolveIosAttachTarget dispatches to the physical-device path", async () => {
+  const fakeXcrun = await installFakeXcrun(`#!/bin/sh
+set -eu
+if [ "$1" = "devicectl" ] && [ "$2" = "device" ] && [ "$3" = "info" ] && [ "$4" = "apps" ]; then
+  printf '%s\n' 'Mobitru   com.mobitru.demoapp   1.0   1'
+  exit 0
+fi
+if [ "$1" = "devicectl" ] && [ "$2" = "device" ] && [ "$3" = "info" ] && [ "$4" = "processes" ]; then
+  printf '%s\n' '10446   /private/var/containers/Bundle/Application/UUID/Mobitru.app/Mobitru'
+  exit 0
+fi
+exit 1
+`);
+
+  try {
+    const pid = await resolveIosAttachTarget(process.cwd(), "00008101-000D482C1E78001E", "com.mobitru.demoapp");
+    assert.equal(pid, "10446");
+  } finally {
+    fakeXcrun.restore();
+  }
+});
+
+test("resolveIosAttachTarget keeps simulator attach discovery on simctl", async () => {
+  const fakeXcrun = await installFakeXcrun(`#!/bin/sh
+set -eu
+if [ "$1" = "simctl" ] && [ "$2" = "spawn" ] && [ "$4" = "launchctl" ] && [ "$5" = "list" ]; then
+  printf 'PID\tStatus\tLabel\n4242\t0\tcom.mobitru.demoapp\n'
+  exit 0
+fi
+exit 1
+`);
+
+  try {
+    const pid = await resolveIosAttachTarget(process.cwd(), "7FAAF425-69B6-49B6-8CC4-297FA9DAEA88", "com.mobitru.demoapp");
+    assert.equal(pid, "4242");
+  } finally {
+    fakeXcrun.restore();
+  }
 });
