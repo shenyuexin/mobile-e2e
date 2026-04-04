@@ -142,6 +142,41 @@ test("createIosDeviceRuntimeHooks keeps simctl launch for simulators", () => {
   ]);
 });
 
+test("createIosDeviceRuntimeHooks uses devicectl install for physical devices", () => {
+  const hooks = createIosDeviceRuntimeHooks();
+  const command = hooks.buildInstallCommand({
+    deviceId: "00008101-000D482C1E78001E",
+    artifactPath: "/tmp/MobiTru.app",
+  });
+
+  assert.deepEqual(command, [
+    "xcrun",
+    "devicectl",
+    "device",
+    "install",
+    "app",
+    "--device",
+    "00008101-000D482C1E78001E",
+    "/tmp/MobiTru.app",
+  ]);
+});
+
+test("createIosDeviceRuntimeHooks marks physical-device clear_data reset as partial unsupported", () => {
+  const hooks = createIosDeviceRuntimeHooks();
+  const plan = hooks.buildResetPlan({
+    strategy: "clear_data",
+    deviceId: "00008101-000D482C1E78001E",
+    appId: "com.mobitru.demoapp",
+  });
+
+  assert.equal(plan.supportLevel, "partial");
+  assert.equal(plan.commands.length, 0);
+  assert.equal(
+    plan.unsupportedReason,
+    "iOS physical-device reset_app_state is not yet deterministic for clear_data/uninstall_reinstall/keychain_reset in this adapter path. Use app relaunch or reinstall workflow with signed tooling until a devicectl-backed reset contract is verified.",
+  );
+});
+
 test("extractIosPhysicalAppName parses devicectl app listing by bundle id", () => {
   const appName = extractIosPhysicalAppName(`
 Apps installed:

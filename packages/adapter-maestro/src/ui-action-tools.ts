@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type {
   ScrollAndResolveUiTargetData,
   ScrollAndResolveUiTargetInput,
@@ -24,7 +26,6 @@ import {
   resolveRepoPath,
 } from "./harness-config.js";
 import {
-  buildIosNativeLocatorCandidate,
   buildNonExecutedUiTargetResolution,
   buildScrollSwipeCoordinates,
   hasQueryUiSelector,
@@ -38,14 +39,19 @@ import {
   runUiScrollResolveLoop,
 } from "./ui-runtime.js";
 import { verifyResolvedIosPointWithHooks } from "./ui-runtime-ios.js";
-import type { UiRuntimePlatformHooks } from "./ui-runtime-platform.js";
 import { resolveUiRuntimePlatformHooks } from "./ui-runtime-platform.js";
 import {
   buildFailureReason,
+  executeRunner,
   toRelativePath,
 } from "./runtime-shared.js";
 import { isIosPhysicalDeviceId } from "./device-runtime.js";
-import { isIosSimulatorOnlyIdbActionError } from "./ui-runtime-ios.js";
+import {
+  buildIosPhysicalMaestroCommand,
+  buildIosPhysicalTapFlowYaml,
+  buildIosPhysicalTypeTextFlowYaml,
+  isIosSimulatorOnlyIdbActionError,
+} from "./ui-runtime-ios.js";
 import {
   buildMissingPlatformSuggestion,
   buildPlatformUiDumpOutputPath,
@@ -186,6 +192,53 @@ async function tapResolvedTarget(
   };
 }
 
+function buildIosPhysicalActionFlowPaths(repoRoot: string, sessionId: string, actionType: "tap" | "type_text"): {
+  relativePath: string;
+  absolutePath: string;
+} {
+  const fileName = `${actionType}.maestro.yml`;
+  const relativePath = path.posix.join("artifacts", "ios-physical-actions", sessionId, fileName);
+  return {
+    relativePath,
+    absolutePath: path.resolve(repoRoot, relativePath),
+  };
+}
+
+async function executeIosPhysicalAction(params: {
+  repoRoot: string;
+  deviceId: string;
+  sessionId: string;
+  actionType: "tap" | "type_text";
+  flowContent: string;
+}): Promise<{
+  command: string[];
+  exitCode: number | null;
+  reasonCode: ReasonCode;
+  nextSuggestions: string[];
+  artifacts: string[];
+}> {
+  const flowPaths = buildIosPhysicalActionFlowPaths(params.repoRoot, params.sessionId, params.actionType);
+  await mkdir(path.dirname(flowPaths.absolutePath), { recursive: true });
+  await writeFile(flowPaths.absolutePath, params.flowContent, "utf8");
+  const command = buildIosPhysicalMaestroCommand(params.deviceId, flowPaths.relativePath);
+  const execution = await executeRunner(command, params.repoRoot, process.env);
+  const reasonCode = execution.exitCode === 0
+    ? REASON_CODES.ok
+    : buildFailureReason(execution.stderr, execution.exitCode);
+  const nextSuggestions = execution.exitCode === 0
+    ? []
+    : [
+      "Direct iOS physical-device action execution uses Maestro CLI. If this fails, verify --udid selection and iOS driver signing prerequisites (for example USE_XCODE_TEST_RUNNER / --apple-team-id) before retrying.",
+    ];
+  return {
+    command,
+    exitCode: execution.exitCode,
+    reasonCode,
+    nextSuggestions,
+    artifacts: [flowPaths.relativePath],
+  };
+}
+
 export const uiActionToolInternals = {
   tapResolvedTarget,
   verifyResolvedIosPoint: verifyResolvedIosPointWithHooks,
@@ -227,6 +280,13 @@ export async function tapWithMaestroTool(
     input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(input.platform);
 
   const command = runtimeHooks.buildTapCommand(deviceId, input.x, input.y);
+  const isIosPhysicalTarget = input.platform === "ios" && isIosPhysicalDeviceId(deviceId);
+  const iosPhysicalFlowPaths = isIosPhysicalTarget
+    ? buildIosPhysicalActionFlowPaths(repoRoot, input.sessionId, "tap")
+    : undefined;
+  const iosPhysicalCommand = isIosPhysicalTarget && iosPhysicalFlowPaths
+    ? buildIosPhysicalMaestroCommand(deviceId, iosPhysicalFlowPaths.relativePath)
+    : undefined;
   if (input.dryRun) {
     return {
       status: "success",
@@ -240,10 +300,41 @@ export async function tapWithMaestroTool(
         runnerProfile,
         x: input.x,
         y: input.y,
-        command,
+        command: iosPhysicalCommand ?? command,
         exitCode: 0,
       },
-      nextSuggestions: [runtimeHooks.tapDryRunSuggestion],
+      nextSuggestions: [
+        isIosPhysicalTarget
+          ? "Run tap without dryRun to execute an iOS physical-device Maestro point flow (artifacts/ios-physical-actions/<sessionId>/tap.maestro.yml)."
+          : runtimeHooks.tapDryRunSuggestion,
+      ],
+    };
+  }
+
+  if (isIosPhysicalTarget) {
+    const execution = await executeIosPhysicalAction({
+      repoRoot,
+      deviceId,
+      sessionId: input.sessionId,
+      actionType: "tap",
+      flowContent: buildIosPhysicalTapFlowYaml(input.x, input.y),
+    });
+    return {
+      status: execution.exitCode === 0 ? "success" : "failed",
+      reasonCode: execution.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: execution.artifacts,
+      data: {
+        dryRun: false,
+        runnerProfile,
+        x: input.x,
+        y: input.y,
+        command: execution.command,
+        exitCode: execution.exitCode,
+      },
+      nextSuggestions: execution.nextSuggestions,
     };
   }
 
@@ -345,6 +436,13 @@ export async function typeTextWithMaestroTool(
     input.deviceId ?? selection.deviceId ?? buildDefaultDeviceId(input.platform);
 
   const command = runtimeHooks.buildTypeTextCommand(deviceId, input.text);
+  const isIosPhysicalTarget = input.platform === "ios" && isIosPhysicalDeviceId(deviceId);
+  const iosPhysicalFlowPaths = isIosPhysicalTarget
+    ? buildIosPhysicalActionFlowPaths(repoRoot, input.sessionId, "type_text")
+    : undefined;
+  const iosPhysicalCommand = isIosPhysicalTarget && iosPhysicalFlowPaths
+    ? buildIosPhysicalMaestroCommand(deviceId, iosPhysicalFlowPaths.relativePath)
+    : undefined;
   if (input.dryRun) {
     return {
       status: runtimeHooks.platform === "ios" ? "success" : "partial",
@@ -360,10 +458,40 @@ export async function typeTextWithMaestroTool(
         dryRun: true,
         runnerProfile,
         text: input.text,
-        command,
+        command: iosPhysicalCommand ?? command,
         exitCode: 0,
       },
-      nextSuggestions: [runtimeHooks.typeTextDryRunSuggestion],
+      nextSuggestions: [
+        isIosPhysicalTarget
+          ? "Run type_text without dryRun to execute an iOS physical-device Maestro input flow (artifacts/ios-physical-actions/<sessionId>/type_text.maestro.yml)."
+          : runtimeHooks.typeTextDryRunSuggestion,
+      ],
+    };
+  }
+
+  if (isIosPhysicalTarget) {
+    const execution = await executeIosPhysicalAction({
+      repoRoot,
+      deviceId,
+      sessionId: input.sessionId,
+      actionType: "type_text",
+      flowContent: buildIosPhysicalTypeTextFlowYaml(input.text),
+    });
+    return {
+      status: execution.exitCode === 0 ? "success" : "failed",
+      reasonCode: execution.reasonCode,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: execution.artifacts,
+      data: {
+        dryRun: false,
+        runnerProfile,
+        text: input.text,
+        command: execution.command,
+        exitCode: execution.exitCode,
+      },
+      nextSuggestions: execution.nextSuggestions,
     };
   }
 
@@ -1494,7 +1622,6 @@ export async function scrollAndTapElementWithMaestroTool(
       nextSuggestions: [buildMissingPlatformSuggestion("scroll_and_tap_element")],
     };
   }
-  const platform = input.platform;
   const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const stepResults: UiOrchestrationStepResult[] = [];
   const resolveResult = await scrollAndResolveUiTargetWithMaestroTool(input);

@@ -869,7 +869,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
   }),
   defineToolDescriptor({
     name: "tap",
-    description: "Perform a coordinate tap on Android or on iOS simulators through idb.",
+    description: "Perform a coordinate tap on Android, iOS simulators through idb, or iOS physical devices through a generated Maestro action flow.",
     handler: tap,
     policy: { enforced: true, requiredScopes: ["write"] },
     session: { required: true, requireResolvedSessionContext: true },
@@ -893,7 +893,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
   }),
   defineToolDescriptor({
     name: "type_text",
-    description: "Perform direct text input on Android or on iOS simulators through idb.",
+    description: "Perform direct text input on Android, iOS simulators through idb, or iOS physical devices through a generated Maestro action flow.",
     handler: typeText,
     policy: { enforced: true, requiredScopes: ["write"] },
     session: { required: true, requireResolvedSessionContext: true },

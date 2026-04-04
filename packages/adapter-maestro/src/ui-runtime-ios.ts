@@ -11,6 +11,44 @@ import {
 } from "./ui-runtime.js";
 import { buildFailureReason } from "./runtime-shared.js";
 
+function escapeYamlDoubleQuoted(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\"", "\\\"")
+    .replaceAll("\n", "\\n");
+}
+
+export function buildIosPhysicalTapFlowYaml(x: number, y: number): string {
+  return [
+    'appId: "*"',
+    "---",
+    "- tapOn:",
+    `    point: "${String(x)},${String(y)}"`,
+    "",
+  ].join("\n");
+}
+
+export function buildIosPhysicalTypeTextFlowYaml(text: string): string {
+  return [
+    'appId: "*"',
+    "---",
+    `- inputText: "${escapeYamlDoubleQuoted(text)}"`,
+    "",
+  ].join("\n");
+}
+
+export function buildIosPhysicalMaestroCommand(deviceId: string, flowPath: string): string[] {
+  return [
+    "maestro",
+    "test",
+    "--platform",
+    "ios",
+    "--udid",
+    deviceId,
+    flowPath,
+  ];
+}
+
 function buildProbeSuggestion(action: UiRuntimeProbeAction): string {
   if (action === "inspect_ui") {
     return "iOS inspect_ui in this repo requires idb. Install idb-companion and fb-idb, then retry inspect_ui.";
@@ -159,8 +197,8 @@ export function createIosUiRuntimeHooks(): UiRuntimePlatformHooks {
     probeRuntimeAvailability: async (repoRoot) => probeIdbAvailability(repoRoot),
     probeUnavailableSuggestion: buildProbeSuggestion,
     tapDryRunSuggestion: "Run tap without dryRun to perform iOS coordinate tap through idb (simulator-first path).",
-    tapFailureSuggestion: "If target is a physical iOS device and stderr mentions FBSimulatorLifecycleCommands, this direct idb tap path is simulator-scoped; use run_flow with signed iOS driver path instead.",
+    tapFailureSuggestion: "If iOS tap fails, verify idb for simulator targets or Maestro iOS driver signing for physical-device targets before retrying.",
     typeTextDryRunSuggestion: "Run type_text without dryRun to perform iOS text entry through idb (simulator-first path).",
-    typeTextFailureSuggestion: "If target is a physical iOS device and stderr mentions FBSimulatorLifecycleCommands, this direct idb type_text path is simulator-scoped; use run_flow with signed iOS driver path instead.",
+    typeTextFailureSuggestion: "If iOS type_text fails, verify idb for simulator targets or Maestro iOS driver signing for physical-device targets before retrying.",
   };
 }

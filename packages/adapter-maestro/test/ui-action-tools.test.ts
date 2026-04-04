@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { REASON_CODES, type ToolResult, type ScrollAndResolveUiTargetData } from "@mobile-e2e-mcp/contracts";
-import { uiActionToolInternals } from "../src/ui-action-tools.ts";
+import {
+  tapWithMaestroTool,
+  typeTextWithMaestroTool,
+  uiActionToolInternals,
+} from "../src/ui-action-tools.ts";
 import { verifyTypedIosPostconditionWithHooks } from "../src/ui-runtime-ios.ts";
 import { isIosSimulatorOnlyIdbActionError } from "../src/ui-runtime-ios.ts";
 
@@ -441,4 +445,55 @@ test("isIosSimulatorOnlyIdbActionError detects simulator-lifecycle protocol fail
     true,
   );
   assert.equal(isIosSimulatorOnlyIdbActionError("some generic idb failure"), false);
+});
+
+test("tapWithMaestroTool dry-run uses Maestro command preview for iOS physical devices", async () => {
+  const result = await tapWithMaestroTool({
+    sessionId: "ios-physical-tap-preview",
+    platform: "ios",
+    deviceId: "00008101-000D482C1E78001E",
+    x: 120,
+    y: 260,
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, REASON_CODES.ok);
+  assert.deepEqual(result.data.command.slice(0, 6), [
+    "maestro",
+    "test",
+    "--platform",
+    "ios",
+    "--udid",
+    "00008101-000D482C1E78001E",
+  ]);
+  assert.equal(
+    result.data.command[result.data.command.length - 1],
+    "artifacts/ios-physical-actions/ios-physical-tap-preview/tap.maestro.yml",
+  );
+});
+
+test("typeTextWithMaestroTool dry-run uses Maestro command preview for iOS physical devices", async () => {
+  const result = await typeTextWithMaestroTool({
+    sessionId: "ios-physical-type-preview",
+    platform: "ios",
+    deviceId: "00008101-000D482C1E78001E",
+    text: "hello world",
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, REASON_CODES.ok);
+  assert.deepEqual(result.data.command.slice(0, 6), [
+    "maestro",
+    "test",
+    "--platform",
+    "ios",
+    "--udid",
+    "00008101-000D482C1E78001E",
+  ]);
+  assert.equal(
+    result.data.command[result.data.command.length - 1],
+    "artifacts/ios-physical-actions/ios-physical-type-preview/type_text.maestro.yml",
+  );
 });

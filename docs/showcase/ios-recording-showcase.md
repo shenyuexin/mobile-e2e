@@ -87,5 +87,6 @@ Replay:
 - iOS target selection now supports simulator and discoverable physical devices.
 - Simulator capture still provides the richest raw event stream (`simctl log stream`).
 - Physical-device capture currently depends more on snapshot/context evidence and may emit sparse raw events.
+- Direct iOS physical-device `tap`/`type_text` uses generated Maestro action flows and still depends on signed driver/runtime prerequisites.
 - Snapshot capture depends on idb hierarchy availability.
 - Low-confidence selector mapping may degrade to coordinate-based flow steps with warnings.

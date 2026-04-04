@@ -1317,11 +1317,16 @@ test("server invoke describe_capabilities keeps the current iOS partial frontier
     "record_screen",
     "reset_app_state",
     "start_record_session",
+    "tap",
+    "tap_element",
+    "type_into_element",
+    "type_text",
   ]);
   assert.deepEqual(partialGroups, [
     "app_lifecycle",
     "artifacts_and_diagnostics",
     "recording_and_replay",
+    "ui_actions",
     "ui_inspection",
   ]);
   assert.match(

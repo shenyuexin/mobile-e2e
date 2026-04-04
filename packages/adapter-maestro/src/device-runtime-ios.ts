@@ -213,8 +213,30 @@ export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
           ? ["xcrun", "simctl", "openurl", deviceId, launchUrl ?? ""]
           : ["xcrun", "simctl", "launch", deviceId, appId]
     ),
-    buildInstallCommand: ({ deviceId, artifactPath }) => ["xcrun", "simctl", "install", deviceId, artifactPath],
+    buildInstallCommand: ({ deviceId, artifactPath }) => (
+      isIosPhysicalDeviceId(deviceId)
+        ? [
+          "xcrun",
+          "devicectl",
+          "device",
+          "install",
+          "app",
+          "--device",
+          deviceId,
+          artifactPath,
+        ]
+        : ["xcrun", "simctl", "install", deviceId, artifactPath]
+    ),
     buildResetPlan: ({ strategy, deviceId, appId, artifactPath }) => {
+      if (isIosPhysicalDeviceId(deviceId)) {
+        return {
+          commandLabels: ["unsupported_physical_reset"],
+          commands: [],
+          supportLevel: "partial" as const,
+          unsupportedReason:
+            "iOS physical-device reset_app_state is not yet deterministic for clear_data/uninstall_reinstall/keychain_reset in this adapter path. Use app relaunch or reinstall workflow with signed tooling until a devicectl-backed reset contract is verified.",
+        };
+      }
       if (strategy === "clear_data") {
         return {
           commandLabels: ["clear_data"],

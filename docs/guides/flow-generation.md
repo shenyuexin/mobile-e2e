@@ -175,7 +175,7 @@ Current mapping covers `launch_app`, `tap_element`, `type_into_element`, and `wa
 iOS passive recording notes:
 
 - Current iOS capture supports simulator and discoverable physical-device targets.
-- Simulator capture remains the richer event source for `tap`/`type`/bounded `swipe` semantic extraction.
+- Simulator capture remains the richer raw-event source for `tap`/`type`/bounded `swipe` semantic extraction, while direct iOS physical-device `tap`/`type_text` now route through generated Maestro action flows.
 - Physical-device sessions currently rely more on snapshot/context evidence and may produce sparse raw-event streams.
 - iOS selector mapping prioritizes accessibility identifier/label/value-derived fields from idb hierarchy snapshots.
 - When selector confidence is low, export falls back to coordinate steps with warnings for auditability.
