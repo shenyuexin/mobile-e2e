@@ -35,8 +35,105 @@ import {
   recordFailureSignature,
   type PersistedBaselineIndexEntry,
 } from "@mobile-e2e-mcp/core";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { resolveRepoPath } from "./harness-config.js";
 import { buildSkillGuidedRemediation } from "./readiness-guidance.js";
+
+interface IosStartupExecutionEvidence {
+  startupPhase?: string;
+  primaryFailurePhase?: string;
+  reasonCode?: string;
+  summaryLine?: string;
+  fallbackUsed?: boolean;
+  attemptedBackend?: string;
+  executedBackend?: string;
+}
+
+function buildIosStartupPhaseRemediation(evidence?: IosStartupExecutionEvidence): string[] {
+  if (!evidence) {
+    return [];
+  }
+  if (!evidence.reasonCode || evidence.reasonCode === REASON_CODES.ok) {
+    return [];
+  }
+  const startupPhase = evidence.primaryFailurePhase
+    && evidence.primaryFailurePhase !== "none"
+    ? evidence.primaryFailurePhase
+    : evidence.startupPhase;
+
+  if (!startupPhase) {
+    return [];
+  }
+
+  if (startupPhase === "preflight") {
+    return ["iOS startup preflight failed: unlock the device, keep screen awake, and rerun the bounded action."];
+  }
+  if (startupPhase === "bundle_mapping") {
+    return ["iOS bundle mapping failed: verify xctestrun TestHostBundleIdentifier and installed xctrunner bundle alignment before retry."];
+  }
+  if (startupPhase === "xctest_handshake") {
+    return ["iOS XCTest handshake failed (code74/dtxproxy): inspect startup execution evidence first, then retry after channel bootstrap prerequisites are stable."];
+  }
+  if (startupPhase === "startup_timeout") {
+    return ["iOS startup timed out: validate runner readiness and increase startup timeout window (for example MAESTRO_DRIVER_STARTUP_TIMEOUT=180000)."];
+  }
+  if (startupPhase === "runner_execution") {
+    return ["iOS runner execution failed post-dispatch: inspect execution artifact command/stderr and rerun once root cause is addressed."];
+  }
+  return [];
+}
+
+function parseIosStartupExecutionEvidenceMarkdown(markdown: string): IosStartupExecutionEvidence {
+  const lines = markdown.split(/\r?\n/);
+  const kv = new Map<string, string>();
+  for (const line of lines) {
+    if (!line.startsWith("- ")) {
+      continue;
+    }
+    const marker = line.indexOf(":");
+    if (marker <= 2) {
+      continue;
+    }
+    const key = line.slice(2, marker).trim();
+    const value = line.slice(marker + 1).trim();
+    kv.set(key, value);
+  }
+  const summaryIndex = lines.findIndex((line) => line.trim() === "## Summary");
+  const summaryLine = summaryIndex >= 0
+    ? lines.slice(summaryIndex + 1).find((line) => line.trim().length > 0)
+    : undefined;
+  return {
+    startupPhase: kv.get("startupPhase"),
+    primaryFailurePhase: kv.get("primaryFailurePhase"),
+    reasonCode: kv.get("reasonCode"),
+    summaryLine,
+    fallbackUsed: kv.get("fallbackUsed") === "true",
+    attemptedBackend: kv.get("attemptedBackend"),
+    executedBackend: kv.get("executedBackend"),
+  };
+}
+
+async function loadIosStartupEvidenceFromActionRecord(
+  repoRoot: string,
+  record: Awaited<ReturnType<typeof loadActionRecord>>,
+): Promise<IosStartupExecutionEvidence | undefined> {
+  if (!record) {
+    return undefined;
+  }
+  const executionEvidencePath = record.evidence
+    .map((item) => item.path)
+    .find((item) => item.includes("ios-physical-actions") && item.endsWith(".execution.md"));
+  if (!executionEvidencePath) {
+    return undefined;
+  }
+  try {
+    const markdown = await readFile(path.resolve(repoRoot, executionEvidencePath), "utf8");
+    return parseIosStartupExecutionEvidenceMarkdown(markdown);
+  } catch {
+    return undefined;
+  }
+}
 
 function uniqueNonEmpty(values: Array<string | undefined>, limit = 8): string[] {
   return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))).slice(0, limit);
@@ -79,6 +176,7 @@ function buildFailureAttribution(params: {
   outcome: ActionOutcomeSummary;
   evidenceDelta?: EvidenceDeltaSummary;
   surroundingEvents?: SessionTimelineEvent[];
+  iosStartupEvidence?: IosStartupExecutionEvidence;
 }): FailureAttribution {
   const postState = params.outcome.postState;
   const delta = params.evidenceDelta;
@@ -87,6 +185,23 @@ function buildFailureAttribution(params: {
   let mostLikelyCause = "The current evidence is too weak to assign a precise cause.";
   let recommendedNextProbe = "Capture another bounded action with evidence to strengthen the timeline window.";
   let recommendedRecovery = "Retry only after confirming the current state is stable.";
+
+  const startupReasonCode = params.iosStartupEvidence?.reasonCode;
+  const startupPhase = params.iosStartupEvidence?.primaryFailurePhase
+    && params.iosStartupEvidence.primaryFailurePhase !== "none"
+    ? params.iosStartupEvidence.primaryFailurePhase
+    : params.iosStartupEvidence?.startupPhase;
+  if (startupReasonCode && startupReasonCode !== REASON_CODES.ok) {
+    const startupSummary = params.iosStartupEvidence?.summaryLine
+      ?? `iOS physical runner startup failed at phase ${startupPhase ?? "unknown"}.`;
+    affectedLayer = startupPhase === "preflight" ? "environment" : "runtime";
+    mostLikelyCause = startupSummary;
+    candidateCauses.push(startupSummary);
+    recommendedNextProbe = "Inspect iOS startup execution evidence first (startupPhase / primaryFailurePhase / reasonCode) before reading full raw logs.";
+    recommendedRecovery = startupPhase === "preflight"
+      ? "Unlock and stabilize the target device, then retry bounded action execution."
+      : "Stabilize runner startup prerequisites (bundle mapping, handshake channel, timeout budget), then retry the bounded action.";
+  } else
 
   if (postState?.blockingSignals.some((signal) => signal === "permission_prompt" || signal === "dialog_actions")) {
     affectedLayer = "interruption";
@@ -401,10 +516,12 @@ export async function explainLastFailureWithMaestro(
   }
 
   const timelineWindow = sessionRecord ? await queryTimelineAroundAction(repoRoot, input.sessionId, resolvedActionId) : { surroundingEvents: [] };
+  const iosStartupEvidence = await loadIosStartupEvidenceFromActionRecord(repoRoot, record);
   const attribution = buildFailureAttribution({
     outcome: record.outcome,
     evidenceDelta: record.evidenceDelta,
     surroundingEvents: timelineWindow.surroundingEvents,
+    iosStartupEvidence,
   });
   const diagnosisPacket = buildDiagnosisPacketFromAttribution(attribution);
   await recordFailureSignature(repoRoot, {
@@ -619,12 +736,18 @@ export async function suggestKnownRemediationWithMaestro(
   const sessionRecord = await loadSessionRecord(repoRoot, input.sessionId);
   const failureIndex = await loadFailureIndex(repoRoot);
   const actionId = input.actionId ?? explained.data.actionId ?? similar.data.actionId ?? baseline.data.actionId;
+  const actionRecord = actionId ? await loadActionRecord(repoRoot, actionId) : undefined;
+  const iosStartupEvidence = await loadIosStartupEvidenceFromActionRecord(repoRoot, actionRecord);
+  const startupRemediation = explained.data.outcome?.outcome === "success"
+    ? []
+    : buildIosStartupPhaseRemediation(iosStartupEvidence);
   const indexedRemediation = actionId ? failureIndex.find((entry) => entry.actionId === actionId)?.remediation ?? [] : [];
   const skillGuidance = buildSkillGuidedRemediation({
     platform: input.platform ?? sessionRecord?.session.platform,
     attribution: explained.data.attribution,
   });
   const remediation = uniqueNonEmpty([
+    ...startupRemediation,
     ...indexedRemediation,
     ...(similar.data.similarFailures.length > 0 ? ["This failure resembles previous incidents; inspect the closest matching signature before changing selectors."] : []),
     ...(baseline.data.comparison?.differences.length ? ["Current action diverges from a successful baseline; inspect the listed differences first."] : []),

@@ -12,7 +12,7 @@ import type {
   ToolResult,
 } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   DEFAULT_HARNESS_CONFIG_PATH,
@@ -38,6 +38,84 @@ import {
 import { buildExecutionEvidence, normalizePositiveInteger } from "./runtime-shared.js";
 
 const DEFAULT_DEBUG_PACKET_JS_TIMEOUT_MS = 1000;
+
+interface IosPhysicalStartupEvidenceSummary {
+  artifactPath: string;
+  attemptedBackend?: string;
+  executedBackend?: string;
+  fallbackUsed?: boolean;
+  primaryFailurePhase?: string;
+  startupPhase?: string;
+  reasonCode?: ReasonCode;
+  summaryLine?: string;
+}
+
+function parseIosPhysicalExecutionEvidenceMarkdown(markdown: string): IosPhysicalStartupEvidenceSummary {
+  const lines = markdown.split(/\r?\n/);
+  const kv = new Map<string, string>();
+  for (const line of lines) {
+    if (!line.startsWith("- ")) {
+      continue;
+    }
+    const marker = line.indexOf(":");
+    if (marker <= 2) {
+      continue;
+    }
+    const key = line.slice(2, marker).trim();
+    const value = line.slice(marker + 1).trim();
+    kv.set(key, value);
+  }
+  const summaryIndex = lines.findIndex((line) => line.trim() === "## Summary");
+  const summaryLine = summaryIndex >= 0
+    ? lines.slice(summaryIndex + 1).find((line) => line.trim().length > 0)
+    : undefined;
+  const reasonCode = kv.get("reasonCode");
+  return {
+    artifactPath: "",
+    attemptedBackend: kv.get("attemptedBackend"),
+    executedBackend: kv.get("executedBackend"),
+    fallbackUsed: kv.get("fallbackUsed") === "true",
+    primaryFailurePhase: kv.get("primaryFailurePhase"),
+    startupPhase: kv.get("startupPhase"),
+    reasonCode: reasonCode as ReasonCode | undefined,
+    summaryLine,
+  };
+}
+
+async function loadLatestIosPhysicalStartupEvidence(repoRoot: string, sessionId: string): Promise<IosPhysicalStartupEvidenceSummary | undefined> {
+  const evidenceRoot = path.resolve(repoRoot, "artifacts", "ios-physical-actions", sessionId);
+  let entries: Array<{ name: string; mtimeMs: number }> = [];
+  try {
+    const listed = await readdir(evidenceRoot, { withFileTypes: true });
+    entries = await Promise.all(
+      listed
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".execution.md"))
+        .map(async (entry) => {
+          const absolutePath = path.join(evidenceRoot, entry.name);
+          const fileStat = await stat(absolutePath);
+          return { name: entry.name, mtimeMs: fileStat.mtimeMs };
+        }),
+    );
+  } catch {
+    return undefined;
+  }
+  if (entries.length === 0) {
+    return undefined;
+  }
+  const latest = entries.sort((left, right) => right.mtimeMs - left.mtimeMs)[0];
+  const absolutePath = path.join(evidenceRoot, latest.name);
+  const relativePath = path.posix.join("artifacts", "ios-physical-actions", sessionId, latest.name);
+  try {
+    const markdown = await readFile(absolutePath, "utf8");
+    const parsed = parseIosPhysicalExecutionEvidenceMarkdown(markdown);
+    return {
+      ...parsed,
+      artifactPath: relativePath,
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 function buildDiagnosisPacket(params: {
   reasonCode: ReasonCode;
@@ -234,8 +312,29 @@ function buildDebugNextSuggestions(params: {
   jsDebugTargetId?: string;
   jsConsoleLogCount?: number;
   jsNetworkEventCount?: number;
+  iosStartupEvidence?: IosPhysicalStartupEvidenceSummary;
 }): string[] {
   const suggestions: string[] = [];
+
+  const startupPhase = params.iosStartupEvidence?.primaryFailurePhase
+    && params.iosStartupEvidence.primaryFailurePhase !== "none"
+    ? params.iosStartupEvidence.primaryFailurePhase
+    : params.iosStartupEvidence?.startupPhase;
+  if (startupPhase === "preflight") {
+    suggestions.push("iOS startup preflight failed: unlock the target device and keep it awake, then rerun bounded evidence capture.");
+  } else if (startupPhase === "bundle_mapping") {
+    suggestions.push("iOS startup failed at bundle mapping: verify xctestrun TestHostBundleIdentifier and installed xctrunner bundle id alignment.");
+  } else if (startupPhase === "xctest_handshake") {
+    suggestions.push("iOS startup handshake failed (code74/dtxproxy): inspect XCTestManager channel bootstrap evidence before retrying.");
+  } else if (startupPhase === "startup_timeout") {
+    suggestions.push("iOS startup timed out: validate runner readiness and increase startup timeout window (for example MAESTRO_DRIVER_STARTUP_TIMEOUT=180000).");
+  } else if (startupPhase === "runner_execution") {
+    suggestions.push("iOS runner execution failed after dispatch: inspect startup execution artifact command and stderr first.");
+  }
+
+  if (params.iosStartupEvidence?.artifactPath) {
+    suggestions.push(`Inspect startup execution artifact first: ${params.iosStartupEvidence.artifactPath}`);
+  }
 
   if (params.reasonCode === REASON_CODES.deviceUnavailable) {
     suggestions.push("Restore device or simulator connectivity first, then re-run collect_debug_evidence.");
@@ -298,6 +397,9 @@ export async function collectDebugEvidenceWithRuntime(input: CollectDebugEvidenc
     ? path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics.zip`)
     : path.posix.join("artifacts", "debug-evidence", input.sessionId, `${input.platform}-${runnerProfile}.diagnostics`);
   const effectiveAppId = input.appId ?? selection.appId;
+  const iosStartupEvidence = input.platform === "ios" && !input.dryRun
+    ? await loadLatestIosPhysicalStartupEvidence(repoRoot, input.sessionId)
+    : undefined;
   const includeJsInspector = input.includeJsInspector ?? true;
   const jsInspectorTimeoutMs = normalizePositiveInteger(input.jsInspectorTimeoutMs, DEFAULT_DEBUG_PACKET_JS_TIMEOUT_MS);
   const effectiveMetroBaseUrl = normalizeMetroBaseUrl(input.metroBaseUrl);
@@ -374,6 +476,7 @@ export async function collectDebugEvidenceWithRuntime(input: CollectDebugEvidenc
     ...logsResult.artifacts,
     ...crashResult.artifacts,
     ...(diagnosticsResult?.artifacts ?? []),
+    ...(iosStartupEvidence?.artifactPath ? [iosStartupEvidence.artifactPath] : []),
   ];
   const environmentIssue = logsResult.reasonCode === REASON_CODES.deviceUnavailable || crashResult.reasonCode === REASON_CODES.deviceUnavailable
     ? "device or simulator connectivity prevented native evidence capture"
@@ -389,6 +492,9 @@ export async function collectDebugEvidenceWithRuntime(input: CollectDebugEvidenc
     jsConsoleLogs: jsConsoleResult?.data.logs,
     environmentIssue,
   });
+  if (iosStartupEvidence?.summaryLine) {
+    suspectAreas.unshift(`iOS startup suspect: ${iosStartupEvidence.summaryLine}`);
+  }
   const narrative = buildDebugNarrative({
     appId: effectiveAppId,
     appFilterApplied: logsResult.data.appFilterApplied,
@@ -408,6 +514,14 @@ export async function collectDebugEvidenceWithRuntime(input: CollectDebugEvidenc
       ? `JS network snapshot collected ${String(jsNetworkResult.data.collectedCount)} event(s).`
       : "JS network snapshot was unavailable; check Metro inspector availability.");
   }
+  if (iosStartupEvidence?.artifactPath) {
+    const phase = iosStartupEvidence.primaryFailurePhase && iosStartupEvidence.primaryFailurePhase !== "none"
+      ? iosStartupEvidence.primaryFailurePhase
+      : iosStartupEvidence.startupPhase;
+    narrative.push(
+      `iOS startup evidence is available (${phase ?? "unknown_phase"}, ${iosStartupEvidence.reasonCode ?? "UNKNOWN"}) at ${iosStartupEvidence.artifactPath}.`,
+    );
+  }
   if (includeJsInspector && discoveredTargetsResult) {
     narrative.push(buildJsDebugTargetSelectionNarrativeLine(discoveredTarget, discoveredSelection?.reason));
   }
@@ -416,14 +530,22 @@ export async function collectDebugEvidenceWithRuntime(input: CollectDebugEvidenc
   const jsNetworkOk = !jsNetworkResult || jsNetworkResult.status === "success";
   const allSucceeded = logsResult.status === "success" && crashResult.status === "success" && (!diagnosticsResult || diagnosticsResult.status === "success") && jsConsoleOk && jsNetworkOk;
   const anySucceeded = logsResult.status === "success" || crashResult.status === "success" || diagnosticsResult?.status === "success" || jsConsoleResult?.status === "success" || jsNetworkResult?.status === "success";
-  const status = allSucceeded ? "success" : anySucceeded ? "partial" : "failed";
-  const reasonCode = allSucceeded
+  let status: ToolResult<CollectDebugEvidenceData>["status"] = allSucceeded ? "success" : anySucceeded ? "partial" : "failed";
+  let reasonCode = allSucceeded
     ? REASON_CODES.ok
     : logsResult.reasonCode !== REASON_CODES.ok
       ? logsResult.reasonCode
       : crashResult.reasonCode !== REASON_CODES.ok
         ? crashResult.reasonCode
         : diagnosticsResult?.reasonCode ?? jsConsoleResult?.reasonCode ?? jsNetworkResult?.reasonCode ?? REASON_CODES.adapterError;
+  if (
+    reasonCode === REASON_CODES.ok
+    && iosStartupEvidence?.reasonCode
+    && iosStartupEvidence.reasonCode !== REASON_CODES.ok
+  ) {
+    status = "partial";
+    reasonCode = iosStartupEvidence.reasonCode;
+  }
   if (suspectAreas.length === 0) {
     if (reasonCode === REASON_CODES.deviceUnavailable) {
       suspectAreas.push("Environment suspect: device or simulator connectivity prevented evidence capture.");
@@ -456,6 +578,7 @@ export async function collectDebugEvidenceWithRuntime(input: CollectDebugEvidenc
     jsDebugTargetId: effectiveTargetId,
     jsConsoleLogCount: jsConsoleResult?.data.collectedCount,
     jsNetworkEventCount: jsNetworkResult?.data.collectedCount,
+    iosStartupEvidence,
   });
   await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
 
@@ -531,6 +654,16 @@ export async function collectDebugEvidenceWithRuntime(input: CollectDebugEvidenc
         ...(logsResult.data.evidence ?? []),
         ...(crashResult.data.evidence ?? []),
         ...(diagnosticsResult?.data.evidence ?? []),
+        ...(iosStartupEvidence?.artifactPath
+          ? [
+            buildExecutionEvidence(
+              "log",
+              iosStartupEvidence.artifactPath,
+              "partial",
+              "Captured iOS physical startup execution evidence with startup phase attribution.",
+            ),
+          ]
+          : []),
         ...(jsConsoleResult?.data.logs?.length ? [buildExecutionEvidence("log", "metro://console-snapshot", "partial", "Captured JS console snapshot from Metro inspector.")] : []),
         ...(jsNetworkResult?.data.events?.length ? [buildExecutionEvidence("log", "metro://network-snapshot", "partial", "Captured JS network snapshot from Metro inspector.")] : []),
       ],
@@ -539,3 +672,8 @@ export async function collectDebugEvidenceWithRuntime(input: CollectDebugEvidenc
     nextSuggestions: status === "success" ? [] : nextSuggestions,
   };
 }
+
+export const diagnosticsToolInternals = {
+  parseIosPhysicalExecutionEvidenceMarkdown,
+  buildDebugNextSuggestions,
+};

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import test from "node:test";
@@ -30,7 +30,7 @@ import {
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
 import { buildResolutionNextSuggestions } from "../src/ui-tools.ts";
-import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, performActionWithEvidenceWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetInterruptionGuardTestHooksForTesting, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setInterruptionGuardTestHooksForTesting, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, explainLastFailureWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, performActionWithEvidenceWithMaestro, rankFailureCandidatesWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetInterruptionGuardTestHooksForTesting, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setInterruptionGuardTestHooksForTesting, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const ocrFixtureRoot = path.join(repoRoot, "tests", "fixtures", "ocr");
@@ -1933,6 +1933,121 @@ test("getActionOutcomeWithMaestro loads persisted dry-run action record", async 
   assert.equal(loaded.data.outcome?.actionType, "wait_for_ui");
 });
 
+test("explainLastFailureWithMaestro prioritizes iOS startup handshake evidence from action artifacts", async () => {
+  const sessionId = `ios-startup-explain-${Date.now()}`;
+  const actionId = `ios-startup-action-${Date.now()}`;
+  const startupDir = path.join(repoRoot, "artifacts", "ios-physical-actions", sessionId);
+  await mkdir(startupDir, { recursive: true });
+  await writeFile(
+    path.join(startupDir, "tap.execution.md"),
+    [
+      "# iOS physical tap execution evidence",
+      "",
+      "- attemptedBackend: local_manual_runner",
+      "- executedBackend: maestro_cli",
+      "- fallbackUsed: true",
+      "- primaryFailurePhase: xctest_handshake",
+      "- startupPhase: maestro_fallback_success",
+      "- reasonCode: ADAPTER_ERROR",
+      "",
+      "## Summary",
+      "Runner exited before channel bootstrap completed (code74 / dtxproxy XCTestManager handshake failure).",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await persistActionRecord(repoRoot, {
+    actionId,
+    sessionId,
+    intent: { actionType: "tap_element", text: "Continue" },
+    outcome: {
+      actionId,
+      actionType: "tap_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: false,
+      fallbackUsed: true,
+      retryCount: 0,
+      outcome: "failed",
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "ios-physical-actions", sessionId, "tap.execution.md"),
+        supportLevel: "partial",
+        description: "iOS startup evidence",
+      },
+    ],
+    lowLevelStatus: "failed",
+    lowLevelReasonCode: REASON_CODES.adapterError,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const explained = await explainLastFailureWithMaestro({ sessionId });
+  const ranked = await rankFailureCandidatesWithMaestro({ sessionId });
+
+  assert.equal(explained.status, "success");
+  assert.equal(explained.data.attribution?.affectedLayer, "runtime");
+  assert.match(explained.data.attribution?.mostLikelyCause ?? "", /dtxproxy|bootstrap/i);
+  assert.equal(ranked.data.candidates[0]?.affectedLayer, "runtime");
+});
+
+test("explainLastFailureWithMaestro maps iOS startup preflight evidence to environment layer", async () => {
+  const sessionId = `ios-preflight-explain-${Date.now()}`;
+  const actionId = `ios-preflight-action-${Date.now()}`;
+  const startupDir = path.join(repoRoot, "artifacts", "ios-physical-actions", sessionId);
+  await mkdir(startupDir, { recursive: true });
+  await writeFile(
+    path.join(startupDir, "type_text.execution.md"),
+    [
+      "# iOS physical type_text execution evidence",
+      "",
+      "- attemptedBackend: local_manual_runner",
+      "- executedBackend: local_manual_runner",
+      "- fallbackUsed: false",
+      "- primaryFailurePhase: preflight",
+      "- startupPhase: preflight",
+      "- reasonCode: DEVICE_UNAVAILABLE",
+      "",
+      "## Summary",
+      "Runner startup blocked during iOS preflight because target device is not ready/unlocked.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await persistActionRecord(repoRoot, {
+    actionId,
+    sessionId,
+    intent: { actionType: "type_into_element", text: "Email", value: "demo@example.com" },
+    outcome: {
+      actionId,
+      actionType: "type_into_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: false,
+      fallbackUsed: false,
+      retryCount: 0,
+      outcome: "failed",
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "ios-physical-actions", sessionId, "type_text.execution.md"),
+        supportLevel: "partial",
+        description: "iOS preflight startup evidence",
+      },
+    ],
+    lowLevelStatus: "failed",
+    lowLevelReasonCode: REASON_CODES.deviceUnavailable,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const explained = await explainLastFailureWithMaestro({ sessionId });
+  assert.equal(explained.status, "success");
+  assert.equal(explained.data.attribution?.affectedLayer, "environment");
+  assert.match(explained.data.attribution?.mostLikelyCause ?? "", /preflight|unlocked/i);
+});
+
 test("recoverToKnownStateWithMaestro returns bounded recovery summary", async () => {
   const result = await recoverToKnownStateWithMaestro({
     sessionId: "recover-state-dry-run",
@@ -2151,4 +2266,63 @@ test("suggestKnownRemediationWithMaestro returns remediation hints", async () =>
   assert.equal(result.reasonCode, "OK");
   assert.equal(Array.isArray(result.data.remediation), true);
   assert.equal(new Set(result.nextSuggestions).size, result.nextSuggestions.length);
+});
+
+test("suggestKnownRemediationWithMaestro prioritizes iOS startup handshake remediation", async () => {
+  const sessionId = `known-remediation-ios-startup-${Date.now()}`;
+  const actionId = `known-remediation-ios-action-${Date.now()}`;
+  const startupDir = path.join(repoRoot, "artifacts", "ios-physical-actions", sessionId);
+  await mkdir(startupDir, { recursive: true });
+  await writeFile(
+    path.join(startupDir, "tap.execution.md"),
+    [
+      "# iOS physical tap execution evidence",
+      "",
+      "- attemptedBackend: local_manual_runner",
+      "- executedBackend: maestro_cli",
+      "- fallbackUsed: true",
+      "- primaryFailurePhase: xctest_handshake",
+      "- startupPhase: maestro_fallback_success",
+      "- reasonCode: ADAPTER_ERROR",
+      "",
+      "## Summary",
+      "Runner exited before channel bootstrap completed (code74 / dtxproxy XCTestManager handshake failure).",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await persistActionRecord(repoRoot, {
+    actionId,
+    sessionId,
+    intent: { actionType: "tap_element", text: "Continue" },
+    outcome: {
+      actionId,
+      actionType: "tap_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: false,
+      fallbackUsed: true,
+      retryCount: 0,
+      outcome: "failed",
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "ios-physical-actions", sessionId, "tap.execution.md"),
+        supportLevel: "partial",
+        description: "iOS startup evidence",
+      },
+    ],
+    lowLevelStatus: "failed",
+    lowLevelReasonCode: REASON_CODES.adapterError,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const remediation = await suggestKnownRemediationWithMaestro({ sessionId });
+
+  assert.equal(remediation.status, "success");
+  assert.equal(
+    remediation.data.remediation.some((item) => /code74|dtxproxy|handshake/i.test(item)),
+    true,
+  );
 });

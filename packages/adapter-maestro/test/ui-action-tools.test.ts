@@ -6,8 +6,11 @@ import {
   typeTextWithMaestroTool,
   uiActionToolInternals,
 } from "../src/ui-action-tools.ts";
-import { verifyTypedIosPostconditionWithHooks } from "../src/ui-runtime-ios.ts";
-import { isIosSimulatorOnlyIdbActionError } from "../src/ui-runtime-ios.ts";
+import {
+  buildIosPhysicalActionExecutionPlan,
+  isIosSimulatorOnlyIdbActionError,
+  verifyTypedIosPostconditionWithHooks,
+} from "../src/ui-runtime-ios.ts";
 
 test("tapResolvedTarget reuses resolved coordinates from scroll result", async () => {
   const resolveResult: ToolResult<ScrollAndResolveUiTargetData> = {
@@ -496,4 +499,98 @@ test("typeTextWithMaestroTool dry-run uses Maestro command preview for iOS physi
     result.data.command[result.data.command.length - 1],
     "artifacts/ios-physical-actions/ios-physical-type-preview/type_text.maestro.yml",
   );
+});
+
+test("tapWithMaestroTool dry-run honors local manual runner backend preview for iOS physical devices", async () => {
+  const previousBackend = process.env.IOS_PHYSICAL_ACTION_BACKEND;
+  try {
+    process.env.IOS_PHYSICAL_ACTION_BACKEND = "local_manual_runner";
+    const result = await tapWithMaestroTool({
+      sessionId: "ios-physical-tap-local-preview",
+      platform: "ios",
+      deviceId: "00008101-000D482C1E78001E",
+      x: 100,
+      y: 220,
+      dryRun: true,
+    });
+
+    assert.equal(result.status, "success");
+    assert.equal(result.reasonCode, REASON_CODES.ok);
+    assert.deepEqual(result.data.command, [
+      "bash",
+      "scripts/dev/run-maestro-ios-manual-runner.sh",
+      "chain",
+    ]);
+  } finally {
+    if (previousBackend === undefined) {
+      delete process.env.IOS_PHYSICAL_ACTION_BACKEND;
+    } else {
+      process.env.IOS_PHYSICAL_ACTION_BACKEND = previousBackend;
+    }
+  }
+});
+
+test("buildIosPhysicalActionExecutionPlan defaults to Maestro CLI backend", () => {
+  const plan = buildIosPhysicalActionExecutionPlan(
+    "00008101-000D482C1E78001E",
+    "artifacts/ios-physical-actions/demo/tap.maestro.yml",
+    {},
+  );
+  assert.equal(plan.backend, "maestro_cli");
+  assert.deepEqual(plan.envPatch, {});
+  assert.deepEqual(plan.command.slice(0, 6), [
+    "maestro",
+    "test",
+    "--platform",
+    "ios",
+    "--udid",
+    "00008101-000D482C1E78001E",
+  ]);
+});
+
+test("buildIosPhysicalActionExecutionPlan builds local manual runner command when configured", () => {
+  const plan = buildIosPhysicalActionExecutionPlan(
+    "00008101-000D482C1E78001E",
+    "artifacts/ios-physical-actions/demo/type_text.maestro.yml",
+    { IOS_PHYSICAL_ACTION_BACKEND: "local_manual_runner" },
+  );
+  assert.equal(plan.backend, "local_manual_runner");
+  assert.deepEqual(plan.command, [
+    "bash",
+    "scripts/dev/run-maestro-ios-manual-runner.sh",
+    "chain",
+  ]);
+  assert.equal(plan.envPatch.MAESTRO_RUNNER_MODE, "manual");
+  assert.equal(plan.envPatch.MAESTRO_UDID, "00008101-000D482C1E78001E");
+  assert.equal(
+    plan.envPatch.MAESTRO_FLOW,
+    "artifacts/ios-physical-actions/demo/type_text.maestro.yml",
+  );
+});
+
+test("classifyIosPhysicalStartupFailure classifies locked-device preflight failures", () => {
+  const classified = uiActionToolInternals.classifyIosPhysicalStartupFailure({
+    stderr: "xcodebuild: Device may be locked (deviceprep code: -3)",
+    exitCode: 70,
+  });
+  assert.equal(classified.reasonCode, REASON_CODES.deviceUnavailable);
+  assert.equal(classified.startupPhase, "preflight");
+});
+
+test("classifyIosPhysicalStartupFailure classifies code74 dtxproxy handshake failures", () => {
+  const classified = uiActionToolInternals.classifyIosPhysicalStartupFailure({
+    stderr: "Connection peer refused channel request for dtxproxy:XCTestDriverInterface:XCTestManager_IDEInterface",
+    exitCode: 74,
+  });
+  assert.equal(classified.reasonCode, REASON_CODES.adapterError);
+  assert.equal(classified.startupPhase, "xctest_handshake");
+});
+
+test("buildIosPhysicalExecutionEvidencePaths keeps session-scoped deterministic artifact path", () => {
+  const paths = uiActionToolInternals.buildIosPhysicalExecutionEvidencePaths(
+    "/tmp/repo",
+    "session-xyz",
+    "tap",
+  );
+  assert.equal(paths.relativePath, "artifacts/ios-physical-actions/session-xyz/tap.execution.md");
 });

@@ -49,6 +49,46 @@ export function buildIosPhysicalMaestroCommand(deviceId: string, flowPath: strin
   ];
 }
 
+export type IosPhysicalActionBackend = "maestro_cli" | "local_manual_runner";
+
+export interface IosPhysicalActionExecutionPlan {
+  backend: IosPhysicalActionBackend;
+  command: string[];
+  envPatch: Record<string, string>;
+}
+
+export function resolveIosPhysicalActionBackend(env: NodeJS.ProcessEnv = process.env): IosPhysicalActionBackend {
+  const configured = env.IOS_PHYSICAL_ACTION_BACKEND?.trim().toLowerCase();
+  if (configured === "local_manual_runner") {
+    return "local_manual_runner";
+  }
+  return "maestro_cli";
+}
+
+export function buildIosPhysicalActionExecutionPlan(
+  deviceId: string,
+  flowPath: string,
+  env: NodeJS.ProcessEnv = process.env,
+): IosPhysicalActionExecutionPlan {
+  const backend = resolveIosPhysicalActionBackend(env);
+  if (backend === "local_manual_runner") {
+    return {
+      backend,
+      command: ["bash", "scripts/dev/run-maestro-ios-manual-runner.sh", "chain"],
+      envPatch: {
+        MAESTRO_RUNNER_MODE: "manual",
+        MAESTRO_UDID: deviceId,
+        MAESTRO_FLOW: flowPath,
+      },
+    };
+  }
+  return {
+    backend,
+    command: buildIosPhysicalMaestroCommand(deviceId, flowPath),
+    envPatch: {},
+  };
+}
+
 function buildProbeSuggestion(action: UiRuntimeProbeAction): string {
   if (action === "inspect_ui") {
     return "iOS inspect_ui in this repo requires idb. Install idb-companion and fb-idb, then retry inspect_ui.";

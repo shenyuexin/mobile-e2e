@@ -47,9 +47,11 @@ import {
 } from "./runtime-shared.js";
 import { isIosPhysicalDeviceId } from "./device-runtime.js";
 import {
+  buildIosPhysicalActionExecutionPlan,
   buildIosPhysicalMaestroCommand,
   buildIosPhysicalTapFlowYaml,
   buildIosPhysicalTypeTextFlowYaml,
+  type IosPhysicalActionBackend,
   isIosSimulatorOnlyIdbActionError,
 } from "./ui-runtime-ios.js";
 import {
@@ -204,6 +206,134 @@ function buildIosPhysicalActionFlowPaths(repoRoot: string, sessionId: string, ac
   };
 }
 
+function buildIosPhysicalExecutionEvidencePaths(
+  repoRoot: string,
+  sessionId: string,
+  actionType: "tap" | "type_text",
+): {
+  relativePath: string;
+  absolutePath: string;
+} {
+  const fileName = `${actionType}.execution.md`;
+  const relativePath = path.posix.join("artifacts", "ios-physical-actions", sessionId, fileName);
+  return {
+    relativePath,
+    absolutePath: path.resolve(repoRoot, relativePath),
+  };
+}
+
+function classifyIosPhysicalStartupFailure(params: {
+  stderr: string;
+  exitCode: number | null;
+}): {
+  reasonCode: ReasonCode;
+  startupPhase: "preflight" | "bundle_mapping" | "xctest_handshake" | "startup_timeout" | "runner_execution";
+  summaryLine: string;
+} {
+  const stderrLower = params.stderr.toLowerCase();
+  if (
+    stderrLower.includes("device is locked")
+    || stderrLower.includes("device may be locked")
+    || stderrLower.includes("deviceprep")
+    || stderrLower.includes("code: -3")
+  ) {
+    return {
+      reasonCode: REASON_CODES.deviceUnavailable,
+      startupPhase: "preflight",
+      summaryLine: "Runner startup blocked during iOS preflight because target device is not ready/unlocked.",
+    };
+  }
+
+  if (
+    stderrLower.includes("testhostbundleidentifier")
+    || stderrLower.includes("bundle identifier")
+    || stderrLower.includes("xctrunner")
+  ) {
+    return {
+      reasonCode: REASON_CODES.configurationError,
+      startupPhase: "bundle_mapping",
+      summaryLine: "Runner startup failed due to xctestrun/TestHost bundle mapping or bundle identifier mismatch.",
+    };
+  }
+
+  if (
+    params.exitCode === 74
+    || stderrLower.includes("dtxproxy")
+    || stderrLower.includes("xctestmanager_ideinterface")
+    || stderrLower.includes("channel canceled")
+  ) {
+    return {
+      reasonCode: REASON_CODES.adapterError,
+      startupPhase: "xctest_handshake",
+      summaryLine: "Runner exited before channel bootstrap completed (code74 / dtxproxy XCTestManager handshake failure).",
+    };
+  }
+
+  if (stderrLower.includes("timed out") || stderrLower.includes("timeout")) {
+    return {
+      reasonCode: REASON_CODES.timeout,
+      startupPhase: "startup_timeout",
+      summaryLine: "Runner startup exceeded timeout before first actionable command channel became ready.",
+    };
+  }
+
+  return {
+    reasonCode: buildFailureReason(params.stderr, params.exitCode),
+    startupPhase: "runner_execution",
+    summaryLine: "Runner execution failed after startup dispatch; inspect stderr and execution evidence for root cause.",
+  };
+}
+
+async function persistIosPhysicalExecutionEvidence(params: {
+  repoRoot: string;
+  sessionId: string;
+  actionType: "tap" | "type_text";
+  attemptedBackend: IosPhysicalActionBackend;
+  executedBackend: IosPhysicalActionBackend;
+  fallbackUsed: boolean;
+  primaryFailurePhase?: string;
+  primaryFailureSummary?: string;
+  startupPhase: string;
+  summaryLine: string;
+  reasonCode: ReasonCode;
+  command: string[];
+  exitCode: number | null;
+}): Promise<string> {
+  const evidencePaths = buildIosPhysicalExecutionEvidencePaths(
+    params.repoRoot,
+    params.sessionId,
+    params.actionType,
+  );
+  await mkdir(path.dirname(evidencePaths.absolutePath), { recursive: true });
+  const content = [
+    `# iOS physical ${params.actionType} execution evidence`,
+    "",
+    `- attemptedBackend: ${params.attemptedBackend}`,
+    `- executedBackend: ${params.executedBackend}`,
+    `- fallbackUsed: ${String(params.fallbackUsed)}`,
+    params.primaryFailurePhase
+      ? `- primaryFailurePhase: ${params.primaryFailurePhase}`
+      : "- primaryFailurePhase: none",
+    params.primaryFailureSummary
+      ? `- primaryFailureSummary: ${params.primaryFailureSummary}`
+      : "- primaryFailureSummary: none",
+    `- startupPhase: ${params.startupPhase}`,
+    `- reasonCode: ${params.reasonCode}`,
+    `- exitCode: ${String(params.exitCode)}`,
+    "",
+    `## Summary`,
+    params.summaryLine,
+    "",
+    "## Command",
+    "```bash",
+    params.command.map((segment) => segment.includes(" ") ? `"${segment}"` : segment).join(" "),
+    "```",
+    "",
+  ].join("\n");
+  await writeFile(evidencePaths.absolutePath, content, "utf8");
+  return evidencePaths.relativePath;
+}
+
 async function executeIosPhysicalAction(params: {
   repoRoot: string;
   deviceId: string;
@@ -212,6 +342,10 @@ async function executeIosPhysicalAction(params: {
   flowContent: string;
 }): Promise<{
   command: string[];
+  attemptedBackend: IosPhysicalActionBackend;
+  executedBackend: IosPhysicalActionBackend;
+  fallbackUsed: boolean;
+  startupPhase: string;
   exitCode: number | null;
   reasonCode: ReasonCode;
   nextSuggestions: string[];
@@ -220,27 +354,110 @@ async function executeIosPhysicalAction(params: {
   const flowPaths = buildIosPhysicalActionFlowPaths(params.repoRoot, params.sessionId, params.actionType);
   await mkdir(path.dirname(flowPaths.absolutePath), { recursive: true });
   await writeFile(flowPaths.absolutePath, params.flowContent, "utf8");
-  const command = buildIosPhysicalMaestroCommand(params.deviceId, flowPaths.relativePath);
-  const execution = await executeRunner(command, params.repoRoot, process.env);
-  const reasonCode = execution.exitCode === 0
-    ? REASON_CODES.ok
-    : buildFailureReason(execution.stderr, execution.exitCode);
+  const executionPlan = buildIosPhysicalActionExecutionPlan(params.deviceId, flowPaths.relativePath);
+  const executionEnv = {
+    ...process.env,
+    ...executionPlan.envPatch,
+  };
+  const execution = await executeRunner(executionPlan.command, params.repoRoot, executionEnv);
+
+  if (executionPlan.backend === "local_manual_runner" && execution.exitCode !== 0) {
+    const primaryFailure = classifyIosPhysicalStartupFailure({
+      stderr: execution.stderr,
+      exitCode: execution.exitCode,
+    });
+    const fallbackCommand = buildIosPhysicalMaestroCommand(params.deviceId, flowPaths.relativePath);
+    const fallbackExecution = await executeRunner(fallbackCommand, params.repoRoot, process.env);
+    const fallbackFailure = classifyIosPhysicalStartupFailure({
+      stderr: fallbackExecution.stderr,
+      exitCode: fallbackExecution.exitCode,
+    });
+    const fallbackReasonCode = fallbackExecution.exitCode === 0 ? REASON_CODES.ok : fallbackFailure.reasonCode;
+    const fallbackStartupPhase = fallbackExecution.exitCode === 0 ? "maestro_fallback_success" : fallbackFailure.startupPhase;
+    const fallbackSummaryLine = fallbackExecution.exitCode === 0
+      ? "Local manual-runner failed, but explicit Maestro fallback succeeded for this action."
+      : fallbackFailure.summaryLine;
+    const evidenceArtifact = await persistIosPhysicalExecutionEvidence({
+      repoRoot: params.repoRoot,
+      sessionId: params.sessionId,
+      actionType: params.actionType,
+      attemptedBackend: executionPlan.backend,
+      executedBackend: "maestro_cli",
+      fallbackUsed: true,
+      primaryFailurePhase: primaryFailure.startupPhase,
+      primaryFailureSummary: primaryFailure.summaryLine,
+      startupPhase: fallbackStartupPhase,
+      summaryLine: fallbackSummaryLine,
+      reasonCode: fallbackReasonCode,
+      command: fallbackCommand,
+      exitCode: fallbackExecution.exitCode,
+    });
+    const fallbackSuggestions = fallbackExecution.exitCode === 0
+      ? [
+        "iOS physical action succeeded through explicit Maestro fallback after local manual-runner startup failure.",
+      ]
+      : [
+        `Both local iOS manual-runner backend and explicit Maestro fallback failed (${fallbackSummaryLine}). Verify device unlock state, xctestrun cache readiness, and iOS driver signing prerequisites (for example USE_XCODE_TEST_RUNNER / --apple-team-id) before retrying.`,
+      ];
+    return {
+      command: fallbackCommand,
+      attemptedBackend: executionPlan.backend,
+      executedBackend: "maestro_cli",
+      fallbackUsed: true,
+      startupPhase: fallbackStartupPhase,
+      exitCode: fallbackExecution.exitCode,
+      reasonCode: fallbackReasonCode,
+      nextSuggestions: fallbackSuggestions,
+      artifacts: [flowPaths.relativePath, evidenceArtifact],
+    };
+  }
+
+  const startupFailure = classifyIosPhysicalStartupFailure({
+    stderr: execution.stderr,
+    exitCode: execution.exitCode,
+  });
+  const reasonCode = execution.exitCode === 0 ? REASON_CODES.ok : startupFailure.reasonCode;
+  const startupPhase = execution.exitCode === 0 ? "ok" : startupFailure.startupPhase;
+  const summaryLine = execution.exitCode === 0
+    ? `iOS physical action executed successfully via ${executionPlan.backend}.`
+    : startupFailure.summaryLine;
+  const evidenceArtifact = await persistIosPhysicalExecutionEvidence({
+    repoRoot: params.repoRoot,
+    sessionId: params.sessionId,
+    actionType: params.actionType,
+    attemptedBackend: executionPlan.backend,
+    executedBackend: executionPlan.backend,
+    fallbackUsed: false,
+    startupPhase,
+    summaryLine,
+    reasonCode,
+    command: executionPlan.command,
+    exitCode: execution.exitCode,
+  });
   const nextSuggestions = execution.exitCode === 0
     ? []
     : [
-      "Direct iOS physical-device action execution uses Maestro CLI. If this fails, verify --udid selection and iOS driver signing prerequisites (for example USE_XCODE_TEST_RUNNER / --apple-team-id) before retrying.",
+      executionPlan.backend === "local_manual_runner"
+        ? `${summaryLine} Verify manual-runner cache preparation, device unlock state, and xctestrun host bundle mapping before retrying.`
+        : `${summaryLine} Verify --udid selection and iOS driver signing prerequisites (for example USE_XCODE_TEST_RUNNER / --apple-team-id) before retrying.`,
     ];
   return {
-    command,
+    command: executionPlan.command,
+    attemptedBackend: executionPlan.backend,
+    executedBackend: executionPlan.backend,
+    fallbackUsed: false,
+    startupPhase,
     exitCode: execution.exitCode,
     reasonCode,
     nextSuggestions,
-    artifacts: [flowPaths.relativePath],
+    artifacts: [flowPaths.relativePath, evidenceArtifact],
   };
 }
 
 export const uiActionToolInternals = {
   tapResolvedTarget,
+  classifyIosPhysicalStartupFailure,
+  buildIosPhysicalExecutionEvidencePaths,
   verifyResolvedIosPoint: verifyResolvedIosPointWithHooks,
 };
 
@@ -285,7 +502,7 @@ export async function tapWithMaestroTool(
     ? buildIosPhysicalActionFlowPaths(repoRoot, input.sessionId, "tap")
     : undefined;
   const iosPhysicalCommand = isIosPhysicalTarget && iosPhysicalFlowPaths
-    ? buildIosPhysicalMaestroCommand(deviceId, iosPhysicalFlowPaths.relativePath)
+    ? buildIosPhysicalActionExecutionPlan(deviceId, iosPhysicalFlowPaths.relativePath).command
     : undefined;
   if (input.dryRun) {
     return {
@@ -331,7 +548,9 @@ export async function tapWithMaestroTool(
         runnerProfile,
         x: input.x,
         y: input.y,
-        command: execution.command,
+        command: execution.fallbackUsed
+          ? ["fallback:maestro_cli", ...execution.command]
+          : execution.command,
         exitCode: execution.exitCode,
       },
       nextSuggestions: execution.nextSuggestions,
@@ -441,7 +660,7 @@ export async function typeTextWithMaestroTool(
     ? buildIosPhysicalActionFlowPaths(repoRoot, input.sessionId, "type_text")
     : undefined;
   const iosPhysicalCommand = isIosPhysicalTarget && iosPhysicalFlowPaths
-    ? buildIosPhysicalMaestroCommand(deviceId, iosPhysicalFlowPaths.relativePath)
+    ? buildIosPhysicalActionExecutionPlan(deviceId, iosPhysicalFlowPaths.relativePath).command
     : undefined;
   if (input.dryRun) {
     return {
@@ -488,7 +707,9 @@ export async function typeTextWithMaestroTool(
         dryRun: false,
         runnerProfile,
         text: input.text,
-        command: execution.command,
+        command: execution.fallbackUsed
+          ? ["fallback:maestro_cli", ...execution.command]
+          : execution.command,
         exitCode: execution.exitCode,
       },
       nextSuggestions: execution.nextSuggestions,
