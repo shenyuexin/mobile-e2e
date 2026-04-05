@@ -1,11 +1,10 @@
 import type { ActionIntent, ReasonCode, RunFlowData, RunFlowInput, RunnerProfile, ToolResult } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import { appendReplayTimelineEvent } from "@mobile-e2e-mcp/core";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildArtifactsDir,
-  buildDefaultDeviceId,
   type ArtifactDirectory,
   DEFAULT_ANDROID_DEVICE_ID,
   DEFAULT_HARNESS_CONFIG_PATH,
@@ -98,7 +97,7 @@ async function readRunCounts(artifactsDir: string): Promise<{ totalRuns: number;
   }
 }
 
-function shouldUseStepOrchestratedReplay(input: RunFlowInput, unsupportedCustomFlow: boolean): boolean {
+function shouldUseStepOrchestratedReplay(input: RunFlowInput): boolean {
   return Boolean(input.dryRun && input.flowPath && input.flowPath.startsWith("flows/samples/generated/"));
 }
 
@@ -283,7 +282,7 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
 
   await mkdir(artifactsDir.absolutePath, { recursive: true });
 
-  if (shouldUseStepOrchestratedReplay(input, unsupportedCustomFlow)) {
+  if (shouldUseStepOrchestratedReplay(input)) {
     const flowContent = await readFile(path.resolve(repoRoot, effectiveFlowPath), "utf8");
     const replayPlan = buildReplayPlanFromFlowYaml(flowContent);
     if (replayPlan.unsupportedCommands.length > 0) {
@@ -535,7 +534,11 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
       env.EXPO_URL = input.launchUrl ?? selection.launchUrl;
     }
   } else {
-    env.SIM_UDID = input.deviceId ?? selection.deviceId ?? DEFAULT_IOS_SIMULATOR_UDID;
+    const iosTargetId = input.deviceId ?? selection.deviceId ?? DEFAULT_IOS_SIMULATOR_UDID;
+    env.SIM_UDID = iosTargetId;
+    env.IOS_DEVICE_ID = iosTargetId;
+    env.DEVICE_ID = iosTargetId;
+    env.MAESTRO_UDID = iosTargetId;
     if (selection.launchUrl || input.launchUrl) {
       env.EXPO_URL = input.launchUrl ?? selection.launchUrl;
     }

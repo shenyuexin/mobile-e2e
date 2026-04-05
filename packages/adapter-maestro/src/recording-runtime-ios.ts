@@ -14,6 +14,7 @@ import type {
 } from "./recording-runtime-platform.js";
 import { executeRunner, shellEscape } from "./runtime-shared.js";
 import {
+    buildIdbCommand,
 	buildIosUiDescribeCommand,
 	probeIdbAvailability,
 } from "./ui-runtime.js";
@@ -319,6 +320,18 @@ export async function startIosCaptureProcesses(
 			return {
 				failureSuggestion:
 					"Failed to start iOS simulator event capture. Ensure xcrun simctl works and simulator is booted, then retry.",
+			};
+		}
+	} else {
+		const idbLogCommand = buildIdbCommand(["log", "--udid", params.deviceId])
+			.map((segment) => shellEscape(segment))
+			.join(" ");
+		const shellCommand = `${idbLogCommand} > ${shellEscape(params.rawEventsAbsolutePath)} 2>&1`;
+		pid = spawnDetachedShell(shellCommand, params.repoRoot, process.env);
+		if (!pid) {
+			return {
+				failureSuggestion:
+					"Failed to start iOS physical-device event capture through idb log. Verify idb companion target visibility and retry start_record_session.",
 			};
 		}
 	}

@@ -350,6 +350,27 @@ test("parseIosRawInputEvents extracts tap, type, and swipe", () => {
   assert.equal(parsed[2]?.type, "swipe");
 });
 
+test("parseIosRawInputEvents parses idb log style touch and keyboard signals", () => {
+  const raw = [
+    "2026-04-04 11:22:33.100 Accessibility touch point=(210, 520)",
+    "2026-04-04 11:22:33.260 UIKeyboard text=demo.user@example.com",
+    "2026-04-04 11:22:33.410 drag start=(210,520) end=(40,520)",
+  ].join("\n");
+
+  const parsed = recordingRuntimeInternals.parseIosRawInputEvents(raw);
+  assert.equal(parsed.length, 3);
+  assert.equal(parsed[0]?.type, "tap");
+  assert.equal(parsed[0]?.x, 210);
+  assert.equal(parsed[0]?.y, 520);
+  assert.equal(parsed[1]?.type, "type");
+  assert.equal(parsed[1]?.textDelta, "demo.user@example.com");
+  assert.equal(parsed[2]?.type, "swipe");
+  assert.equal(parsed[2]?.x, 210);
+  assert.equal(parsed[2]?.y, 520);
+  assert.equal(parsed[2]?.endX, 40);
+  assert.equal(parsed[2]?.endY, 520);
+});
+
 test("resolveSelectorAtPoint prefers iOS identifier-backed actionable node over smaller text child", () => {
   const snapshot = JSON.stringify([
     {
