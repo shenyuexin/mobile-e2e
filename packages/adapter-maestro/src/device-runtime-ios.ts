@@ -18,7 +18,7 @@ function buildIosLogPredicateForApp(appId: string): string {
  * iOS has no exact V/D/I/W/E/F equivalent — this is a lossy mapping.
  * Returns { levelPredicate, actualApplied, levelNote }.
  */
-function buildIosLogLevelPredicate(minLogLevel: "V" | "D" | "I" | "W" | "E" | "F" | undefined): {
+export function buildIosLogLevelPredicate(minLogLevel: "V" | "D" | "I" | "W" | "E" | "F" | undefined): {
   levelPredicate: string | undefined;
   actualApplied: boolean;
   levelNote: string | undefined;
@@ -530,9 +530,13 @@ export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
     },
     applyGetLogsAppFilter: async ({ capture, deviceId, appId }) => {
       const appPredicate = buildIosLogPredicateForApp(appId);
-      // Combine app predicate with existing level predicate if any
-      const existingPredicate = capture.command.find((arg, i) => arg === "--predicate" && capture.command[i + 1]);
-      const levelPredicatePart = existingPredicate ? capture.command[capture.command.indexOf("--predicate") + 1] : "";
+      // Combine app predicate with existing level predicate if any.
+      // The level predicate is added by buildGetLogsCapturePlan as --predicate <levelPredicate>
+      // when minLogLevel is set. We need to merge both predicates with AND.
+      const predicateIdx = capture.command.indexOf("--predicate");
+      const levelPredicatePart = predicateIdx >= 0 && predicateIdx + 1 < capture.command.length
+        ? capture.command[predicateIdx + 1]
+        : "";
       const combinedPredicate = levelPredicatePart
         ? `(${levelPredicatePart}) AND (${appPredicate})`
         : appPredicate;

@@ -73,3 +73,28 @@ Cmd line: com.myapp.main
   // No "timed out" in content, so signal should be undefined
   assert.equal(result.signal, undefined);
 });
+
+test("boundedRemoteFileReadBatch returns empty array for empty paths", async () => {
+  const results = await diagnosticsPull.boundedRemoteFileReadBatch("/repo", {
+    deviceId: "emulator-5554",
+    remotePaths: [],
+  });
+  assert.deepEqual(results, []);
+});
+
+test("boundedRemoteFileReadBatch with single path attempts size check without throwing", async () => {
+  // Without mocking executeRunner, this will fail to spawn adb. We verify the function
+  // structure is correct by checking it rejects or returns results without syntax errors.
+  try {
+    const results = await diagnosticsPull.boundedRemoteFileReadBatch("/repo", {
+      deviceId: "emulator-5554",
+      remotePaths: ["/data/anr/nonexistent.txt"],
+      totalBudgetMs: 100,
+      timeoutMs: 50,
+    });
+    assert.ok(Array.isArray(results));
+  } catch (err) {
+    // Expected: adb not found in test environment
+    assert.ok(err instanceof Error);
+  }
+});

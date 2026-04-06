@@ -268,8 +268,7 @@ export async function boundedRemoteFileReadBatch(
   }
 
   // Phase 2: Filter and sort (small-first for budget efficiency; return order differs from input)
-  const elapsed = Date.now() - startTime;
-  const remainingBudget = totalBudget - elapsed;
+  if (paths.length === 0) return [];
 
   const eligiblePaths = sizeResults
     .filter((r): r is PromiseFulfilledResult<{ remotePath: string; size: FileSizeResult }> => r.status === "fulfilled")

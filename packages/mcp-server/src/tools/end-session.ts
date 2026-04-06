@@ -1,8 +1,8 @@
 import { resolveRepoPath } from "@mobile-e2e-mcp/adapter-maestro";
 import { appendSessionTimelineEvent, loadSessionRecord, persistEndedSession, releaseLease } from "@mobile-e2e-mcp/core";
-import { REASON_CODES, type EndSessionInput, type ToolResult } from "@mobile-e2e-mcp/contracts";
+import { REASON_CODES, type EndSessionData, type EndSessionInput, type ToolResult } from "@mobile-e2e-mcp/contracts";
 
-export async function endSession(input: EndSessionInput): Promise<ToolResult<{ closed: boolean; endedAt: string }>> {
+export async function endSession(input: EndSessionInput): Promise<ToolResult<EndSessionData>> {
   const repoRoot = resolveRepoPath();
   const existing = await loadSessionRecord(repoRoot, input.sessionId);
   const persisted = await persistEndedSession(repoRoot, input.sessionId, input.artifacts ?? []);
