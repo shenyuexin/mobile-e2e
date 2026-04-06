@@ -24,6 +24,8 @@ export interface BoundedReadOptions {
 }
 
 export interface BoundedReadResult {
+  /** The remote path that was read (or attempted). Phase 12-04: allows matching by path instead of index. */
+  remotePath: string;
   content: string;
   status: "success" | "timeout" | "too_large" | "not_found" | "permission_denied" | "read_failed";
   readMethod: "shell_cat" | "adb_pull";
@@ -62,6 +64,7 @@ export async function boundedRemoteFileRead(
   // executeRunner returns exitCode: null on timeout
   if (catResult.exitCode !== null && catResult.exitCode === 0 && catResult.stdout.trim().length > 0) {
     return {
+      remotePath,
       content: catResult.stdout,
       status: "success",
       readMethod: "shell_cat",
@@ -73,6 +76,7 @@ export async function boundedRemoteFileRead(
   // Step 2: If cat failed and pull fallback is allowed
   if (!allowPullFallback) {
     return {
+      remotePath,
       content: "",
       status: catResult.exitCode === null ? "timeout" : "permission_denied",
       readMethod: "shell_cat",
@@ -102,7 +106,7 @@ async function boundedAdbPullFallback(params: {
   knownFileSize?: number;
 }): Promise<BoundedReadResult> {
   if (params.remainingBudgetMs <= 0) {
-    return { content: "", status: "timeout", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
+    return { content: "", remotePath: params.remotePath, status: "timeout", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
   }
 
   const maxBytes = params.knownFileSize ?? DEFAULT_MAX_FILE_SIZE_BYTES;
@@ -115,10 +119,10 @@ async function boundedAdbPullFallback(params: {
     // Size check (best-effort)
     const size = await checkRemoteFileSize(params.deviceId, params.remotePath, sizeCheckTimeout);
     if (size === "not_found") {
-      return { content: "", status: "not_found", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
+      return { content: "", remotePath: params.remotePath, status: "not_found", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
     }
     if (size === "too_large") {
-      return { content: "", status: "too_large", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
+      return { content: "", remotePath: params.remotePath, status: "too_large", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
     }
     // "check_failed" — proceed with pull, timeout will act as guardrail
 
@@ -128,7 +132,7 @@ async function boundedAdbPullFallback(params: {
 
   // Size is pre-known — check and pull directly
   if (params.knownFileSize > DEFAULT_MAX_FILE_SIZE_BYTES) {
-    return { content: "", status: "too_large", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
+    return { content: "", remotePath: params.remotePath, status: "too_large", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
   }
   const pullTimeout = Math.min(params.timeoutMs ?? DEFAULT_TIMEOUT_MS, params.remainingBudgetMs);
   return doAdbPull(params.deviceId, params.remotePath, params.startTime, pullTimeout);
@@ -151,15 +155,16 @@ async function doAdbPull(
     );
 
     if (pullResult.exitCode === null) {
-      return { content: "", status: "timeout", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - startTime };
+      return { content: "", remotePath, status: "timeout", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - startTime };
     }
     if (pullResult.exitCode !== 0) {
-      return { content: "", status: "read_failed", readMethod: "adb_pull", bytesRead: 0, errorMessage: pullResult.stderr, durationMs: Date.now() - startTime };
+      return { content: "", remotePath, status: "read_failed", readMethod: "adb_pull", bytesRead: 0, errorMessage: pullResult.stderr, durationMs: Date.now() - startTime };
     }
 
     const fileName = path.basename(remotePath);
     const content = await readFile(path.join(tempDir, fileName), "utf8");
     return {
+      remotePath,
       content,
       status: "success",
       readMethod: "adb_pull",

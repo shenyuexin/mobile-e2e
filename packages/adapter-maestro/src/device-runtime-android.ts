@@ -35,10 +35,14 @@ async function pullAndParseAnrTraces(
     timeoutMs: 60_000,
   });
 
-  return readResults.map((r, i) => {
+  return readResults.map((r) => {
+    // Match by remotePath instead of index (results are size-sorted, not input-sorted)
+    const remotePath = r.remotePath;
+    const fileNameMatch = remotePath.match(/\/data\/anr\/(.+)$/);
+    const fileName = fileNameMatch ? fileNameMatch[1] : remotePath;
     const meta = r.status === "success" ? parseAnrTraceMetadata(r.content) : {};
     return {
-      fileName: fileNames[i],
+      fileName,
       processName: meta.processName,
       pid: meta.pid,
       signal: meta.signal,
@@ -143,7 +147,11 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
       }
       return {
         ...capture,
-        command: ["adb", "-s", deviceId, "logcat", "--pid", pid, "-d", "-t", String(capture.linesRequested ?? DEFAULT_GET_LOGS_LINES)],
+        command: [
+          "adb", "-s", deviceId, "logcat", "--pid", pid, "-d",
+          "-t", String(capture.linesRequested ?? DEFAULT_GET_LOGS_LINES),
+          ...(capture.actualLevelFilterApplied ? [capture.command[capture.command.length - 1]] : []),
+        ],
         appFilterApplied: true,
       };
     },
