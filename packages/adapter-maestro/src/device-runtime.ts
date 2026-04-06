@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { buildCrashAttribution } from "./crash-attribution.js";
 import type {
   CollectDiagnosticsData,
   CollectDiagnosticsInput,
@@ -955,6 +956,7 @@ export async function getCrashSignalsWithRuntime(input: GetCrashSignalsInput): P
       evidence: execution.exitCode === 0 ? [buildExecutionEvidence("crash_signal", capture.relativeOutputPath, capture.supportLevel, "Captured crash-signal artifact.")] : undefined,
       content: execution.content,
       summary: execution.exitCode === 0 ? buildLogSummary(execution.content ?? "") : undefined,
+      crashAttribution: execution.exitCode === 0 && execution.content ? buildCrashAttribution(execution.content, input.platform ?? "android") : undefined,
     },
     nextSuggestions: execution.exitCode === 0
       ? (input.platform === "ios" && execution.signalCount === 0

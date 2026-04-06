@@ -44,6 +44,8 @@ export interface CrashSignalExecutionResult {
   entries: string[];
   signalCount: number;
   content?: string;
+  /** Platform-specific extension data. Consumers should check platform before reading. */
+  platformExtensions?: Record<string, unknown>;
 }
 
 export interface DeviceRuntimePlatformHooks {

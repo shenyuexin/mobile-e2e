@@ -1,9 +1,53 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DeviceRuntimePlatformHooks } from "./device-runtime-platform.js";
+import { boundedRemoteFileReadBatch, parseAnrTraceMetadata } from "./diagnostics-pull.js";
 import { countNonEmptyLines, executeRunner } from "./runtime-shared.js";
 
 const DEFAULT_GET_LOGS_LINES = 200;
+const MAX_ANR_FILES = 5;
+const MAX_ANR_LINES = 20_000;
+
+export interface AnrTraceResult {
+  fileName: string;
+  processName?: string;
+  pid?: string;
+  signal?: string;
+  rawContent?: string;
+  pullStatus: "success" | "timeout" | "too_large" | "not_found" | "permission_denied" | "read_failed" | "cat_failed_pull_fallback";
+  pullMethod: "shell_cat" | "adb_pull";
+}
+
+async function pullAndParseAnrTraces(
+  repoRoot: string,
+  deviceId: string,
+  fileNames: string[],
+): Promise<AnrTraceResult[]> {
+  const maxFiles = Math.min(fileNames.length, MAX_ANR_FILES);
+  const remotePaths = fileNames.slice(0, maxFiles).map((f) => `/data/anr/${f}`);
+
+  const readResults = await boundedRemoteFileReadBatch(repoRoot, {
+    deviceId,
+    remotePaths,
+    maxFiles: maxFiles,
+    maxLines: MAX_ANR_LINES,
+    totalBudgetMs: 180_000,
+    timeoutMs: 60_000,
+  });
+
+  return readResults.map((r, i) => {
+    const meta = r.status === "success" ? parseAnrTraceMetadata(r.content) : {};
+    return {
+      fileName: fileNames[i],
+      processName: meta.processName,
+      pid: meta.pid,
+      signal: meta.signal,
+      rawContent: r.content,
+      pullStatus: r.status,
+      pullMethod: r.readMethod,
+    };
+  });
+}
 
 function sanitizeArtifactSegment(value: string): string {
   const normalized = value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -105,7 +149,7 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
       return {
         relativeOutputPath,
         absoluteOutputPath: path.resolve(repoRoot, relativeOutputPath),
-        commands: [["adb", "-s", deviceId, "logcat", "-d", "-b", "crash", "-t", String(linesRequested)], ["adb", "-s", deviceId, "shell", "ls", "-1", "/data/anr"]],
+        commands: [["adb", "-s", deviceId, "logcat", "-d", "-b", "crash", "-t", String(linesRequested)], ["adb", "-s", deviceId, "shell", "ls", "-1t", "/data/anr"]],
         supportLevel: "full",
         linesRequested,
       };
@@ -121,13 +165,28 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
       const entries = anrExecution.exitCode === 0
         ? anrExecution.stdout.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10)).map((line) => line.trim()).filter(Boolean)
         : [];
-      const content = [
+
+      // Pull actual ANR trace content (Phase 11-01)
+      const anrTraces = entries.length > 0
+        ? await pullAndParseAnrTraces(repoRoot, deviceId, entries)
+        : [];
+
+      const contentLines = [
         "# Android crash log buffer",
         crashExecution.stdout.trim(),
         "",
         "# Android ANR entries",
         entries.join(String.fromCharCode(10)),
-      ].join(String.fromCharCode(10)).trim() + String.fromCharCode(10);
+      ];
+
+      if (anrTraces.length > 0) {
+        contentLines.push("", "# Android ANR trace content");
+        for (const trace of anrTraces) {
+          contentLines.push(`## ${trace.fileName}`, trace.rawContent ?? "<content not available>", "");
+        }
+      }
+
+      const content = contentLines.join(String.fromCharCode(10)).trim() + String.fromCharCode(10);
       const exitCode = crashExecution.exitCode !== 0 ? crashExecution.exitCode : anrExecution.exitCode;
       if (exitCode === 0) {
         await writeFile(capture.absoluteOutputPath, content, "utf8");
@@ -139,6 +198,7 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
         entries,
         signalCount: entries.length + countNonEmptyLines(crashExecution.stdout),
         content: exitCode === 0 ? content : undefined,
+        platformExtensions: anrTraces.length > 0 ? { anrTraces } : undefined,
       };
     },
     buildCollectDiagnosticsCapturePlan: ({ repoRoot, sessionId, outputPath, runnerProfile, deviceId }) => {

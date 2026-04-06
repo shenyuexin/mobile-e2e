@@ -1,7 +1,8 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { isIosPhysicalDeviceId } from "./device-runtime.js";
-import type { DeviceRuntimePlatformHooks } from "./device-runtime-platform.js";
+import type { CrashSignalExecutionResult, DeviceRuntimePlatformHooks } from "./device-runtime-platform.js";
 import { probeIdbAvailability } from "./ui-runtime.js";
 import { executeRunner, shellEscape, type CommandExecution } from "./runtime-shared.js";
 
@@ -192,6 +193,225 @@ export async function resolveIosAttachTarget(repoRoot: string, deviceId: string,
     : resolveIosSimulatorAttachTarget(repoRoot, deviceId, appId);
 }
 
+export interface IosPhysicalCrashResult {
+  success: boolean;
+  tier: "devicectl" | "idevicecrashreport" | "idevicesyslog";
+  entries: Array<{
+    reportId?: string;
+    processName?: string;
+    exceptionType?: string;
+    exceptionCodes?: string;
+    crashedThreadFrames: string[];
+    rawContent?: string;
+  }>;
+  supportLevel: "full" | "partial" | "none";
+  missingToolingAdvice?: string;
+  failureReason?: "tool_not_available" | "device_disconnected" | "command_error" | "no_crashes";
+  stderr?: string;
+}
+
+interface IosPhysicalCrashParams {
+  repoRoot: string;
+  deviceId: string;
+  appId?: string;
+}
+
+async function collectIosPhysicalCrashSignals(params: IosPhysicalCrashParams): Promise<CrashSignalExecutionResult> {
+  const result = await collectIosPhysicalCrashLogs(params);
+
+  const contentLines = ["# iOS physical-device crash signals", `Tier used: ${result.tier}`, ""];
+  if (result.entries.length > 0) {
+    for (const entry of result.entries) {
+      contentLines.push(`## ${entry.processName ?? "unknown"}`);
+      if (entry.exceptionType) contentLines.push(`Exception: ${entry.exceptionType}`);
+      if (entry.exceptionCodes) contentLines.push(`Codes: ${entry.exceptionCodes}`);
+      if (entry.crashedThreadFrames.length > 0) {
+        contentLines.push("Crashed thread frames:", ...entry.crashedThreadFrames, "");
+      }
+      if (entry.rawContent) contentLines.push(entry.rawContent, "");
+    }
+  } else {
+    contentLines.push("<no crash entries found>");
+  }
+  if (result.missingToolingAdvice) contentLines.push("", `# Note: ${result.missingToolingAdvice}`);
+
+  const content = contentLines.join("\n").trim() + "\n";
+
+  return {
+    exitCode: result.success ? 0 : 1,
+    stderr: result.stderr ?? "",
+    commands: [],
+    entries: result.entries.map((e) => e.processName ?? "unknown"),
+    signalCount: result.entries.length,
+    content: result.success ? content : undefined,
+    platformExtensions: { iosPhysicalCrashes: result },
+  };
+}
+
+async function collectIosPhysicalCrashLogs(params: IosPhysicalCrashParams): Promise<IosPhysicalCrashResult> {
+  const { repoRoot, deviceId, appId } = params;
+
+  // Tier 1: devicectl (Xcode 14+, no extra deps)
+  try {
+    const devicectlResult = await tryDevicectlCrashLogs(repoRoot, deviceId, appId);
+    if (devicectlResult.success || devicectlResult.failureReason !== "tool_not_available") {
+      return devicectlResult;
+    }
+  } catch {
+    // Fall through to tier 2
+  }
+
+  // Tier 2: idevicecrashreport (libimobiledevice)
+  try {
+    const ideviceResult = await tryIdevicecrashreport(repoRoot, deviceId, appId);
+    if (ideviceResult.success || ideviceResult.failureReason !== "tool_not_available") {
+      return ideviceResult;
+    }
+  } catch {
+    // Fall through to tier 3
+  }
+
+  // Tier 3: idevicesyslog (bounded 5-min window, date resolved in Node.js)
+  return await tryIdeviceSyslogTail(repoRoot, deviceId, appId);
+}
+
+async function tryDevicectlCrashLogs(repoRoot: string, deviceId: string, appId?: string): Promise<IosPhysicalCrashResult> {
+  const execution = await executeRunner(
+    ["xcrun", "devicectl", "device", "info", "crashes", "--device", deviceId],
+    repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS },
+  );
+
+  if (execution.exitCode === null) {
+    return { success: false, tier: "devicectl", entries: [], supportLevel: "none", failureReason: "tool_not_available", stderr: execution.stderr };
+  }
+  if (execution.exitCode !== 0) {
+    if (execution.stderr.toLowerCase().includes("not found") || execution.stderr.toLowerCase().includes("enoent")) {
+      return { success: false, tier: "devicectl", entries: [], supportLevel: "none", failureReason: "tool_not_available", stderr: execution.stderr };
+    }
+    return { success: false, tier: "devicectl", entries: [], supportLevel: "none", failureReason: "command_error", stderr: execution.stderr };
+  }
+
+  // Parse JSON output (devicectl returns structured JSON)
+  let crashes: Array<Record<string, unknown>> = [];
+  try {
+    const parsed = JSON.parse(execution.stdout);
+    crashes = Array.isArray(parsed.result?.crashes) ? parsed.result.crashes : (Array.isArray(parsed.crashes) ? parsed.crashes : []);
+  } catch {
+    return { success: false, tier: "devicectl", entries: [], supportLevel: "none", failureReason: "command_error", stderr: "Failed to parse devicectl JSON" };
+  }
+
+  // Filter by appId
+  const filtered = appId
+    ? crashes.filter((c) => {
+        const procName = String(c.processName ?? "").toLowerCase();
+        const bundleId = String(c.bundleIdentifier ?? "").toLowerCase();
+        return procName.includes(appId.toLowerCase()) || bundleId.includes(appId.toLowerCase());
+      })
+    : crashes;
+
+  const entries = filtered.slice(0, 3).map((c) => ({
+    reportId: String(c.reportId ?? ""),
+    processName: String(c.processName ?? ""),
+    exceptionType: String(c.exceptionType ?? ""),
+    exceptionCodes: String(c.exceptionCodes ?? ""),
+    crashedThreadFrames: Array.isArray(c.crashedThreadFrames) ? c.crashedThreadFrames.slice(0, 10).map(String) : [],
+    rawContent: String(c.rawContent ?? "").slice(0, 10000),
+  }));
+
+  return {
+    success: true,
+    tier: "devicectl",
+    entries,
+    supportLevel: entries.length > 0 ? "full" : "partial",
+    failureReason: entries.length === 0 ? "no_crashes" : undefined,
+  };
+}
+
+async function tryIdevicecrashreport(repoRoot: string, deviceId: string, appId?: string): Promise<IosPhysicalCrashResult> {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "m2e-ios-crash-"));
+  try {
+    const pullResult = await executeRunner(
+      ["idevicecrashreport", "-k", tempDir, "--udid", deviceId],
+      repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS },
+    );
+
+    if (pullResult.exitCode === null || (pullResult.exitCode !== 0 && pullResult.stderr.toLowerCase().includes("not found"))) {
+      return { success: false, tier: "idevicecrashreport", entries: [], supportLevel: "none", failureReason: "tool_not_available", missingToolingAdvice: "Install libimobiledevice: brew install libimobiledevice", stderr: pullResult.stderr };
+    }
+    if (pullResult.exitCode !== 0) {
+      return { success: false, tier: "idevicecrashreport", entries: [], supportLevel: "none", failureReason: "command_error", stderr: pullResult.stderr };
+    }
+
+    // Read .crash files
+    const crashFiles = await readdir(tempDir).catch(() => []);
+    const filteredFiles = crashFiles.filter((f) => f.endsWith(".crash"));
+
+    const entries: IosPhysicalCrashResult["entries"] = [];
+    for (const file of filteredFiles.slice(0, 3)) {
+      const content = await readFile(path.join(tempDir, file), "utf8").catch(() => "");
+      if (!content.trim()) continue;
+      if (appId && !content.toLowerCase().includes(appId.toLowerCase())) continue;
+
+      const lines = content.replaceAll("\r", "").split("\n");
+      const processMatch = lines.find((l) => l.startsWith("Process:"));
+      const exceptionMatch = lines.find((l) => l.startsWith("Exception Type:"));
+      const codesMatch = lines.find((l) => l.startsWith("Exception Codes:"));
+
+      const crashedFrames = lines
+        .filter((l) => /^\s*\d+\s+\S+/.test(l))
+        .slice(0, 10);
+
+      entries.push({
+        processName: processMatch?.split(":")[1]?.trim().split(/\s+\[/)[0],
+        exceptionType: exceptionMatch?.split(":")[1]?.trim(),
+        exceptionCodes: codesMatch?.split(":")[1]?.trim(),
+        crashedThreadFrames: crashedFrames,
+        rawContent: lines.slice(0, 200).join("\n"),
+      });
+    }
+
+    return {
+      success: entries.length > 0,
+      tier: "idevicecrashreport",
+      entries,
+      supportLevel: entries.length > 0 ? "full" : "partial",
+      failureReason: entries.length === 0 ? "no_crashes" : undefined,
+    };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function tryIdeviceSyslogTail(repoRoot: string, deviceId: string, appId?: string): Promise<IosPhysicalCrashResult> {
+  // idevicesyslog streams continuously; bounded via timeoutMs only.
+  // Date-based filtering is done in post-processing if needed.
+  const execution = await executeRunner(
+    ["idevicesyslog", "--udid", deviceId],
+    repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS },
+  );
+
+  if (execution.exitCode === null || execution.stderr.toLowerCase().includes("not found")) {
+    return { success: false, tier: "idevicesyslog", entries: [], supportLevel: "none", failureReason: "tool_not_available", missingToolingAdvice: "Install libimobiledevice: brew install libimobiledevice", stderr: execution.stderr };
+  }
+
+  // Filter syslog for crash-related lines
+  const lines = execution.stdout.replaceAll("\r", "").split("\n");
+  const crashLines = lines.filter((l) =>
+    /crash|exception|EXC_|SIGSEGV|SIGABRT|fatal/i.test(l) &&
+    (!appId || l.toLowerCase().includes(appId.toLowerCase()))
+  );
+
+  return {
+    success: crashLines.length > 0,
+    tier: "idevicesyslog",
+    entries: crashLines.length > 0
+      ? [{ crashedThreadFrames: crashLines.slice(0, 50), rawContent: crashLines.slice(0, 200).join("\n") }]
+      : [],
+    supportLevel: crashLines.length > 0 ? "partial" : "none",
+    failureReason: crashLines.length === 0 ? "no_crashes" : undefined,
+  };
+}
+
 export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
   return {
     platform: "ios",
@@ -311,7 +531,13 @@ export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
         linesRequested,
       };
     },
-    executeCrashSignalsCapture: async ({ repoRoot, capture, appId }) => {
+    executeCrashSignalsCapture: async ({ repoRoot, capture, deviceId, appId }) => {
+      // Physical device path (Phase 11-02)
+      if (isIosPhysicalDeviceId(deviceId)) {
+        return collectIosPhysicalCrashSignals({ repoRoot, deviceId, appId });
+      }
+
+      // Simulator path (existing)
       await runIdbPreflight(repoRoot);
       const homeExecution = await executeRunner(capture.commands[0], repoRoot, process.env);
       if (homeExecution.exitCode !== 0) {

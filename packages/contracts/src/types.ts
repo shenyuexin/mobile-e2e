@@ -28,6 +28,24 @@ export type RecoveryStrategy = "none" | "wait_until_ready" | "relaunch_app" | "r
 export type OcrAllowedAction = "tap" | "assertText" | "longPress";
 export type OcrBlockedAction = "delete" | "purchase" | "confirmPayment";
 export type OcrMatchType = "exact" | "normalized" | "fuzzy" | "ai-reranked";
+export type CrashType = "anr" | "native_crash" | "oom" | "uncaught_exception" | "watchdog" | "unknown";
+
+export interface CrashAttribution {
+  crashTypes: CrashType[];
+  primaryCrashType: CrashType;
+  processName?: string;
+  signal?: string;
+  faultAddress?: string;
+  crashedThread?: {
+    name?: string;
+    state?: string;
+    topFrames: string[];
+  };
+  suspectedCause?: string;
+  confidence: "high" | "medium" | "low";
+  relatedSignals: string[];
+  suggestedActions: string[];
+}
 export type InterruptionType = "system_alert" | "action_sheet" | "permission_prompt" | "app_modal" | "overlay" | "keyboard_blocking" | "unknown";
 export type InterruptionSignalSource = "ui_tree" | "state_summary" | "runtime" | "visual";
 export type InterruptionActionSlot = "primary" | "secondary" | "cancel" | "destructive";
@@ -627,6 +645,8 @@ export interface GetCrashSignalsData {
   evidence?: ExecutionEvidence[];
   content?: string;
   summary?: LogSummary;
+  /** Structured crash attribution (Phase 11-03). Only present when crash signals are detected. */
+  crashAttribution?: CrashAttribution;
 }
 export interface CollectDiagnosticsInput {
   sessionId: string;

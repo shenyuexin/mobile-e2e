@@ -127,6 +127,8 @@ export type {
   OcrOutput,
   OcrProvider,
   OcrTextBlock,
+  CrashAttribution,
+  CrashType,
   Platform,
   PerformanceArtifactBundle,
   PerformanceCaptureMode,
