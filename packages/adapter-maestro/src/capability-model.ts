@@ -71,7 +71,7 @@ function buildAndroidToolCapabilities(): ToolCapability[] {
     buildToolCapability("cancel_record_session", FULL, "Android passive recording cancellation is fully supported."),
     buildToolCapability("list_devices", FULL, "Android device discovery is supported.", false),
     buildToolCapability("start_session", FULL, "Android session initialization is supported.", false),
-    buildToolCapability("run_flow", FULL, "Android flow execution is supported."),
+    buildToolCapability("run_flow", FULL, "Android flow execution uses owned-adb primary backend for physical-device replay (no helper-app install required for supported commands: launchApp, tapOn with selector, inputText with deterministic focus, assertVisible). Maestro helper-app lane is explicit fallback only."),
     buildToolCapability("take_screenshot", FULL, "Android screenshot capture is supported."),
     buildToolCapability("record_screen", FULL, "Android screen recording is supported through adb shell screenrecord."),
     buildToolCapability("tap", FULL, "Android coordinate tap is supported."),

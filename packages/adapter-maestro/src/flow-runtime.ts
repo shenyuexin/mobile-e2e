@@ -101,6 +101,53 @@ function shouldUseStepOrchestratedReplay(input: RunFlowInput): boolean {
   return Boolean(input.dryRun && input.flowPath && input.flowPath.startsWith("flows/samples/generated/"));
 }
 
+/**
+ * Android replay backend selection for physical-device live replay.
+ * Returns the resolved backend and whether helper apps are required for fallback.
+ */
+type AndroidReplayBackend = "owned-adb" | "maestro";
+
+interface AndroidBackendSelection {
+  backend: AndroidReplayBackend;
+  helperAppsRequired: boolean;
+  helperAppsAvailable: boolean;
+  blockingReason?: string;
+}
+
+async function selectAndroidReplayBackend(params: {
+  flowContent: string;
+  deviceId: string;
+  userId?: string;
+  repoRoot: string;
+}): Promise<AndroidBackendSelection> {
+  const plan = buildReplayPlanFromFlowYaml(params.flowContent);
+  const hasUnsupportedCommands = plan.unsupportedCommands.length > 0;
+
+  // Check helper app availability (needed for maestro fallback)
+  const helperPackageArgs = params.userId
+    ? ["adb", "-s", params.deviceId, "shell", "cmd", "package", "list", "packages", "--user", params.userId]
+    : ["adb", "-s", params.deviceId, "shell", "pm", "list", "packages"];
+  const packagesExecution = await executeRunner(helperPackageArgs, params.repoRoot, process.env);
+  const packagesOutput = packagesExecution.stdout.replaceAll(String.fromCharCode(13), "");
+  const hasDriverApp = /(^|\n)package:dev\.mobile\.maestro(\n|$)/.test(packagesOutput);
+  const hasDriverServer = /(^|\n)package:dev\.mobile\.maestro\.test(\n|$)/.test(packagesOutput);
+  const helperAppsAvailable = hasDriverApp && hasDriverServer;
+
+  if (!hasUnsupportedCommands) {
+    // All steps supported → owned-adb primary backend
+    return { backend: "owned-adb", helperAppsRequired: false, helperAppsAvailable };
+  }
+
+  // Has unsupported steps → need to check position relative to first mutating step
+  // For this phase, any unsupported command triggers maestro fallback evaluation
+  return {
+    backend: "maestro",
+    helperAppsRequired: true,
+    helperAppsAvailable,
+    blockingReason: helperAppsAvailable ? undefined : "fallback_blocked_missing_helper_apps",
+  };
+}
+
 function buildReplayPersistenceEvent(params: {
   type: string;
   summary: string;
@@ -568,20 +615,19 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
       env.ANDROID_OEM_TEXT_FALLBACK = env.ANDROID_OEM_TEXT_FALLBACK ?? "1";
     }
 
-    const helperPackageArgs = env.ANDROID_USER_ID
-      ? ["adb", "-s", env.DEVICE_ID ?? DEFAULT_ANDROID_DEVICE_ID, "shell", "cmd", "package", "list", "packages", "--user", env.ANDROID_USER_ID]
-      : ["adb", "-s", env.DEVICE_ID ?? DEFAULT_ANDROID_DEVICE_ID, "shell", "pm", "list", "packages"];
-    const packagesExecution = await executeRunner(helperPackageArgs, repoRoot, process.env);
-    const packagesOutput = packagesExecution.stdout.replaceAll(String.fromCharCode(13), "");
-    const hasDriverApp = /(^|\n)package:dev\.mobile\.maestro(\n|$)/.test(packagesOutput);
-    const hasDriverServer = /(^|\n)package:dev\.mobile\.maestro\.test(\n|$)/.test(packagesOutput);
-    if (packagesExecution.exitCode === 0 && (!hasDriverApp || !hasDriverServer) && !allowsOemTextFallback) {
+    // Android replay backend selection: owned-adb primary, maestro fallback
+    const deviceId = env.DEVICE_ID ?? selection.deviceId ?? DEFAULT_ANDROID_DEVICE_ID;
+    const backendSelection = await selectAndroidReplayBackend({
+      flowContent,
+      deviceId,
+      userId: env.ANDROID_USER_ID,
+      repoRoot,
+    });
+
+    if (backendSelection.backend === "maestro" && !backendSelection.helperAppsAvailable) {
+      // Fallback required but helper apps missing → terminal fail
       const preflightPath = path.join(artifactsDir.absolutePath, "android-preflight.log");
-      await writeFile(preflightPath, `${usersOutput}\n\n${packagesOutput}`, "utf8");
-      const missingHelpers = [
-        ...(hasDriverApp ? [] : ["dev.mobile.maestro"]),
-        ...(hasDriverServer ? [] : ["dev.mobile.maestro.test"]),
-      ];
+      await writeFile(preflightPath, `${usersOutput}\n\nBackend selection: maestro fallback required but helper apps missing`, "utf8");
       return {
         status: "failed",
         reasonCode: REASON_CODES.deviceUnavailable,
@@ -603,17 +649,20 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
           failedRuns: runCount,
           command,
           exitCode: null,
-          summaryLine: `Blocked before replay: Maestro helper app missing (${missingHelpers.join(", ")})${env.ANDROID_USER_ID ? ` for user ${env.ANDROID_USER_ID}` : ""}.`,
+          summaryLine: `Android replay requires Maestro helper apps for fallback lane, but they are missing. Install dev.mobile.maestro and dev.mobile.maestro.test or use a flow with only supported commands (launchApp, tapOn with selector, assertVisible).`,
+          executionMode: "runner_compat",
+          replayProgress: buildCompatReplayProgress(runCount),
+          stepOutcomes: [],
         },
         nextSuggestions: [
-          `Install missing helper app(s) once on device (${missingHelpers.join(", ")})${env.ANDROID_USER_ID ? ` for user ${env.ANDROID_USER_ID}` : ""} and rerun run_flow.`,
-          ...(env.ANDROID_USER_ID
-            ? [`Try: adb -s ${env.DEVICE_ID ?? DEFAULT_ANDROID_DEVICE_ID} shell am switch-user ${env.ANDROID_USER_ID} before replay.`]
-            : []),
-          "This guard prevents repeated install authorization prompts during replay.",
+          `Install missing helper apps once on device and rerun run_flow, OR`,
+          "Remove unsupported commands (stopApp, clearState, scroll, swipe, back, home, killApp, assertNotVisible, runFlow) from the flow to use the owned-adb replay lane.",
         ],
       };
     }
+
+    // owned-adb backend selected: helper apps are NOT required for primary lane
+    // Continue to runner execution without hard-blocking on missing helper apps
   }
 
   const execution = await executeRunner(["bash", absoluteRunnerScript, String(runCount)], repoRoot, env);
