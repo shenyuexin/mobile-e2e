@@ -272,7 +272,7 @@ async function collectIosPhysicalCrashSignals(params: IosPhysicalCrashParams): P
     commands: [],
     entries: result.entries.map((e) => e.processName ?? "unknown"),
     signalCount: result.entries.length,
-    content: result.success ? content : undefined,
+    content,
     platformExtensions: { iosPhysicalCrashes: result },
   };
 }
@@ -572,6 +572,7 @@ export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
           commands: capture.commands,
           entries: [],
           signalCount: 0,
+          content: undefined,
         };
       }
 

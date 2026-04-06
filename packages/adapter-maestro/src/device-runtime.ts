@@ -899,6 +899,9 @@ export async function getCrashSignalsWithRuntime(input: GetCrashSignalsInput): P
         linesRequested: input.lines,
         appId: input.appId,
         entries: [],
+        content: undefined,
+        summary: undefined,
+        crashAttribution: undefined,
       },
       nextSuggestions: ["Provide platform explicitly, or call get_crash_signals with an active sessionId so MCP can resolve platform from session context."],
     };
