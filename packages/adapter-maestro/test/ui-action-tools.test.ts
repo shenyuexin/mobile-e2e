@@ -518,8 +518,8 @@ test("tapWithMaestroTool dry-run honors local manual runner backend preview for 
     assert.equal(result.reasonCode, REASON_CODES.ok);
     assert.deepEqual(result.data.command, [
       "bash",
-      "scripts/dev/run-maestro-ios-manual-runner.sh",
-      "chain",
+      "scripts/dev/run-ios-owned-physical-runner.sh",
+      "execute-flow",
     ]);
   } finally {
     if (previousBackend === undefined) {
@@ -557,13 +557,12 @@ test("buildIosPhysicalActionExecutionPlan builds local manual runner command whe
   assert.equal(plan.backend, "local_manual_runner");
   assert.deepEqual(plan.command, [
     "bash",
-    "scripts/dev/run-maestro-ios-manual-runner.sh",
-    "chain",
+    "scripts/dev/run-ios-owned-physical-runner.sh",
+    "execute-flow",
   ]);
-  assert.equal(plan.envPatch.MAESTRO_RUNNER_MODE, "manual");
-  assert.equal(plan.envPatch.MAESTRO_UDID, "00008101-000D482C1E78001E");
+  assert.equal(plan.envPatch.IOS_OWNED_RUNNER_UDID, "00008101-000D482C1E78001E");
   assert.equal(
-    plan.envPatch.MAESTRO_FLOW,
+    plan.envPatch.IOS_OWNED_RUNNER_FLOW_PATH,
     "artifacts/ios-physical-actions/demo/type_text.maestro.yml",
   );
 });
@@ -586,6 +585,46 @@ test("classifyIosPhysicalStartupFailure classifies code74 dtxproxy handshake fai
   assert.equal(classified.startupPhase, "xctest_handshake");
 });
 
+test("classifyIosPhysicalStartupFailure classifies invalid-signature install failures", () => {
+  const classified = uiActionToolInternals.classifyIosPhysicalStartupFailure({
+    stderr: "Failed to verify code signature of OwnedRunnerUITests-Runner.app : 0xe8008018 (The identity used to sign the executable is no longer valid.)",
+    exitCode: 13,
+  });
+  assert.equal(classified.reasonCode, REASON_CODES.configurationError);
+  assert.equal(classified.startupPhase, "preflight");
+});
+
+test("classifyIosPhysicalStartupFailure does not over-classify generic install failures as signature issues", () => {
+  const classified = uiActionToolInternals.classifyIosPhysicalStartupFailure({
+    stderr: "Unable to install test runner on device due to transient install service error",
+    exitCode: 13,
+  });
+  assert.notEqual(classified.reasonCode, REASON_CODES.configurationError);
+  assert.notEqual(classified.startupPhase, "preflight");
+});
+
+test("buildIosPhysicalFailureSuggestions gives signature-specific preflight guidance", () => {
+  const suggestions = uiActionToolInternals.buildIosPhysicalFailureSuggestions({
+    reasonCode: REASON_CODES.configurationError,
+    startupPhase: "preflight",
+    backend: "local_manual_runner",
+    summaryLine: "Runner installation failed during iOS preflight because the test-runner code signature could not be validated on device.",
+  });
+  assert.equal(suggestions.length, 1);
+  assert.match(suggestions[0], /currently valid Apple Development identity/i);
+});
+
+test("buildIosPhysicalFailureSuggestions keeps backend-specific fallback guidance", () => {
+  const suggestions = uiActionToolInternals.buildIosPhysicalFailureSuggestions({
+    reasonCode: REASON_CODES.adapterError,
+    startupPhase: "xctest_handshake",
+    backend: "local_manual_runner",
+    summaryLine: "Runner exited before channel bootstrap completed.",
+  });
+  assert.equal(suggestions.length, 1);
+  assert.match(suggestions[0], /manual-runner cache preparation/i);
+});
+
 test("buildIosPhysicalExecutionEvidencePaths keeps session-scoped deterministic artifact path", () => {
   const paths = uiActionToolInternals.buildIosPhysicalExecutionEvidencePaths(
     "/tmp/repo",
@@ -593,4 +632,50 @@ test("buildIosPhysicalExecutionEvidencePaths keeps session-scoped deterministic 
     "tap",
   );
   assert.equal(paths.relativePath, "artifacts/ios-physical-actions/session-xyz/tap.execution.md");
+});
+
+test("buildOwnedRunnerActionEnv extracts tap action payload from flow content", () => {
+  const envPatch = uiActionToolInternals.buildOwnedRunnerActionEnv({
+    actionType: "tap",
+    flowContent: [
+      "appId: com.example.app",
+      "---",
+      "- tapOn:",
+      "    point:",
+      "      x: 120",
+      "      y: 340",
+    ].join("\n"),
+  });
+  assert.equal(envPatch.IOS_OWNED_RUNNER_ACTION_TYPE, "tap");
+  assert.equal(envPatch.IOS_OWNED_RUNNER_TARGET_BUNDLE_ID, "com.example.app");
+  assert.equal(envPatch.IOS_OWNED_RUNNER_ACTION_X, "120");
+  assert.equal(envPatch.IOS_OWNED_RUNNER_ACTION_Y, "340");
+});
+
+test("buildOwnedRunnerActionEnv extracts text payload from type_text flow content", () => {
+  const envPatch = uiActionToolInternals.buildOwnedRunnerActionEnv({
+    actionType: "type_text",
+    flowContent: [
+      "appId: com.example.app",
+      "---",
+      "- inputText: \"hello world\"",
+    ].join("\n"),
+  });
+  assert.equal(envPatch.IOS_OWNED_RUNNER_ACTION_TYPE, "type_text");
+  assert.equal(envPatch.IOS_OWNED_RUNNER_TARGET_BUNDLE_ID, "com.example.app");
+  assert.equal(envPatch.IOS_OWNED_RUNNER_ACTION_TEXT, "hello world");
+});
+
+test("buildOwnedRunnerActionEnv ignores wildcard flow appId and preserves action payload", () => {
+  const envPatch = uiActionToolInternals.buildOwnedRunnerActionEnv({
+    actionType: "tap",
+    flowContent: [
+      'appId: "*"',
+      "---",
+      "- tapOn:",
+      '    point: "12,34"',
+    ].join("\n"),
+  });
+  assert.equal(envPatch.IOS_OWNED_RUNNER_TARGET_BUNDLE_ID, undefined);
+  assert.equal(envPatch.IOS_OWNED_RUNNER_ACTION_TYPE, "tap");
 });

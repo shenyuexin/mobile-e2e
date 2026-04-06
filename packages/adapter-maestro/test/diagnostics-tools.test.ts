@@ -43,6 +43,25 @@ test("buildDebugNextSuggestions includes handshake guidance for code74/dtxproxy 
   );
 });
 
+test("buildDebugNextSuggestions prioritizes signature guidance for preflight configuration failures", () => {
+  const suggestions = diagnosticsToolInternals.buildDebugNextSuggestions({
+    reasonCode: REASON_CODES.configurationError,
+    suspectAreas: ["iOS startup suspect: signature"],
+    includeDiagnostics: false,
+    iosStartupEvidence: {
+      artifactPath: "artifacts/ios-physical-actions/session-c/type_text.execution.md",
+      startupPhase: "preflight",
+      reasonCode: REASON_CODES.configurationError,
+      summaryLine: "Runner installation failed during iOS preflight because the test-runner code signature could not be validated on device.",
+    },
+  });
+
+  assert.equal(
+    suggestions.some((item) => /apple development identity|signing validation/i.test(item)),
+    true,
+  );
+});
+
 test("parseIosPhysicalExecutionEvidenceMarkdown extracts startup fields and summary", () => {
   const parsed = diagnosticsToolInternals.parseIosPhysicalExecutionEvidenceMarkdown(
     [

@@ -50,6 +50,24 @@ interface IosStartupExecutionEvidence {
   executedBackend?: string;
 }
 
+function isIosSignaturePreflightEvidence(evidence?: IosStartupExecutionEvidence): boolean {
+  if (!evidence) {
+    return false;
+  }
+  const startupPhase = evidence.primaryFailurePhase
+    && evidence.primaryFailurePhase !== "none"
+    ? evidence.primaryFailurePhase
+    : evidence.startupPhase;
+  if (startupPhase !== "preflight" || evidence.reasonCode !== REASON_CODES.configurationError) {
+    return false;
+  }
+  const summary = evidence.summaryLine?.toLowerCase() ?? "";
+  return summary.includes("code signature")
+    || summary.includes("identity used to sign")
+    || summary.includes("0xe8008018")
+    || summary.includes("无法验证其完整性");
+}
+
 function buildIosStartupPhaseRemediation(evidence?: IosStartupExecutionEvidence): string[] {
   if (!evidence) {
     return [];
@@ -67,6 +85,9 @@ function buildIosStartupPhaseRemediation(evidence?: IosStartupExecutionEvidence)
   }
 
   if (startupPhase === "preflight") {
+    if (isIosSignaturePreflightEvidence(evidence)) {
+      return ["iOS startup preflight failed at runner signing validation: use a currently valid Apple Development identity and matching provisioning profile for the target device UDID, then rebuild the runner/xctestrun artifacts before retry."];
+    }
     return ["iOS startup preflight failed: unlock the device, keep screen awake, and rerun the bounded action."];
   }
   if (startupPhase === "bundle_mapping") {
@@ -199,7 +220,9 @@ function buildFailureAttribution(params: {
     candidateCauses.push(startupSummary);
     recommendedNextProbe = "Inspect iOS startup execution evidence first (startupPhase / primaryFailurePhase / reasonCode) before reading full raw logs.";
     recommendedRecovery = startupPhase === "preflight"
-      ? "Unlock and stabilize the target device, then retry bounded action execution."
+      ? isIosSignaturePreflightEvidence(params.iosStartupEvidence)
+        ? "Fix runner signing/provisioning for the current device UDID (valid Apple Development identity + profile), rebuild xctestrun artifacts, then retry bounded execution."
+        : "Unlock and stabilize the target device, then retry bounded action execution."
       : "Stabilize runner startup prerequisites (bundle mapping, handshake channel, timeout budget), then retry the bounded action.";
   } else
 

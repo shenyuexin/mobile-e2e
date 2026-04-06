@@ -74,11 +74,10 @@ export function buildIosPhysicalActionExecutionPlan(
   if (backend === "local_manual_runner") {
     return {
       backend,
-      command: ["bash", "scripts/dev/run-maestro-ios-manual-runner.sh", "chain"],
+      command: ["bash", "scripts/dev/run-ios-owned-physical-runner.sh", "execute-flow"],
       envPatch: {
-        MAESTRO_RUNNER_MODE: "manual",
-        MAESTRO_UDID: deviceId,
-        MAESTRO_FLOW: flowPath,
+        IOS_OWNED_RUNNER_UDID: deviceId,
+        IOS_OWNED_RUNNER_FLOW_PATH: flowPath,
       },
     };
   }

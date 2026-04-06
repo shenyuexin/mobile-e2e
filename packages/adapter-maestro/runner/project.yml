@@ -1,0 +1,40 @@
+name: ios-owned-runner
+options:
+  bundleIdPrefix: com.shenyuexin.mobilee2emcp
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  OwnedRunnerApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: OwnedRunnerApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shenyuexin.mobilee2emcp.ownedrunner
+        INFOPLIST_FILE: OwnedRunnerApp/Info.plist
+        CODE_SIGN_STYLE: Automatic
+  OwnedRunnerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: OwnedRunnerUITests
+    dependencies:
+      - target: OwnedRunnerApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.shenyuexin.mobilee2emcp.ownedrunner.uitests
+        TEST_TARGET_NAME: OwnedRunnerApp
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  ios-owned-runner:
+    build:
+      targets:
+        OwnedRunnerApp: all
+        OwnedRunnerUITests: [test]
+    test:
+      targets:
+        - OwnedRunnerUITests

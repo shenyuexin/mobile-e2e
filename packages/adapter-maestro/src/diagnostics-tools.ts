@@ -316,12 +316,23 @@ function buildDebugNextSuggestions(params: {
 }): string[] {
   const suggestions: string[] = [];
 
+  const startupSummary = params.iosStartupEvidence?.summaryLine?.toLowerCase() ?? "";
+  const isSignaturePreflight = params.reasonCode === REASON_CODES.configurationError
+    && (startupSummary.includes("code signature")
+      || startupSummary.includes("identity used to sign")
+      || startupSummary.includes("0xe8008018")
+      || startupSummary.includes("无法验证其完整性"));
+
   const startupPhase = params.iosStartupEvidence?.primaryFailurePhase
     && params.iosStartupEvidence.primaryFailurePhase !== "none"
     ? params.iosStartupEvidence.primaryFailurePhase
     : params.iosStartupEvidence?.startupPhase;
   if (startupPhase === "preflight") {
-    suggestions.push("iOS startup preflight failed: unlock the target device and keep it awake, then rerun bounded evidence capture.");
+    suggestions.push(
+      isSignaturePreflight
+        ? "iOS startup preflight failed at runner installation/signing validation: verify a valid Apple Development identity + provisioning profile for this device UDID, then rebuild xctestrun artifacts before rerun."
+        : "iOS startup preflight failed: unlock the target device and keep it awake, then rerun bounded evidence capture.",
+    );
   } else if (startupPhase === "bundle_mapping") {
     suggestions.push("iOS startup failed at bundle mapping: verify xctestrun TestHostBundleIdentifier and installed xctrunner bundle id alignment.");
   } else if (startupPhase === "xctest_handshake") {

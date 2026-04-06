@@ -245,6 +245,19 @@ function classifyIosPhysicalStartupFailure(params: {
   }
 
   if (
+    stderrLower.includes("failed to verify code signature")
+    || stderrLower.includes("identity used to sign the executable is no longer valid")
+    || stderrLower.includes("0xe8008018")
+    || stderrLower.includes("无法验证其完整性")
+  ) {
+    return {
+      reasonCode: REASON_CODES.configurationError,
+      startupPhase: "preflight",
+      summaryLine: "Runner installation failed during iOS preflight because the test-runner code signature could not be validated on device.",
+    };
+  }
+
+  if (
     stderrLower.includes("testhostbundleidentifier")
     || stderrLower.includes("bundle identifier")
     || stderrLower.includes("xctrunner")
@@ -281,6 +294,71 @@ function classifyIosPhysicalStartupFailure(params: {
     reasonCode: buildFailureReason(params.stderr, params.exitCode),
     startupPhase: "runner_execution",
     summaryLine: "Runner execution failed after startup dispatch; inspect stderr and execution evidence for root cause.",
+  };
+}
+
+function buildIosPhysicalFailureSuggestions(params: {
+  reasonCode: ReasonCode;
+  startupPhase: string;
+  backend: IosPhysicalActionBackend;
+  summaryLine: string;
+}): string[] {
+  if (
+    params.reasonCode === REASON_CODES.configurationError
+    && params.startupPhase === "preflight"
+  ) {
+    return [
+      `${params.summaryLine} Ensure the runner and UITest targets are signed with a currently valid Apple Development identity and matching provisioning profile for the connected device UDID, then rebuild the xctestrun artifacts before retrying.`,
+    ];
+  }
+
+  if (params.backend === "local_manual_runner") {
+    return [
+      `${params.summaryLine} Verify manual-runner cache preparation, device unlock state, and xctestrun host bundle mapping before retrying.`,
+    ];
+  }
+
+  return [
+    `${params.summaryLine} Verify --udid selection and iOS driver signing prerequisites (for example USE_XCODE_TEST_RUNNER / --apple-team-id) before retrying.`,
+  ];
+}
+
+function buildOwnedRunnerActionEnv(params: {
+  actionType: "tap" | "type_text";
+  flowContent: string;
+  targetAppId?: string;
+}): Record<string, string> {
+  const normalizeAppId = (value?: string): string | undefined => {
+    if (!value) {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
+  };
+  const appIdMatch = params.flowContent.match(/^appId:\s*([^\r\n]+)/m);
+  const flowAppId = normalizeAppId(appIdMatch?.[1]);
+  const targetAppId = normalizeAppId(params.targetAppId) || flowAppId;
+  const resolvedTargetBundleId = targetAppId && targetAppId !== "*" ? targetAppId : undefined;
+  if (params.actionType === "tap") {
+    const xMatch = params.flowContent.match(/\bx\s*:\s*(-?\d+(?:\.\d+)?)/i);
+    const yMatch = params.flowContent.match(/\by\s*:\s*(-?\d+(?:\.\d+)?)/i);
+    return {
+      IOS_OWNED_RUNNER_ACTION_TYPE: "tap",
+      ...(resolvedTargetBundleId ? { IOS_OWNED_RUNNER_TARGET_BUNDLE_ID: resolvedTargetBundleId } : {}),
+      ...(xMatch ? { IOS_OWNED_RUNNER_ACTION_X: xMatch[1] } : {}),
+      ...(yMatch ? { IOS_OWNED_RUNNER_ACTION_Y: yMatch[1] } : {}),
+    };
+  }
+
+  const textMatch = params.flowContent.match(/-\s*inputText\s*:\s*"((?:\\"|[^"])*)"/i);
+  const textValue = textMatch ? textMatch[1].replace(/\\"/g, '"') : "";
+  return {
+    IOS_OWNED_RUNNER_ACTION_TYPE: "type_text",
+    ...(resolvedTargetBundleId ? { IOS_OWNED_RUNNER_TARGET_BUNDLE_ID: resolvedTargetBundleId } : {}),
+    IOS_OWNED_RUNNER_ACTION_TEXT: textValue,
   };
 }
 
@@ -340,6 +418,7 @@ async function executeIosPhysicalAction(params: {
   sessionId: string;
   actionType: "tap" | "type_text";
   flowContent: string;
+  targetAppId?: string;
 }): Promise<{
   command: string[];
   attemptedBackend: IosPhysicalActionBackend;
@@ -355,9 +434,17 @@ async function executeIosPhysicalAction(params: {
   await mkdir(path.dirname(flowPaths.absolutePath), { recursive: true });
   await writeFile(flowPaths.absolutePath, params.flowContent, "utf8");
   const executionPlan = buildIosPhysicalActionExecutionPlan(params.deviceId, flowPaths.relativePath);
+  const ownedRunnerActionEnv = executionPlan.backend === "local_manual_runner"
+    ? buildOwnedRunnerActionEnv({
+      actionType: params.actionType,
+      flowContent: params.flowContent,
+      targetAppId: params.targetAppId,
+    })
+    : {};
   const executionEnv = {
     ...process.env,
     ...executionPlan.envPatch,
+    ...ownedRunnerActionEnv,
   };
   const execution = await executeRunner(executionPlan.command, params.repoRoot, executionEnv);
 
@@ -396,9 +483,12 @@ async function executeIosPhysicalAction(params: {
       ? [
         "iOS physical action succeeded through explicit Maestro fallback after local manual-runner startup failure.",
       ]
-      : [
-        `Both local iOS manual-runner backend and explicit Maestro fallback failed (${fallbackSummaryLine}). Verify device unlock state, xctestrun cache readiness, and iOS driver signing prerequisites (for example USE_XCODE_TEST_RUNNER / --apple-team-id) before retrying.`,
-      ];
+      : buildIosPhysicalFailureSuggestions({
+        reasonCode: fallbackReasonCode,
+        startupPhase: fallbackStartupPhase,
+        backend: "maestro_cli",
+        summaryLine: `Both local iOS manual-runner backend and explicit Maestro fallback failed (${fallbackSummaryLine}).`,
+      });
     return {
       command: fallbackCommand,
       attemptedBackend: executionPlan.backend,
@@ -436,11 +526,12 @@ async function executeIosPhysicalAction(params: {
   });
   const nextSuggestions = execution.exitCode === 0
     ? []
-    : [
-      executionPlan.backend === "local_manual_runner"
-        ? `${summaryLine} Verify manual-runner cache preparation, device unlock state, and xctestrun host bundle mapping before retrying.`
-        : `${summaryLine} Verify --udid selection and iOS driver signing prerequisites (for example USE_XCODE_TEST_RUNNER / --apple-team-id) before retrying.`,
-    ];
+    : buildIosPhysicalFailureSuggestions({
+      reasonCode,
+      startupPhase,
+      backend: executionPlan.backend,
+      summaryLine,
+    });
   return {
     command: executionPlan.command,
     attemptedBackend: executionPlan.backend,
@@ -457,7 +548,9 @@ async function executeIosPhysicalAction(params: {
 export const uiActionToolInternals = {
   tapResolvedTarget,
   classifyIosPhysicalStartupFailure,
+  buildIosPhysicalFailureSuggestions,
   buildIosPhysicalExecutionEvidencePaths,
+  buildOwnedRunnerActionEnv,
   verifyResolvedIosPoint: verifyResolvedIosPointWithHooks,
 };
 
@@ -535,6 +628,7 @@ export async function tapWithMaestroTool(
       sessionId: input.sessionId,
       actionType: "tap",
       flowContent: buildIosPhysicalTapFlowYaml(input.x, input.y),
+      targetAppId: selection.appId,
     });
     return {
       status: execution.exitCode === 0 ? "success" : "failed",
@@ -695,6 +789,7 @@ export async function typeTextWithMaestroTool(
       sessionId: input.sessionId,
       actionType: "type_text",
       flowContent: buildIosPhysicalTypeTextFlowYaml(input.text),
+      targetAppId: selection.appId,
     });
     return {
       status: execution.exitCode === 0 ? "success" : "failed",
