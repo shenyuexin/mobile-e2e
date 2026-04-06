@@ -23,10 +23,10 @@
 
 /* Begin PBXFileReference section */
 		96327B7D3E9A207C369A024E /* OwnedRunnerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnedRunnerUITests.swift; sourceTree = "<group>"; };
-		A4AC4873F8925E5C34F258AE /* OwnedRunnerApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OwnedRunnerApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A4AC4873F8925E5C34F258AE /* OwnedRunnerApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OwnedRunnerApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A941730D4FA8F8C1A97782D4 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		D8AD7E5269B393DBB0EF1395 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		E787608808057CF6033307F9 /* OwnedRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OwnedRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E787608808057CF6033307F9 /* OwnedRunnerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OwnedRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -181,7 +181,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.shenyuexin.mobilee2emcp.ownedrunner;
+				PRODUCT_BUNDLE_IDENTIFIER = com.m2e.runner;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -248,6 +248,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2QV268VUTB;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -255,7 +256,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.shenyuexin.mobilee2emcp.ownedrunner.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.m2e.runner.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OwnedRunnerApp;
@@ -267,6 +268,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 2QV268VUTB;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -274,7 +276,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.shenyuexin.mobilee2emcp.ownedrunner.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.m2e.runner.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = OwnedRunnerApp;
@@ -356,7 +358,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.shenyuexin.mobilee2emcp.ownedrunner;
+				PRODUCT_BUNDLE_IDENTIFIER = com.m2e.runner;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
