@@ -13,6 +13,33 @@ function buildIosLogPredicateForApp(appId: string): string {
   return `eventMessage CONTAINS[c] '${escaped}' OR processImagePath CONTAINS[c] '${escaped}' OR senderImagePath CONTAINS[c] '${escaped}'`;
 }
 
+/**
+ * Map Android log levels to iOS messageType predicates.
+ * iOS has no exact V/D/I/W/E/F equivalent — this is a lossy mapping.
+ * Returns { levelPredicate, actualApplied, levelNote }.
+ */
+function buildIosLogLevelPredicate(minLogLevel: "V" | "D" | "I" | "W" | "E" | "F" | undefined): {
+  levelPredicate: string | undefined;
+  actualApplied: boolean;
+  levelNote: string | undefined;
+} {
+  if (!minLogLevel) return { levelPredicate: undefined, actualApplied: false, levelNote: undefined };
+  switch (minLogLevel) {
+    case "F":
+      return { levelPredicate: `messageType == 'fault'`, actualApplied: true, levelNote: undefined };
+    case "E":
+      return { levelPredicate: `messageType == 'error'`, actualApplied: true, levelNote: undefined };
+    case "W":
+      return { levelPredicate: `messageType == 'error' OR messageType == 'default'`, actualApplied: true, levelNote: undefined };
+    case "I":
+    case "D":
+    case "V":
+      return { levelPredicate: undefined, actualApplied: false, levelNote: `iOS does not support ${minLogLevel}-only filtering; returning all levels.` };
+    default:
+      return { levelPredicate: undefined, actualApplied: false, levelNote: undefined };
+  }
+}
+
 async function listRelativeFileEntries(rootPath: string, prefix = ""): Promise<Array<{ relativePath: string; absolutePath: string }>> {
   let entries: import("node:fs").Dirent[];
   try {
@@ -195,7 +222,7 @@ export async function resolveIosAttachTarget(repoRoot: string, deviceId: string,
 
 export interface IosPhysicalCrashResult {
   success: boolean;
-  tier: "devicectl" | "idevicecrashreport" | "idevicesyslog";
+  tier: "devicectl" | "idevicecrashreport";
   entries: Array<{
     reportId?: string;
     processName?: string;
@@ -208,6 +235,8 @@ export interface IosPhysicalCrashResult {
   missingToolingAdvice?: string;
   failureReason?: "tool_not_available" | "device_disconnected" | "command_error" | "no_crashes";
   stderr?: string;
+  /** Errors caught from failed tiers before the successful one (Phase 12-03). */
+  fallbackErrors?: Array<{ tier: string; error: string }>;
 }
 
 interface IosPhysicalCrashParams {
@@ -250,29 +279,41 @@ async function collectIosPhysicalCrashSignals(params: IosPhysicalCrashParams): P
 
 async function collectIosPhysicalCrashLogs(params: IosPhysicalCrashParams): Promise<IosPhysicalCrashResult> {
   const { repoRoot, deviceId, appId } = params;
+  const fallbackErrors: Array<{ tier: string; error: string }> = [];
 
   // Tier 1: devicectl (Xcode 14+, no extra deps)
   try {
     const devicectlResult = await tryDevicectlCrashLogs(repoRoot, deviceId, appId);
     if (devicectlResult.success || devicectlResult.failureReason !== "tool_not_available") {
+      if (fallbackErrors.length > 0) return { ...devicectlResult, fallbackErrors };
       return devicectlResult;
     }
-  } catch {
-    // Fall through to tier 2
+  } catch (error: unknown) {
+    fallbackErrors.push({ tier: "devicectl", error: String(error) });
   }
 
   // Tier 2: idevicecrashreport (libimobiledevice)
   try {
     const ideviceResult = await tryIdevicecrashreport(repoRoot, deviceId, appId);
     if (ideviceResult.success || ideviceResult.failureReason !== "tool_not_available") {
+      if (fallbackErrors.length > 0) return { ...ideviceResult, fallbackErrors };
       return ideviceResult;
     }
-  } catch {
-    // Fall through to tier 3
+  } catch (error: unknown) {
+    fallbackErrors.push({ tier: "idevicecrashreport", error: String(error) });
   }
 
-  // Tier 3: idevicesyslog (bounded 5-min window, date resolved in Node.js)
-  return await tryIdeviceSyslogTail(repoRoot, deviceId, appId);
+  // Tier 3 removed (Phase 12-03): idevicesyslog was a streaming log tool, not a crash query tool.
+  // Returning clear guidance when both tiers fail.
+  return {
+    success: false,
+    tier: "idevicecrashreport",
+    entries: [],
+    supportLevel: "none",
+    failureReason: "tool_not_available",
+    missingToolingAdvice: "Install Xcode 14+ for devicectl crash reports, or `brew install libimobiledevice` for idevicecrashreport.",
+    fallbackErrors: fallbackErrors.length > 0 ? fallbackErrors : undefined,
+  };
 }
 
 async function tryDevicectlCrashLogs(repoRoot: string, deviceId: string, appId?: string): Promise<IosPhysicalCrashResult> {
@@ -382,36 +423,6 @@ async function tryIdevicecrashreport(repoRoot: string, deviceId: string, appId?:
   }
 }
 
-async function tryIdeviceSyslogTail(repoRoot: string, deviceId: string, appId?: string): Promise<IosPhysicalCrashResult> {
-  // idevicesyslog streams continuously; bounded via timeoutMs only.
-  // Date-based filtering is done in post-processing if needed.
-  const execution = await executeRunner(
-    ["idevicesyslog", "--udid", deviceId],
-    repoRoot, process.env, { timeoutMs: DEFAULT_DEVICE_COMMAND_TIMEOUT_MS },
-  );
-
-  if (execution.exitCode === null || execution.stderr.toLowerCase().includes("not found")) {
-    return { success: false, tier: "idevicesyslog", entries: [], supportLevel: "none", failureReason: "tool_not_available", missingToolingAdvice: "Install libimobiledevice: brew install libimobiledevice", stderr: execution.stderr };
-  }
-
-  // Filter syslog for crash-related lines
-  const lines = execution.stdout.replaceAll("\r", "").split("\n");
-  const crashLines = lines.filter((l) =>
-    /crash|exception|EXC_|SIGSEGV|SIGABRT|fatal/i.test(l) &&
-    (!appId || l.toLowerCase().includes(appId.toLowerCase()))
-  );
-
-  return {
-    success: crashLines.length > 0,
-    tier: "idevicesyslog",
-    entries: crashLines.length > 0
-      ? [{ crashedThreadFrames: crashLines.slice(0, 50), rawContent: crashLines.slice(0, 200).join("\n") }]
-      : [],
-    supportLevel: crashLines.length > 0 ? "partial" : "none",
-    failureReason: crashLines.length === 0 ? "no_crashes" : undefined,
-  };
-}
-
 export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
   return {
     platform: "ios",
@@ -500,24 +511,34 @@ export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
         failureSuggestion: "Check simulator boot state and xcrun simctl io recordVideo availability before retrying record_screen.",
       };
     },
-    buildGetLogsCapturePlan: ({ repoRoot, sessionId, outputPath, runnerProfile, deviceId, sinceSeconds, appId, appFilterApplied }) => {
+    buildGetLogsCapturePlan: ({ repoRoot, sessionId, outputPath, runnerProfile, deviceId, sinceSeconds, appId, appFilterApplied, minLogLevel }) => {
       const relativeOutputPath = outputPath ?? path.posix.join("artifacts", "logs", sessionId, `ios-${runnerProfile}.simulator.log`);
+      // iOS log level mapping (lossy — iOS has no exact V/D/I/W/E/F equivalent)
+      const { levelPredicate, actualApplied, levelNote } = buildIosLogLevelPredicate(minLogLevel);
       return {
         relativeOutputPath,
         absoluteOutputPath: path.resolve(repoRoot, relativeOutputPath),
-        command: ["xcrun", "simctl", "spawn", deviceId, "log", "show", "--style", "compact", "--last", `${String(sinceSeconds)}s`],
+        command: ["xcrun", "simctl", "spawn", deviceId, "log", "show", "--style", "compact", "--last", `${String(sinceSeconds)}s`, ...(levelPredicate ? ["--predicate", levelPredicate] : [])],
         supportLevel: "full",
         sinceSeconds,
         linesRequested: undefined,
         appId,
         appFilterApplied: Boolean(appFilterApplied),
+        actualLevelFilterApplied: actualApplied,
+        platformLevelNote: levelNote,
       };
     },
     applyGetLogsAppFilter: async ({ capture, deviceId, appId }) => {
-      const predicate = buildIosLogPredicateForApp(appId);
+      const appPredicate = buildIosLogPredicateForApp(appId);
+      // Combine app predicate with existing level predicate if any
+      const existingPredicate = capture.command.find((arg, i) => arg === "--predicate" && capture.command[i + 1]);
+      const levelPredicatePart = existingPredicate ? capture.command[capture.command.indexOf("--predicate") + 1] : "";
+      const combinedPredicate = levelPredicatePart
+        ? `(${levelPredicatePart}) AND (${appPredicate})`
+        : appPredicate;
       return {
         ...capture,
-        command: ["xcrun", "simctl", "spawn", deviceId, "log", "show", "--style", "compact", "--last", `${String(capture.sinceSeconds)}s`, "--predicate", predicate],
+        command: ["xcrun", "simctl", "spawn", deviceId, "log", "show", "--style", "compact", "--last", `${String(capture.sinceSeconds)}s`, "--predicate", combinedPredicate],
         appFilterApplied: true,
       };
     },

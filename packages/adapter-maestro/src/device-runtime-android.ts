@@ -117,17 +117,20 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
         failureSuggestion: "Check Android device state and ensure adb shell screenrecord is available before retrying record_screen.",
       };
     },
-    buildGetLogsCapturePlan: ({ repoRoot, sessionId, outputPath, runnerProfile, deviceId, sinceSeconds, linesRequested, appId, appFilterApplied }) => {
+    buildGetLogsCapturePlan: ({ repoRoot, sessionId, outputPath, runnerProfile, deviceId, sinceSeconds, linesRequested, appId, appFilterApplied, minLogLevel }) => {
       const relativeOutputPath = outputPath ?? path.posix.join("artifacts", "logs", sessionId, `android-${runnerProfile}.logcat.txt`);
+      const levelFilter = minLogLevel ? `*:${minLogLevel}` : undefined;
       return {
         relativeOutputPath,
         absoluteOutputPath: path.resolve(repoRoot, relativeOutputPath),
-        command: ["adb", "-s", deviceId, "logcat", "-d", "-t", String(linesRequested ?? DEFAULT_GET_LOGS_LINES)],
+        command: ["adb", "-s", deviceId, "logcat", "-d", "-t", String(linesRequested ?? DEFAULT_GET_LOGS_LINES), ...(levelFilter ? [levelFilter] : [])],
         supportLevel: "full",
         linesRequested,
         sinceSeconds,
         appId,
         appFilterApplied: Boolean(appFilterApplied),
+        actualLevelFilterApplied: Boolean(levelFilter),
+        platformLevelNote: undefined,
       };
     },
     applyGetLogsAppFilter: async ({ repoRoot, capture, deviceId, appId, dryRun }) => {

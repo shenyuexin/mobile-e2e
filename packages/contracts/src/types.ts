@@ -589,6 +589,8 @@ export interface GetLogsInput {
   lines?: number;
   sinceSeconds?: number;
   query?: string;
+  /** Minimum log level to include. Android: V/D/I/W/E/F. iOS: approximate mapping (see docs). Default: include all. */
+  minLogLevel?: "V" | "D" | "I" | "W" | "E" | "F";
   dryRun?: boolean;
 }
 export interface DebugSignalSummary {
@@ -619,6 +621,10 @@ export interface GetLogsData {
   query?: string;
   content?: string;
   summary?: LogSummary;
+  /** Whether the requested minLogLevel was actually applied (iOS may return false for I/D/V levels). */
+  actualLevelFilterApplied?: boolean;
+  /** Platform-specific note when the requested level cannot be exactly matched (e.g., iOS INFO-only filtering not supported). */
+  platformLevelNote?: string;
 }
 export interface GetCrashSignalsInput {
   sessionId: string;
@@ -986,6 +992,8 @@ export interface GetScreenSummaryData {
   uiSummary?: InspectUiSummary;
   logSummary?: LogSummary;
   crashSummary?: LogSummary;
+  /** Crash attribution from internal getCrashSignals call (Phase 11). Only present when crash signals detected. */
+  crashAttribution?: CrashAttribution;
 }
 export interface GetSessionStateInput {
   sessionId: string;
@@ -1008,6 +1016,8 @@ export interface GetSessionStateData {
   screenSummary: StateSummary;
   logSummary?: LogSummary;
   crashSummary?: LogSummary;
+  /** Crash attribution from internal getCrashSignals call (Phase 11). Only present when crash signals detected. */
+  crashAttribution?: CrashAttribution;
   evidence?: ExecutionEvidence[];
 }
 export interface RequestManualHandoffInput {
@@ -1070,6 +1080,8 @@ export interface PerformActionWithEvidenceData {
   autoRemediation?: AutoRemediationResult;
   preActionInterruption?: ResolveInterruptionData;
   postActionInterruption?: ResolveInterruptionData;
+  /** Structured crash attribution from post-action state. Only present when crash signals detected. */
+  crashAttribution?: CrashAttribution;
 }
 export interface DetectInterruptionInput {
   sessionId: string;

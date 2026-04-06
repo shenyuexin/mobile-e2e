@@ -412,6 +412,7 @@ export function buildGetLogsCapture(repoRoot: string, input: GetLogsInput, runne
     linesRequested,
     appId,
     appFilterApplied,
+    minLogLevel: input.minLogLevel,
   });
 }
 
@@ -831,6 +832,8 @@ export async function getLogsWithRuntime(input: GetLogsInput): Promise<ToolResul
         evidence: [buildExecutionEvidence("log", capture.relativeOutputPath, capture.supportLevel, "Planned log capture artifact path.")],
         query: input.query,
         summary: buildLogSummary("", input.query),
+        actualLevelFilterApplied: capture.actualLevelFilterApplied,
+        platformLevelNote: capture.platformLevelNote,
       },
       nextSuggestions: ["Run get_logs without dryRun to capture live device or simulator logs."],
     };
@@ -864,6 +867,8 @@ export async function getLogsWithRuntime(input: GetLogsInput): Promise<ToolResul
       query: input.query,
       content: execution.exitCode === 0 ? execution.stdout : undefined,
       summary: execution.exitCode === 0 ? buildLogSummary(execution.stdout, input.query) : undefined,
+      actualLevelFilterApplied: capture.actualLevelFilterApplied,
+      platformLevelNote: capture.platformLevelNote,
     },
     nextSuggestions: execution.exitCode === 0
       ? []

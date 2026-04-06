@@ -815,6 +815,7 @@ export async function performActionWithEvidenceWithMaestro(
       sessionAuditPath: persistedSessionState?.auditPath,
       preActionInterruption: preActionInterruption.data,
       postActionInterruption: postActionInterruption.data,
+      crashAttribution: postStateResult.data.crashAttribution,
     },
     nextSuggestions: uniqueNonEmpty([
       ...buildManualHandoffNextSuggestions(manualHandoffContext?.recommendation),

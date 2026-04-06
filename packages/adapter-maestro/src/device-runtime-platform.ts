@@ -11,6 +11,10 @@ export interface GetLogsCapturePlan {
   sinceSeconds: number;
   appId?: string;
   appFilterApplied: boolean;
+  /** Whether the requested minLogLevel was actually applied (iOS may return false for I/D/V levels). */
+  actualLevelFilterApplied: boolean;
+  /** Platform-specific note when the requested level cannot be exactly matched. */
+  platformLevelNote?: string;
 }
 
 export interface GetCrashSignalsCapturePlan {
@@ -94,6 +98,7 @@ export interface DeviceRuntimePlatformHooks {
     linesRequested?: number;
     appId?: string;
     appFilterApplied?: boolean;
+    minLogLevel?: "V" | "D" | "I" | "W" | "E" | "F";
   }) => GetLogsCapturePlan;
   applyGetLogsAppFilter?: (params: {
     repoRoot: string;

@@ -161,6 +161,7 @@ export async function listRawRecordedEvents(
 			.map((line) => line.trim())
 			.filter((line) => line.length > 0);
 		const events: RawRecordedEvent[] = [];
+		let malformedLineCount = 0;
 		for (const line of lines) {
 			try {
 				const parsed = JSON.parse(line) as unknown;
@@ -171,7 +172,13 @@ export async function listRawRecordedEvents(
 				) {
 					events.push(parsed as RawRecordedEvent);
 				}
-			} catch {}
+			} catch {
+				malformedLineCount += 1;
+			}
+		}
+		if (malformedLineCount > 0) {
+			// eslint-disable-next-line no-console
+			console.warn(`[recording-store] listRawRecordedEvents: ${malformedLineCount} malformed line(s) skipped in session ${recordSessionId}`);
 		}
 		return events.sort((left, right) =>
 			left.timestamp.localeCompare(right.timestamp),

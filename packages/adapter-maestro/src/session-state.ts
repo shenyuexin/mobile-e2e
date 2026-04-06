@@ -544,6 +544,7 @@ export async function getScreenSummaryWithMaestro(
       uiSummary: inspectResult.data.summary,
       logSummary: logResult?.data.summary,
       crashSummary: crashResult?.data.summary,
+      crashAttribution: crashResult?.data.crashAttribution,
     },
     nextSuggestions: Array.from(new Set([
       ...inspectResult.nextSuggestions,
@@ -645,6 +646,7 @@ export async function getSessionStateWithMaestro(
       screenSummary: screenSummaryResult.data.screenSummary,
       logSummary: screenSummaryResult.data.logSummary,
       crashSummary: screenSummaryResult.data.crashSummary,
+      crashAttribution: screenSummaryResult.data.crashAttribution,
       evidence: screenSummaryResult.data.evidence,
     },
     nextSuggestions: sessionRecord
