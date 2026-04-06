@@ -1774,3 +1774,5 @@ export interface RunFlowData {
 }
 export interface StartSessionInput { platform: Platform; sessionId?: string; deviceId?: string; appId?: string; policyProfile?: string; phase?: string | null; profile?: RunnerProfile | null; sampleName?: string | null; artifactsRoot?: string; harnessConfigPath?: string; }
 export interface EndSessionInput { sessionId: string; artifacts?: string[]; }
+export interface EndSessionData { closed: boolean; endedAt: string; }
+export interface ListDevicesData { android: DeviceInfo[]; ios: DeviceInfo[]; }

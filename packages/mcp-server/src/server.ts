@@ -109,15 +109,14 @@ import type {
   TypeTextInput,
   WaitForUiData,
   WaitForUiInput,
+  EndSessionData,
+  ListDevicesData,
 } from "@mobile-e2e-mcp/contracts";
 
 interface ToolContract<TInput, TOutputData> {
   input: TInput;
   outputData: TOutputData;
 }
-
-type ListDevicesData = { android: DeviceInfo[]; ios: DeviceInfo[] };
-type EndSessionData = { closed: boolean; endedAt: string };
 
 export interface MobileE2EMcpToolContractMap {
   capture_js_console_logs: ToolContract<CaptureJsConsoleLogsInput, CaptureJsConsoleLogsData>;

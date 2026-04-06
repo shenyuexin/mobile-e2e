@@ -47,6 +47,8 @@ export type {
   DoctorGuidanceItem,
   DoctorInput,
   EndSessionInput,
+  EndSessionData,
+  ListDevicesData,
   EndRecordSessionData,
   EndRecordSessionInput,
   ExecuteIntentData,

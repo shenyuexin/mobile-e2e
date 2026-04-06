@@ -11,14 +11,16 @@ const DEFAULT_TOTAL_BUDGET_MS = 180_000;
 export interface BoundedReadOptions {
   deviceId: string;
   remotePath: string;
-  /** Max lines to read via shell cat. Default: 2000 (~100-200KB) */
+  /** Max lines to read via shell cat. Default: 20000 (~1-8MB) */
   maxLines?: number;
   /** Fallback to adb pull if shell cat fails. Default: true */
   allowPullFallback?: boolean;
-  /** Max file size in bytes for pull fallback. Default: 2MB */
+  /** Max file size in bytes for pull fallback. Default: 80MB */
   maxFileSizeBytes?: number;
-  /** Timeout per operation in ms. Default: 10000 */
+  /** Timeout per operation in ms. Default: 60000 */
   timeoutMs?: number;
+  /** Pre-known file size in bytes. If provided, skips internal size check. (Phase 12-04) */
+  knownFileSize?: number;
 }
 
 export interface BoundedReadResult {
@@ -87,6 +89,7 @@ export async function boundedRemoteFileRead(
     startTime,
     remainingBudgetMs: timeoutMs,
     timeoutMs,
+    knownFileSize: options.knownFileSize,
   });
 }
 
@@ -96,50 +99,72 @@ async function boundedAdbPullFallback(params: {
   startTime: number;
   remainingBudgetMs: number;
   timeoutMs?: number;
+  knownFileSize?: number;
 }): Promise<BoundedReadResult> {
   if (params.remainingBudgetMs <= 0) {
     return { content: "", status: "timeout", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
   }
 
-  const sizeCheckTimeout = Math.min(5000, params.remainingBudgetMs * 0.3);
-  const pullTimeout = Math.min(params.timeoutMs ?? DEFAULT_TIMEOUT_MS, params.remainingBudgetMs * 0.7);
+  const maxBytes = params.knownFileSize ?? DEFAULT_MAX_FILE_SIZE_BYTES;
 
-  // Size check (best-effort)
-  const size = await checkRemoteFileSize(params.deviceId, params.remotePath, sizeCheckTimeout);
-  if (size === "not_found") {
-    return { content: "", status: "not_found", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
+  // If size is pre-known, skip the size check entirely
+  if (params.knownFileSize === undefined) {
+    const sizeCheckTimeout = Math.min(5000, params.remainingBudgetMs * 0.3);
+    const pullTimeout = Math.min(params.timeoutMs ?? DEFAULT_TIMEOUT_MS, params.remainingBudgetMs * 0.7);
+
+    // Size check (best-effort)
+    const size = await checkRemoteFileSize(params.deviceId, params.remotePath, sizeCheckTimeout);
+    if (size === "not_found") {
+      return { content: "", status: "not_found", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
+    }
+    if (size === "too_large") {
+      return { content: "", status: "too_large", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
+    }
+    // "check_failed" — proceed with pull, timeout will act as guardrail
+
+    // Pull with timeout
+    return doAdbPull(params.deviceId, params.remotePath, params.startTime, pullTimeout);
   }
-  if (size === "too_large") {
+
+  // Size is pre-known — check and pull directly
+  if (params.knownFileSize > DEFAULT_MAX_FILE_SIZE_BYTES) {
     return { content: "", status: "too_large", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
   }
-  // "check_failed" — proceed with pull, timeout will act as guardrail
+  const pullTimeout = Math.min(params.timeoutMs ?? DEFAULT_TIMEOUT_MS, params.remainingBudgetMs);
+  return doAdbPull(params.deviceId, params.remotePath, params.startTime, pullTimeout);
+}
 
-  // Pull with timeout
-  const escapedPath = shellEscape(params.remotePath);
+async function doAdbPull(
+  deviceId: string,
+  remotePath: string,
+  startTime: number,
+  pullTimeout: number,
+): Promise<BoundedReadResult> {
+  const escapedPath = shellEscape(remotePath);
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "m2e-diagnostics-"));
   try {
     const pullResult = await executeRunner(
-      ["adb", "-s", params.deviceId, "pull", escapedPath, tempDir],
+      ["adb", "-s", deviceId, "pull", escapedPath, tempDir],
       process.cwd(),
       process.env,
       { timeoutMs: pullTimeout },
     );
 
     if (pullResult.exitCode === null) {
-      return { content: "", status: "timeout", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - params.startTime };
+      return { content: "", status: "timeout", readMethod: "adb_pull", bytesRead: 0, durationMs: Date.now() - startTime };
     }
     if (pullResult.exitCode !== 0) {
-      return { content: "", status: "read_failed", readMethod: "adb_pull", bytesRead: 0, errorMessage: pullResult.stderr, durationMs: Date.now() - params.startTime };
+      return { content: "", status: "read_failed", readMethod: "adb_pull", bytesRead: 0, errorMessage: pullResult.stderr, durationMs: Date.now() - startTime };
     }
 
-    const fileName = path.basename(params.remotePath);
+    const fileName = path.basename(remotePath);
     const content = await readFile(path.join(tempDir, fileName), "utf8");
     return {
       content,
       status: "success",
       readMethod: "adb_pull",
       bytesRead: Buffer.byteLength(content, "utf8"),
-      durationMs: Date.now() - params.startTime,
+      durationMs: Date.now() - startTime,
     };
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
@@ -208,7 +233,9 @@ export async function checkRemoteFileSize(
 }
 
 /**
- * Read multiple remote files sequentially with dynamic remaining budget.
+ * Read multiple remote files with parallel size check prefetch.
+ * Phase 1: Parallel size checks (concurrency capped at 3)
+ * Phase 2: Sequential reads with pre-known sizes (small-first ordering)
  */
 export async function boundedRemoteFileReadBatch(
   repoRoot: string,
@@ -224,19 +251,47 @@ export async function boundedRemoteFileReadBatch(
   const startTime = Date.now();
   const totalBudget = params.totalBudgetMs ?? DEFAULT_TOTAL_BUDGET_MS;
   const maxFiles = params.maxFiles ?? 3;
+  const paths = params.remotePaths.slice(0, maxFiles);
+
+  // Phase 1: Parallel size checks (concurrency capped at 3; Phase 12-04)
+  const sizeCheckBudget = Math.min(5000, totalBudget * 0.2);
+  const sizeResults: Array<PromiseSettledResult<{ remotePath: string; size: FileSizeResult }>> = [];
+  for (let i = 0; i < paths.length; i += 3) {
+    const batch = paths.slice(i, i + 3);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (remotePath) => {
+        const size = await checkRemoteFileSize(params.deviceId, remotePath, sizeCheckBudget);
+        return { remotePath, size };
+      }),
+    );
+    sizeResults.push(...batchResults);
+  }
+
+  // Phase 2: Filter and sort (small-first for budget efficiency; return order differs from input)
+  const elapsed = Date.now() - startTime;
+  const remainingBudget = totalBudget - elapsed;
+
+  const eligiblePaths = sizeResults
+    .filter((r): r is PromiseFulfilledResult<{ remotePath: string; size: FileSizeResult }> => r.status === "fulfilled")
+    .filter((r) => r.value.size !== "not_found" && r.value.size !== "too_large")
+    .sort((a, b) => {
+      const sizeA = typeof a.value.size === "number" ? a.value.size : Infinity;
+      const sizeB = typeof b.value.size === "number" ? b.value.size : Infinity;
+      return sizeA - sizeB;
+    });
+
+  // Phase 3: Sequential reads with budget, passing pre-known sizes
   const results: BoundedReadResult[] = [];
-
-  for (const remotePath of params.remotePaths.slice(0, maxFiles)) {
-    const elapsed = Date.now() - startTime;
-    const remainingBudget = totalBudget - elapsed;
-    if (remainingBudget <= 0) break;
-
+  for (const item of eligiblePaths) {
+    if (Date.now() - startTime >= totalBudget) break;
+    const { remotePath, size } = item.value;
     const result = await boundedRemoteFileRead(repoRoot, {
       deviceId: params.deviceId,
       remotePath,
       maxLines: params.maxLines,
-      timeoutMs: Math.min(params.timeoutMs ?? DEFAULT_TIMEOUT_MS, remainingBudget),
+      timeoutMs: Math.min(params.timeoutMs ?? DEFAULT_TIMEOUT_MS, totalBudget - (Date.now() - startTime)),
       allowPullFallback: true,
+      knownFileSize: typeof size === "number" ? size : undefined,
     });
     results.push(result);
   }

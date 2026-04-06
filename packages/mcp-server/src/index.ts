@@ -430,9 +430,12 @@ function withSessionExecution<TName extends ToolName>(
       ),
     ];
 
+    // Phase 12-08: This cast is unavoidable because TypeScript cannot infer the exact
+    // ToolOutputData<TName> type from a generic union at runtime. The union of all
+    // possible data shapes does not overlap cleanly with Record<string, unknown>.
     const resultData =
       typeof result.data === "object" && result.data !== null
-        ? (result.data as Record<string, unknown>)
+        ? (result.data as unknown as Record<string, unknown>)
         : {};
 
     return {
