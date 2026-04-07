@@ -86,6 +86,8 @@ From WDA (Phase 15+):
 - app lifecycle control
 - scrolling/tap/type/assertions on iOS/tvOS
 
+> **Setup guide:** See [`docs/guides/wda-setup.md`](../guides/wda-setup.md) for step-by-step WDA installation, code signing, and connection instructions.
+
 ---
 
 ## 4. iOS Risks and Mitigations
