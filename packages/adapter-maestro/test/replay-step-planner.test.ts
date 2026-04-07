@@ -49,11 +49,12 @@ test("buildInitialReplayProgress returns empty completion arrays and sequential 
   assert.deepEqual(progress.remainingSteps, [1, 2, 3]);
 });
 
-test("buildReplayPlanFromFlowYaml surfaces tapOn.point as unsupported", () => {
+test("buildReplayPlanFromFlowYaml parses tapOn.point as coordinate tap", () => {
   const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- tapOn:\n    point: 10,10\n');
 
-  assert.deepEqual(plan.steps, []);
-  assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "tapOn.point" }]);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0]?.actionType, "tap");
+  assert.deepEqual(plan.unsupportedCommands, []);
 });
 
 // Phase 10: MVP Command Support Matrix tests
@@ -98,18 +99,20 @@ test("buildReplayPlanFromFlowYaml accepts assertVisible as supported", () => {
   assert.equal(plan.unsupportedCommands.length, 0);
 });
 
-test("buildReplayPlanFromFlowYaml marks stopApp as unsupported", () => {
-  const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- stopApp: {}\n');
+test("buildReplayPlanFromFlowYaml accepts stopApp as supported", () => {
+  const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- stopApp:\n    appId: com.example.demo\n');
 
-  assert.equal(plan.steps.length, 0);
-  assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "stopApp" }]);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0]?.actionType, "stop_app");
+  assert.equal(plan.unsupportedCommands.length, 0);
 });
 
-test("buildReplayPlanFromFlowYaml marks clearState as unsupported", () => {
-  const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- clearState: {}\n');
+test("buildReplayPlanFromFlowYaml accepts clearState as supported", () => {
+  const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- clearState:\n    appId: com.example.demo\n');
 
-  assert.equal(plan.steps.length, 0);
-  assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "clearState" }]);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0]?.actionType, "clear_state");
+  assert.equal(plan.unsupportedCommands.length, 0);
 });
 
 test("buildReplayPlanFromFlowYaml marks scroll as unsupported", () => {
@@ -119,25 +122,28 @@ test("buildReplayPlanFromFlowYaml marks scroll as unsupported", () => {
   assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "scroll" }]);
 });
 
-test("buildReplayPlanFromFlowYaml marks swipe as unsupported", () => {
+test("buildReplayPlanFromFlowYaml accepts swipe as supported", () => {
   const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- swipe:\n    start: 100,500\n    end: 100,200\n');
 
-  assert.equal(plan.steps.length, 0);
-  assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "swipe" }]);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0]?.actionType, "swipe");
+  assert.equal(plan.unsupportedCommands.length, 0);
 });
 
-test("buildReplayPlanFromFlowYaml marks back as unsupported", () => {
+test("buildReplayPlanFromFlowYaml accepts back as supported", () => {
   const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- back: {}\n');
 
-  assert.equal(plan.steps.length, 0);
-  assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "back" }]);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0]?.actionType, "back");
+  assert.equal(plan.unsupportedCommands.length, 0);
 });
 
-test("buildReplayPlanFromFlowYaml marks home as unsupported", () => {
+test("buildReplayPlanFromFlowYaml accepts home as supported", () => {
   const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- home: {}\n');
 
-  assert.equal(plan.steps.length, 0);
-  assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "home" }]);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0]?.actionType, "home");
+  assert.equal(plan.unsupportedCommands.length, 0);
 });
 
 test("buildReplayPlanFromFlowYaml marks killApp as unsupported", () => {
@@ -147,18 +153,20 @@ test("buildReplayPlanFromFlowYaml marks killApp as unsupported", () => {
   assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "killApp" }]);
 });
 
-test("buildReplayPlanFromFlowYaml marks assertNotVisible as unsupported", () => {
+test("buildReplayPlanFromFlowYaml accepts assertNotVisible as supported", () => {
   const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- assertNotVisible:\n    text: "Error"\n');
 
-  assert.equal(plan.steps.length, 0);
-  assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "assertNotVisible" }]);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0]?.actionType, "assert_not_visible");
+  assert.equal(plan.unsupportedCommands.length, 0);
 });
 
-test("buildReplayPlanFromFlowYaml marks nested runFlow as unsupported", () => {
+test("buildReplayPlanFromFlowYaml accepts nested runFlow as supported", () => {
   const plan = buildReplayPlanFromFlowYaml('appId: com.example.demo\n---\n- runFlow:\n    file: "flows/sub-flow.yaml"\n');
 
-  assert.equal(plan.steps.length, 0);
-  assert.deepEqual(plan.unsupportedCommands, [{ stepNumber: 1, command: "runFlow" }]);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0]?.actionType, "run_sub_flow");
+  assert.equal(plan.unsupportedCommands.length, 0);
 });
 
 test("buildReplayPlanFromFlowYaml mixed flow with supported and unsupported commands", () => {
@@ -169,8 +177,7 @@ test("buildReplayPlanFromFlowYaml mixed flow with supported and unsupported comm
     "    appId: com.example.demo",
     "- tapOn:",
     '    identifier: "Login Button"',
-    "- stopApp:",
-    "    appId: com.example.demo",
+    "- scroll: {}",
     "- assertVisible:",
     '    text: "Welcome"',
   ].join("\n");
@@ -179,8 +186,8 @@ test("buildReplayPlanFromFlowYaml mixed flow with supported and unsupported comm
 
   // launchApp, tapOn, assertVisible are supported
   assert.equal(plan.steps.length, 3);
-  // stopApp is unsupported
+  // scroll is unsupported
   assert.equal(plan.unsupportedCommands.length, 1);
   assert.equal(plan.unsupportedCommands[0]?.stepNumber, 3);
-  assert.equal(plan.unsupportedCommands[0]?.command, "stopApp");
+  assert.equal(plan.unsupportedCommands[0]?.command, "scroll");
 });

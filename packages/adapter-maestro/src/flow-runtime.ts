@@ -649,14 +649,14 @@ export async function runFlowWithRuntime(input: RunFlowInput): Promise<ToolResul
           failedRuns: runCount,
           command,
           exitCode: null,
-          summaryLine: `Android replay requires Maestro helper apps for fallback lane, but they are missing. Install dev.mobile.maestro and dev.mobile.maestro.test or use a flow with only supported commands (launchApp, tapOn with selector, assertVisible).`,
+          summaryLine: `Android replay requires Maestro helper apps for fallback lane, but they are missing. Install dev.mobile.maestro and dev.mobile.maestro.test.`,
           executionMode: "runner_compat",
           replayProgress: buildCompatReplayProgress(runCount),
           stepOutcomes: [],
         },
         nextSuggestions: [
           `Install missing helper apps once on device and rerun run_flow, OR`,
-          "Remove unsupported commands (stopApp, clearState, scroll, swipe, back, home, killApp, assertNotVisible, runFlow) from the flow to use the owned-adb replay lane.",
+          "Use a flow with commands supported by the owned-adb backend (launchApp, tapOn, inputText, assertVisible, assertNotVisible, swipe, back, home, hideKeyboard, stopApp, clearState).",
         ],
       };
     }
