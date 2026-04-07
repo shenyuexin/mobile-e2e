@@ -1,0 +1,403 @@
+[
+  {
+    "AXFrame" : "{{0, 0}, {430, 932}}",
+    "AXUniqueId" : null,
+    "frame" : {
+      "y" : 0,
+      "x" : 0,
+      "width" : 430,
+      "height" : 932
+    },
+    "role_description" : "application",
+    "AXLabel" : " ",
+    "content_required" : false,
+    "type" : "Application",
+    "title" : null,
+    "help" : null,
+    "custom_actions" : [
+
+    ],
+    "AXValue" : null,
+    "enabled" : true,
+    "role" : "AXApplication",
+    "children" : [
+      {
+        "AXFrame" : "{{31, 82}, {174, 196.66666666666669}}",
+        "AXUniqueId" : "地图",
+        "frame" : {
+          "y" : 82,
+          "x" : 31,
+          "width" : 174,
+          "height" : 196.66666666666669
+        },
+        "role_description" : "button",
+        "AXLabel" : "地图",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : null,
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "小组件",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{225, 82}, {174, 196.66666666666669}}",
+        "AXUniqueId" : "日历",
+        "frame" : {
+          "y" : 82,
+          "x" : 225,
+          "width" : 174,
+          "height" : 196.66666666666669
+        },
+        "role_description" : "button",
+        "AXLabel" : "日历",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : null,
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "小组件, 叠放",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{33, 294}, {68, 90.666666666666686}}",
+        "AXUniqueId" : "日历",
+        "frame" : {
+          "y" : 294,
+          "x" : 33,
+          "width" : 68,
+          "height" : 90.666666666666686
+        },
+        "role_description" : "button",
+        "AXLabel" : "日历",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "4月07日 星期二",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{131.66666666666663, 294}, {68, 90.666666666666686}}",
+        "AXUniqueId" : "照片",
+        "frame" : {
+          "y" : 294,
+          "x" : 131.66666666666663,
+          "width" : 68,
+          "height" : 90.666666666666686
+        },
+        "role_description" : "button",
+        "AXLabel" : "照片",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{230.33333333333337, 294}, {68, 90.666666666666686}}",
+        "AXUniqueId" : "提醒事项",
+        "frame" : {
+          "y" : 294,
+          "x" : 230.33333333333337,
+          "width" : 68,
+          "height" : 90.666666666666686
+        },
+        "role_description" : "button",
+        "AXLabel" : "提醒事项",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{329, 294}, {68, 90.666666666666686}}",
+        "AXUniqueId" : "News",
+        "frame" : {
+          "y" : 294,
+          "x" : 329,
+          "width" : 68,
+          "height" : 90.666666666666686
+        },
+        "role_description" : "button",
+        "AXLabel" : "News",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{33, 400}, {68, 90.666666666666686}}",
+        "AXUniqueId" : "地图",
+        "frame" : {
+          "y" : 400,
+          "x" : 33,
+          "width" : 68,
+          "height" : 90.666666666666686
+        },
+        "role_description" : "button",
+        "AXLabel" : "地图",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{131.66666666666663, 400}, {68, 90.666666666666686}}",
+        "AXUniqueId" : "健康",
+        "frame" : {
+          "y" : 400,
+          "x" : 131.66666666666663,
+          "width" : 68,
+          "height" : 90.666666666666686
+        },
+        "role_description" : "button",
+        "AXLabel" : "健康",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{230.33333333333337, 400}, {68, 90.666666666666686}}",
+        "AXUniqueId" : "钱包",
+        "frame" : {
+          "y" : 400,
+          "x" : 230.33333333333337,
+          "width" : 68,
+          "height" : 90.666666666666686
+        },
+        "role_description" : "button",
+        "AXLabel" : "钱包",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{329, 400}, {68, 90.666666666666686}}",
+        "AXUniqueId" : "设置",
+        "frame" : {
+          "y" : 400,
+          "x" : 329,
+          "width" : 68,
+          "height" : 90.666666666666686
+        },
+        "role_description" : "button",
+        "AXLabel" : "设置",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{184.33333333333334, 756.66666666666674}, {61.333333333333343, 30}}",
+        "AXUniqueId" : "spotlight-pill",
+        "frame" : {
+          "y" : 756.66666666666674,
+          "x" : 184.33333333333334,
+          "width" : 61.333333333333343,
+          "height" : 30
+        },
+        "role_description" : "slider",
+        "AXLabel" : "搜索",
+        "content_required" : false,
+        "type" : "Slider",
+        "title" : null,
+        "help" : "激活以打开“聚焦”。",
+        "custom_actions" : [
+
+        ],
+        "AXValue" : "第1页（共2页）",
+        "enabled" : true,
+        "role" : "AXSlider",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{132, 831}, {68, 68}}",
+        "AXUniqueId" : "Safari浏览器",
+        "frame" : {
+          "y" : 831,
+          "x" : 132,
+          "width" : 68,
+          "height" : 68
+        },
+        "role_description" : "button",
+        "AXLabel" : "Safari浏览器",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      },
+      {
+        "AXFrame" : "{{230.66666666666663, 831}, {68, 68}}",
+        "AXUniqueId" : "信息",
+        "frame" : {
+          "y" : 831,
+          "x" : 230.66666666666663,
+          "width" : 68,
+          "height" : 68
+        },
+        "role_description" : "button",
+        "AXLabel" : "信息",
+        "content_required" : false,
+        "type" : "Button",
+        "title" : null,
+        "help" : "轻点两下以打开",
+        "custom_actions" : [
+          "编辑模式",
+          "今天",
+          "App资源库"
+        ],
+        "AXValue" : "",
+        "enabled" : true,
+        "role" : "AXButton",
+        "children" : [
+
+        ],
+        "subrole" : null,
+        "pid" : 50223
+      }
+    ],
+    "subrole" : null,
+    "pid" : 50223
+  }
+]

@@ -4,14 +4,15 @@ For current implementation-oriented file placement inside `packages/adapter-maes
 
 ## 1. Backend Roles
 
-- **xcrun simctl**: simulator lifecycle, install/uninstall, screenshots, media, deep links, UI interactions (tap, type, swipe, hierarchy).
+- **[AXe CLI](https://github.com/cameroncooke/AXe)**: primary simulator backend for all UI actions (hierarchy, tap, type, swipe, screenshot). Single binary, no daemon. `brew install cameroncooke/axe/axe`.
+- **xcrun simctl**: simulator lifecycle, install/uninstall, screenshots (secondary), media, deep links.
 - **xcrun devicectl**: physical device lifecycle (install, launch, terminate, logs, crashes).
 - **Maestro**: UI interaction execution backend for physical devices (devicectl generates Maestro flow YAML).
 - **idb (deprecated)**: previously the primary iOS backend. Still functional via `IOS_EXECUTION_BACKEND=idb` but shows deprecation warnings.
 
 Practical principle:
 
-- Simulators use native `xcrun simctl` commands for all UI actions (FULL support).
+- Simulators use AXe CLI for all UI actions (FULL support).
 - Physical devices use `xcrun devicectl` for lifecycle + Maestro flow YAML for UI interactions (PARTIAL support).
 - Do not rely on idb — it is no longer maintained by Facebook.
 
@@ -19,26 +20,31 @@ Framework support (native/RN/Flutter) is resolved through iOS platform control s
 
 ---
 
-## 2. iOS Backend Router (Phase 13)
+## 2. iOS Backend Router (Phase 13 + Phase 14)
 
-Starting from Phase 13, iOS execution uses a backend router instead of direct `idb` calls:
+Starting from Phase 13, iOS execution uses a backend router instead of direct `idb` calls. Phase 14 replaced simctl with [AXe](https://github.com/cameroncooke/AXe) as the primary simulator backend.
 
 | Module | Purpose |
 |---|---|
 | `ios-backend-types.ts` | `IosExecutionBackend` interface (command builders, not execution) |
-| `ios-backend-simctl.ts` | `SimctlSimulatorBackend` — simulator actions via `xcrun simctl` |
+| `ios-backend-axe.ts` | `AxeSimulatorBackend` — simulator actions via AXe CLI (Phase 14+) |
+| `ios-backend-simctl.ts` | `SimctlSimulatorBackend` — screenshot only (simplified in Phase 14) |
 | `ios-backend-devicectl.ts` | `DevicectlPhysicalBackend` — physical device via devicectl + Maestro YAML fallback |
 | `ios-backend-router.ts` | `IosBackendRouter` — selection logic, probe summary, test hooks |
 
-### Simulator Backend (FULL support)
+### Simulator Backend (FULL support — Phase 14+)
+
+All UI actions use [AXe CLI](https://github.com/cameroncooke/AXe):
 
 | Action | Command |
 |---|---|
-| tap | `xcrun simctl io <udid> tap <x> <y>` |
-| typeText | `xcrun simctl keyboard <udid> type <text>` |
-| swipe | `xcrun simctl io <udid> swipe <x1> <y1> <x2> <y2>` |
-| hierarchy | `xcrun simctl spawn <udid> accessibility dump` |
-| screenshot | `xcrun simctl io <udid> screenshot <path>` |
+| tap | `axe tap -x <x> -y <y> --udid <udid>` |
+| typeText | `axe type "<text>" --udid <udid>` |
+| swipe | `axe swipe --start-x <x1> --start-y <y1> --end-x <x2> --end-y <y2> --udid <udid>` |
+| hierarchy | `axe describe-ui --udid <udid>` |
+| screenshot | `axe screenshot --udid <udid> --output <path>` |
+
+AXe uses Apple's Accessibility APIs + idb's lower-level frameworks directly, but requires no daemon process.
 
 ### Physical Device Backend (PARTIAL support)
 
@@ -46,20 +52,26 @@ Starting from Phase 13, iOS execution uses a backend router instead of direct `i
 
 ### Backend Selection Logic
 
-1. **Environment variable**: `IOS_EXECUTION_BACKEND=simctl|devicectl|maestro|idb`
-2. **Auto-detect**: Simulator UDID → simctl, Physical UDID → devicectl
-3. **Fallback**: devicectl → maestro (if devicectl unavailable)
+1. **Environment variable**: `IOS_EXECUTION_BACKEND=axe|simctl|devicectl|maestro|idb`
+2. **Auto-detect**: Simulator UDID → axe, Physical UDID → devicectl
+3. **Fallback**: axe unavailable → idb (deprecated warning) → error; devicectl unavailable → maestro
 
 ---
 
 ## 3. Representative Primitive Mapping
 
-From xcrun simctl (simulators):
+From AXe CLI (simulators, Phase 14+):
 
-- tap: `xcrun simctl io <udid> tap <x> <y>`
-- type: `xcrun simctl keyboard <udid> type <text>`
-- hierarchy: `xcrun simctl spawn <udid> accessibility dump`
-- screenshot/video/log: `xcrun simctl io <udid> screenshot|recordVideo|spawn log ...`
+- tap: `axe tap -x <x> -y <y> --udid <udid>`
+- type: `axe type "<text>" --udid <udid>`
+- hierarchy: `axe describe-ui --udid <udid>`
+- screenshot: `axe screenshot --udid <udid> --output <path>`
+- swipe: `axe swipe --start-x <x1> --start-y <y1> --end-x <x2> --end-y <y2> --udid <udid>`
+
+From xcrun simctl (simulators, secondary):
+
+- screenshot/video: `xcrun simctl io <udid> screenshot|recordVideo`
+- install/launch/terminate: `xcrun simctl install|launch|terminate <udid> <bundle>`
 
 From devicectl + Maestro (physical devices):
 

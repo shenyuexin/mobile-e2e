@@ -59,8 +59,20 @@ const GUIDANCE_RULES: DoctorGuidanceRule[] = [
     verifyCommands: ["xcrun simctl help", "xcrun simctl list devices"],
     envHints: [
       "Accept Xcode license: sudo xcodebuild -license accept.",
-      "Primary backend for iOS simulator actions (tap, type, swipe, hierarchy, screenshot).",
+      "Used for simulator screenshot and lifecycle commands.",
       "Set IOS_EXECUTION_BACKEND=simctl to force simctl backend.",
+    ],
+  },
+  {
+    dependency: "axe",
+    platformScope: "ios",
+    matches: (check) => check.name.toLowerCase() === "axe",
+    installCommands: ["brew install cameroncooke/axe/axe"],
+    verifyCommands: ["axe --version", "axe describe-ui --help"],
+    envHints: [
+      "Primary backend for iOS simulator UI actions (hierarchy, tap, type, swipe).",
+      "Single binary, no daemon required.",
+      "Set IOS_EXECUTION_BACKEND=axe to force axe backend.",
     ],
   },
   {

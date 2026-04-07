@@ -6,10 +6,10 @@ export class SimctlSimulatorBackend implements IosExecutionBackend {
   readonly backendName = "Xcode simctl";
 
   readonly supportLevel = {
-    tap: "full" as const,
-    typeText: "full" as const,
-    swipe: "full" as const,
-    hierarchy: "full" as const,
+    tap: "none" as const,
+    typeText: "none" as const,
+    swipe: "none" as const,
+    hierarchy: "none" as const,
     screenshot: "full" as const,
   };
 
@@ -27,27 +27,23 @@ export class SimctlSimulatorBackend implements IosExecutionBackend {
     }
   }
 
-  buildTapCommand(deviceId: string, x: number, y: number): string[] {
-    return ["xcrun", "simctl", "io", deviceId, "tap", String(x), String(y)];
+  buildTapCommand(_deviceId: string, _x: number, _y: number): string[] {
+    throw new Error("simctl no longer supports tap — use axe backend: brew install cameroncooke/axe/axe");
   }
 
-  buildTypeTextCommand(deviceId: string, text: string): string[] {
-    const escaped = text
-      .replaceAll("\\", "\\\\")
-      .replaceAll("'", "'\\''")
-      .replaceAll('"', '\\"');
-    return ["xcrun", "simctl", "keyboard", deviceId, "type", "--", escaped];
+  buildTypeTextCommand(_deviceId: string, _text: string): string[] {
+    throw new Error("simctl no longer supports typeText — use axe backend: brew install cameroncooke/axe/axe");
   }
 
   buildSwipeCommand(
-    deviceId: string,
-    swipe: { start: { x: number; y: number }; end: { x: number; y: number }; durationMs: number },
+    _deviceId: string,
+    _swipe: { start: { x: number; y: number }; end: { x: number; y: number }; durationMs: number },
   ): string[] {
-    return ["xcrun", "simctl", "io", deviceId, "swipe", String(swipe.start.x), String(swipe.start.y), String(swipe.end.x), String(swipe.end.y)];
+    throw new Error("simctl no longer supports swipe — use axe backend: brew install cameroncooke/axe/axe");
   }
 
-  buildHierarchyCaptureCommand(deviceId: string): string[] {
-    return ["xcrun", "simctl", "spawn", deviceId, "accessibility", "dump"];
+  buildHierarchyCaptureCommand(_deviceId: string): string[] {
+    throw new Error("simctl no longer supports hierarchy — use axe backend: brew install cameroncooke/axe/axe");
   }
 
   buildScreenshotCommand(deviceId: string, outputPath: string): string[] {
@@ -56,10 +52,6 @@ export class SimctlSimulatorBackend implements IosExecutionBackend {
 
   buildFailureSuggestion(action: string, deviceId: string): string {
     const suggestions: Record<string, string> = {
-      tap: "Check simulator is booted and iOS version is 15+. Run 'xcrun simctl list devices' to verify.",
-      typeText: "Check simulator keyboard is active. Ensure the simulator has a focused text field.",
-      swipe: "Check simulator is booted. Verify coordinates are within screen bounds.",
-      hierarchy: "Ensure the simulator is booted. Try 'xcrun simctl spawn <udid> accessibility dump' manually.",
       screenshot: "Check simulator is booted and output path is writable.",
     };
     return suggestions[action] ?? `Check simulator state for ${action} action.`;

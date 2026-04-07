@@ -1,5 +1,6 @@
 import type { IosExecutionBackend, BackendProbeResult, BackendProbeSummary } from "./ios-backend-types.js";
 import { SimctlSimulatorBackend } from "./ios-backend-simctl.js";
+import { AxeSimulatorBackend } from "./ios-backend-axe.js";
 import { DevicectlPhysicalBackend } from "./ios-backend-devicectl.js";
 import { isIosPhysicalDeviceId } from "./device-runtime.js";
 import { executeRunnerWithTestHooks } from "./runtime-shared.js";
@@ -20,15 +21,16 @@ export function resetForTesting(): void {
 
 // -- Router class --
 
-type BackendId = "simctl" | "devicectl" | "maestro" | "idb";
+type BackendId = "simctl" | "devicectl" | "maestro" | "idb" | "axe";
 
-const VALID_BACKENDS = new Set<BackendId>(["simctl", "devicectl", "maestro", "idb"]);
+const VALID_BACKENDS = new Set<BackendId>(["simctl", "devicectl", "maestro", "idb", "axe"]);
 
 function isValidBackendId(value: string): value is BackendId {
   return VALID_BACKENDS.has(value as BackendId);
 }
 
 export class IosBackendRouter {
+  private axeBackend = new AxeSimulatorBackend();
   private simctlBackend = new SimctlSimulatorBackend();
   private devicectlBackend = new DevicectlPhysicalBackend();
 
@@ -68,7 +70,7 @@ export class IosBackendRouter {
     if (isIosPhysicalDeviceId(deviceId)) {
       return this.devicectlBackend;
     }
-    return this.simctlBackend;
+    return this.axeBackend;
   }
 
   /**
@@ -76,13 +78,14 @@ export class IosBackendRouter {
    * Used for doctor checks and fallback-chain diagnostics.
    */
   async probeAllBackends(repoRoot: string): Promise<BackendProbeSummary> {
-    const [simctl, devicectl, maestro] = await Promise.all([
+    const [axe, simctl, devicectl, maestro] = await Promise.all([
+      this.axeBackend.probeAvailability(repoRoot),
       this.simctlBackend.probeAvailability(repoRoot),
       this.probeDevicectlAvailability(repoRoot),
       this.probeMaestroAvailability(repoRoot),
     ]);
 
-    return { simctl, devicectl, maestro };
+    return { axe, simctl, devicectl, maestro };
   }
 
   // -- Private helpers --
@@ -92,6 +95,8 @@ export class IosBackendRouter {
     _deviceId: string,
   ): IosExecutionBackend {
     switch (backendId) {
+      case "axe":
+        return this.axeBackend;
       case "simctl":
         return this.simctlBackend;
       case "devicectl":
@@ -122,6 +127,10 @@ export class IosBackendRouter {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  private async probeAxeAvailability(repoRoot: string): Promise<BackendProbeResult> {
+    return this.axeBackend.probeAvailability(repoRoot);
   }
 
   private async probeMaestroAvailability(repoRoot: string): Promise<BackendProbeResult> {

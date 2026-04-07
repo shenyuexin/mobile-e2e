@@ -19,7 +19,7 @@ export interface BackendProbeResult {
  */
 export interface IosExecutionBackend {
   /** Canonical backend identifier used for routing and logging. */
-  readonly backendId: "simctl" | "devicectl" | "maestro" | "idb";
+  readonly backendId: "axe" | "simctl" | "devicectl" | "maestro" | "idb";
   /** Human-readable backend name, e.g. "Xcode simctl", "Apple devicectl". */
   readonly backendName: string;
 
@@ -51,6 +51,7 @@ export interface IosExecutionBackend {
 
 /** Summary of probe results across all candidate iOS backends. */
 export interface BackendProbeSummary {
+  axe: BackendProbeResult;
   simctl: BackendProbeResult;
   devicectl: BackendProbeResult;
   maestro: BackendProbeResult;

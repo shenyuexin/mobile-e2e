@@ -17,13 +17,13 @@ test("SimctlSimulatorBackend has correct backendName", () => {
   assert.equal(backend.backendName, "Xcode simctl");
 });
 
-test("SimctlSimulatorBackend declares full support for all actions", () => {
+test("SimctlSimulatorBackend declares none for UI actions and full for screenshot", () => {
   const backend = new SimctlSimulatorBackend();
   assert.deepEqual(backend.supportLevel, {
-    tap: "full",
-    typeText: "full",
-    swipe: "full",
-    hierarchy: "full",
+    tap: "none",
+    typeText: "none",
+    swipe: "none",
+    hierarchy: "none",
     screenshot: "full",
   });
 });
@@ -65,44 +65,24 @@ test("probeAvailability returns unavailable when executeRunner throws", async ()
   assert.equal(result.error, "xcrun not found");
 });
 
-test("buildTapCommand returns correct simctl io tap command", () => {
+test("unsupported: buildTapCommand throws", () => {
   const backend = new SimctlSimulatorBackend();
-  const cmd = backend.buildTapCommand("ABCD-1234", 100, 200);
-  assert.deepEqual(cmd, ["xcrun", "simctl", "io", "ABCD-1234", "tap", "100", "200"]);
+  assert.throws(() => backend.buildTapCommand("ABC", 1, 2), /axe/);
 });
 
-test("buildTypeTextCommand returns correct simctl keyboard type command", () => {
+test("unsupported: buildTypeTextCommand throws", () => {
   const backend = new SimctlSimulatorBackend();
-  const cmd = backend.buildTypeTextCommand("ABCD-1234", "hello");
-  assert.deepEqual(cmd, ["xcrun", "simctl", "keyboard", "ABCD-1234", "type", "--", "hello"]);
+  assert.throws(() => backend.buildTypeTextCommand("ABC", "text"), /axe/);
 });
 
-test("buildTypeTextCommand escapes double quotes in text", () => {
+test("unsupported: buildSwipeCommand throws", () => {
   const backend = new SimctlSimulatorBackend();
-  const cmd = backend.buildTypeTextCommand("ABCD-1234", 'hello "world"');
-  assert.deepEqual(cmd, ["xcrun", "simctl", "keyboard", "ABCD-1234", "type", "--", 'hello \\"world\\"']);
+  assert.throws(() => backend.buildSwipeCommand("ABC", { start: { x: 0, y: 0 }, end: { x: 1, y: 1 }, durationMs: 100 }), /axe/);
 });
 
-test("buildTypeTextCommand escapes backslashes", () => {
+test("unsupported: buildHierarchyCaptureCommand throws", () => {
   const backend = new SimctlSimulatorBackend();
-  const cmd = backend.buildTypeTextCommand("ABCD-1234", "path\\to\\file");
-  assert.deepEqual(cmd, ["xcrun", "simctl", "keyboard", "ABCD-1234", "type", "--", "path\\\\to\\\\file"]);
-});
-
-test("buildSwipeCommand returns correct simctl io swipe command", () => {
-  const backend = new SimctlSimulatorBackend();
-  const cmd = backend.buildSwipeCommand("ABCD-1234", {
-    start: { x: 100, y: 500 },
-    end: { x: 100, y: 200 },
-    durationMs: 300,
-  });
-  assert.deepEqual(cmd, ["xcrun", "simctl", "io", "ABCD-1234", "swipe", "100", "500", "100", "200"]);
-});
-
-test("buildHierarchyCaptureCommand returns correct simctl spawn accessibility dump command", () => {
-  const backend = new SimctlSimulatorBackend();
-  const cmd = backend.buildHierarchyCaptureCommand("ABCD-1234");
-  assert.deepEqual(cmd, ["xcrun", "simctl", "spawn", "ABCD-1234", "accessibility", "dump"]);
+  assert.throws(() => backend.buildHierarchyCaptureCommand("ABC"), /axe/);
 });
 
 test("buildScreenshotCommand returns correct simctl io screenshot command", () => {
@@ -111,20 +91,13 @@ test("buildScreenshotCommand returns correct simctl io screenshot command", () =
   assert.deepEqual(cmd, ["xcrun", "simctl", "io", "ABCD-1234", "screenshot", "/tmp/screen.png"]);
 });
 
-test("buildFailureSuggestion returns tap-specific suggestion", () => {
+test("buildFailureSuggestion returns screenshot-specific suggestion", () => {
   const backend = new SimctlSimulatorBackend();
-  const suggestion = backend.buildFailureSuggestion("tap", "ABCD-1234");
+  const suggestion = backend.buildFailureSuggestion("screenshot", "ABCD-1234");
   assert.ok(suggestion.includes("simulator is booted"));
-  assert.ok(suggestion.includes("iOS version is 15+"));
 });
 
-test("buildFailureSuggestion returns hierarchy-specific suggestion", () => {
-  const backend = new SimctlSimulatorBackend();
-  const suggestion = backend.buildFailureSuggestion("hierarchy", "ABCD-1234");
-  assert.ok(suggestion.includes("accessibility dump"));
-});
-
-test("buildFailureSuggestion returns generic suggestion for unknown action", () => {
+test("buildFailureSuggestion returns generic suggestion for unsupported action", () => {
   const backend = new SimctlSimulatorBackend();
   const suggestion = backend.buildFailureSuggestion("unknown", "ABCD-1234");
   assert.ok(suggestion.includes("unknown"));

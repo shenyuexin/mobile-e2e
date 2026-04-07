@@ -7,11 +7,11 @@ test.afterEach(() => {
   resetForTesting();
 });
 
-test("selectBackend selects simctl for simulator UDID", () => {
+test("selectBackend selects axe for simulator UDID", () => {
   const router = new IosBackendRouter();
   // Simulator UDIDs are proper UUIDs with hex chars only (0-9, A-F)
   const backend = router.selectBackend("ABCD1234-5678-5678-5678-901234567890");
-  assert.equal(backend.backendId, "simctl");
+  assert.equal(backend.backendId, "axe");
 });
 
 test("selectBackend selects devicectl for physical device UDID", () => {
@@ -31,6 +31,12 @@ test("selectBackend uses devicectl when IOS_EXECUTION_BACKEND=devicectl", () => 
   const router = new IosBackendRouter();
   const backend = router.selectBackend("any-device", { IOS_EXECUTION_BACKEND: "devicectl" } as NodeJS.ProcessEnv);
   assert.equal(backend.backendId, "devicectl");
+});
+
+test("selectBackend uses axe when IOS_EXECUTION_BACKEND=axe", () => {
+  const router = new IosBackendRouter();
+  const backend = router.selectBackend("any-device", { IOS_EXECUTION_BACKEND: "axe" } as NodeJS.ProcessEnv);
+  assert.equal(backend.backendId, "axe");
 });
 
 test("selectBackend throws for invalid IOS_EXECUTION_BACKEND", () => {
@@ -93,15 +99,17 @@ test("resetForTesting clears override", () => {
   resetForTesting();
   const router = new IosBackendRouter();
   const backend = router.selectBackend("ABCD1234-5678-5678-5678-901234567890");
-  assert.equal(backend.backendId, "simctl");
+  assert.equal(backend.backendId, "axe");
 });
 
-test("probeAllBackends returns summary with simctl, devicectl, and maestro", async () => {
+test("probeAllBackends returns summary with axe, simctl, devicectl, and maestro", async () => {
   const router = new IosBackendRouter();
   const summary = await router.probeAllBackends(process.cwd());
+  assert.ok("axe" in summary);
   assert.ok("simctl" in summary);
   assert.ok("devicectl" in summary);
   assert.ok("maestro" in summary);
+  assert.ok("available" in summary.axe);
   assert.ok("available" in summary.simctl);
   assert.ok("available" in summary.devicectl);
   assert.ok("available" in summary.maestro);

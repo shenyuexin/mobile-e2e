@@ -509,6 +509,7 @@ export async function runDoctorWithMaestro(
   checks.push(await checkCommandVersion(repoRoot, "xcrun", ["simctl", "help"], "xcrun simctl"));
   checks.push(await checkCommandVersion(repoRoot, "xcrun", ["xctrace", "version"], "xcrun xctrace"));
   checks.push(await checkCommandVersion(repoRoot, "xcrun", ["devicectl", "help"], "xcrun devicectl"));
+  checks.push(await checkCommandVersion(repoRoot, "axe", ["--version"], "axe"));
   checks.push(await checkCommandVersion(repoRoot, "maestro", ["--version"], "maestro"));
   try {
     const resolvedTraceProcessorPath = resolveTraceProcessorPath();
