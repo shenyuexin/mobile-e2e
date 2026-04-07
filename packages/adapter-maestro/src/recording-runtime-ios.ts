@@ -177,7 +177,7 @@ export async function captureIosContextSnapshot(
 		process.env,
 	);
 	if (snapshotResult.exitCode !== 0) {
-		warnings.push("Failed to capture iOS UI snapshot via idb ui describe-all.");
+		warnings.push("Failed to capture iOS UI snapshot. Verify axe/WDA backend availability.");
 		return { warnings };
 	}
 
@@ -327,7 +327,7 @@ export async function startIosCaptureProcesses(
 		if (!pid) {
 			return {
 				failureSuggestion:
-					"Failed to start iOS physical-device event capture through idb log. Verify idb companion target visibility and retry start_record_session.",
+					"Failed to start iOS physical-device event capture. Verify WDA/iproxy setup and retry start_record_session.",
 			};
 		}
 	}
@@ -372,11 +372,11 @@ export function createIosRecordingHooks(): RecordingPlatformHooks {
 		],
 		runningStatusSuggestions: [
 			"Continue interacting on the selected iOS target, then call end_record_session to export flow.",
-			"If rawEventCount remains 0, confirm idb/simctl/devicectl dependencies via doctor and review snapshot artifacts.",
+			"If rawEventCount remains 0, confirm axe/WDA/simctl/devicectl dependencies via doctor and review snapshot artifacts.",
 		],
 		endSessionNoFlowSuggestion:
-			"No flow was exported. Verify iOS event capture (simulator log stream or physical-device app-context evidence) and idb snapshot availability, then retry recording.",
+			"No flow was exported. Verify iOS event capture (simulator log stream or physical-device app-context evidence) and axe/WDA snapshot availability, then retry recording.",
 		cancelSuggestion:
-			"iOS recording cancelled. Start a new session after confirming target readiness and idb availability.",
+			"iOS recording cancelled. Start a new session after confirming target readiness and axe/WDA availability.",
 	};
 }

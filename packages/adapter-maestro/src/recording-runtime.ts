@@ -603,7 +603,7 @@ export async function endRecordSessionWithMaestro(
 			},
 			nextSuggestions: [
 				"Interact on the iOS physical device while recording (tap/type/swipe), then retry end_record_session.",
-				"If capture remains empty, verify idb/devicectl availability and review artifacts/record-events/*.jsonl plus artifacts/record-snapshots/*.",
+				"If capture remains empty, verify axe/WDA/devicectl availability and review artifacts/record-events/*.jsonl plus artifacts/record-snapshots/*.",
 			],
 		};
 	}
@@ -689,7 +689,7 @@ export async function endRecordSessionWithMaestro(
 			? recordSession.platform === "ios"
 				? [
 						`Replay with run_flow and flowPath='${flowPath}'.`,
-						"If replay fails, inspect iOS selector confidence and idb snapshot warnings in report.warnings.",
+						"If replay fails, inspect iOS selector confidence and axe/WDA snapshot warnings in report.warnings.",
 					]
 				: [`Replay with run_flow and flowPath='${flowPath}'.`]
 			: [hooks.endSessionNoFlowSuggestion],

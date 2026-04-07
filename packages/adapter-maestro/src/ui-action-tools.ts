@@ -689,7 +689,7 @@ export async function tapWithMaestroTool(
     ? []
     : simulatorOnlyIdbError
       ? [
-        "Direct iOS tap via idb is simulator-scoped for this runtime path. For physical-device replay, use run_flow with Maestro iOS driver signing configured in Xcode.",
+        "Direct iOS tap failed. For simulators, verify axe is installed (brew install cameroncooke/axe/axe). For physical devices, verify WDA is running (iproxy 8100 8100 --udid <udid>).",
       ]
       : [runtimeHooks.tapFailureSuggestion];
   return {
@@ -848,7 +848,7 @@ export async function typeTextWithMaestroTool(
     ? []
     : simulatorOnlyIdbError
       ? [
-        "Direct iOS type_text via idb is simulator-scoped for this runtime path. For physical-device replay, use run_flow with Maestro iOS driver signing configured in Xcode.",
+        "Direct iOS type_text failed. For simulators, verify axe is installed (brew install cameroncooke/axe/axe). For physical devices, verify WDA is running (iproxy 8100 8100 --udid <udid>).",
       ]
       : [runtimeHooks.typeTextFailureSuggestion];
   return {
@@ -1563,7 +1563,7 @@ export async function scrollAndResolveUiTargetWithMaestroTool(
         return execution.execution ?? { exitCode: null, stdout: "", stderr: "" };
       },
       scrollFailureMessage:
-        "iOS swipe failed while searching for the target. Check simulator state and idb availability before retrying scroll_and_resolve_ui_target.",
+        "iOS swipe failed while searching for the target. Check simulator state and axe/WDA availability before retrying scroll_and_resolve_ui_target.",
     });
 
     if (scrollOutcome.outcome === "failure") {

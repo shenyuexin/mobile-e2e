@@ -130,10 +130,10 @@ export async function inspectUiWithMaestroTool(
             ),
           ],
           platformSupportNote:
-            "iOS inspect_ui captures hierarchy through idb; query and action parity remain partial.",
+            "iOS inspect_ui captures hierarchy through axe (simulators) or WDA (physical devices); query and action parity remain partial.",
         },
         nextSuggestions: [
-          "Run inspect_ui without dryRun to capture an actual iOS hierarchy dump through idb.",
+          "Run inspect_ui without dryRun to capture an actual iOS hierarchy dump through axe or WDA.",
         ],
       };
     }
@@ -170,7 +170,7 @@ export async function inspectUiWithMaestroTool(
           exitCode: snapshot.exitCode,
           supportLevel: "partial",
           platformSupportNote:
-            "iOS inspect_ui depends on idb availability in the local environment.",
+            "iOS inspect_ui depends on axe (simulators) or WDA (physical devices) availability.",
         },
         nextSuggestions: [snapshot.message],
       };
@@ -222,7 +222,7 @@ export async function inspectUiWithMaestroTool(
         snapshot.execution.exitCode === 0
           ? []
           : [
-              "Ensure idb companion is available for the selected simulator and retry inspect_ui.",
+              "Ensure axe CLI is available for the selected simulator and retry inspect_ui.",
             ],
     };
   }

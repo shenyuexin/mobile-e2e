@@ -28,6 +28,8 @@ import {
   type CommandExecution,
   buildFailureReason,
 } from "./runtime-shared.js";
+import { getIosBackendRouter } from "./ios-backend-router.js";
+import { WdaRealDeviceBackend } from "./ios-backend-wda.js";
 
 export { resolveIdbCliPath, resolveIdbCompanionPath };
 
@@ -419,14 +421,44 @@ export async function captureAndroidUiSnapshot(repoRoot: string, deviceId: strin
 export async function captureIosUiSnapshot(repoRoot: string, deviceId: string, sessionId: string, runnerProfile: string, outputPath: string | undefined, query: QueryUiInput): Promise<IosUiSnapshot | IosUiSnapshotFailure> {
   const relativeOutputPath = outputPath ?? path.posix.join("artifacts", "ui-dumps", sessionId, `ios-${runnerProfile}.json`);
   const absoluteOutputPath = path.resolve(repoRoot, relativeOutputPath);
-  const command = buildIosUiDescribeCommand(deviceId);
-  const idbProbe = await probeIdbAvailability(repoRoot);
-  if (!idbProbe || idbProbe.exitCode !== 0) {
-    return { reasonCode: REASON_CODES.configurationError, exitCode: idbProbe?.exitCode ?? null, outputPath: relativeOutputPath, command, message: "iOS hierarchy capture requires idb. Install fb-idb and idb_companion, or fix IDB_CLI_PATH/IDB_COMPANION_PATH before retrying." };
+
+  const router = getIosBackendRouter();
+  const backend = router.selectBackend(deviceId);
+
+  let execution: CommandExecution;
+  let command: string[];
+
+  if (backend.backendId === "axe") {
+    command = backend.buildHierarchyCaptureCommand(deviceId);
+    execution = await executeRunner(command, repoRoot, process.env);
+  } else if (backend.backendId === "wda") {
+    command = backend.buildHierarchyCaptureCommand(deviceId);
+    const wdaBackend = backend as WdaRealDeviceBackend;
+    const result = await wdaBackend.executeWdaRequest(deviceId, "GET", "/source");
+    if (result.success) {
+      const transformed = wdaBackend.transformWdaSource(result.data as any);
+      execution = { exitCode: 0, stdout: JSON.stringify(transformed), stderr: "" };
+    } else {
+      execution = { exitCode: 1, stdout: "", stderr: result.error ?? "WDA request failed" };
+    }
+  } else if (backend.backendId === "idb") {
+    // Fallback to idb for backward compatibility
+    command = buildIosUiDescribeCommand(deviceId);
+    const idbProbe = await probeIdbAvailability(repoRoot);
+    if (!idbProbe || idbProbe.exitCode !== 0) {
+      return { reasonCode: REASON_CODES.configurationError, exitCode: idbProbe?.exitCode ?? null, outputPath: relativeOutputPath, command, message: "iOS hierarchy capture failed. For simulators, install axe (brew install cameroncooke/axe/axe). For physical devices, set up WDA and run iproxy 8100 8100 --udid <udid>." };
+    }
+    execution = await executeRunner(command, repoRoot, process.env);
+  } else {
+    // simctl/devicectl/maestro don't support hierarchy capture directly
+    return { reasonCode: REASON_CODES.configurationError, exitCode: null, outputPath: relativeOutputPath, command: [], message: `Backend ${backend.backendId} does not support hierarchy capture. Use axe (simulators) or WDA (physical devices).` };
+  }
+
+  if (execution.exitCode !== 0 && backend.backendId !== "idb") {
+    return { reasonCode: REASON_CODES.configurationError, exitCode: execution.exitCode, outputPath: relativeOutputPath, command, message: `iOS hierarchy capture via ${backend.backendName} failed: ${execution.stderr.trim()}` };
   }
 
   await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
-  const execution = await executeRunner(command, repoRoot, process.env);
   if (execution.exitCode === 0) {
     await writeFile(absoluteOutputPath, execution.stdout, "utf8");
   }
