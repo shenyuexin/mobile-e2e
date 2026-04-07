@@ -2,6 +2,8 @@
 
 > WDA is the backend for iOS physical-device UI automation (Phase 15+).
 > This guide walks through building, signing, and connecting WDA to this project.
+>
+> For all external tools used by this project, see the [External Tools Guide](external-tools.md).
 
 ## What is WDA?
 

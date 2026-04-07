@@ -62,7 +62,7 @@ If you're searching for terms like **mobile test harness**, **real-device Androi
 | Failure handling | Assertion/command failure outputs | Structured diagnostics + ranked causes + remediation hints |
 | AI integration | Possible but not primary abstraction | Primary design target (tools for AI agents) |
 | Evidence model | Varies by setup | Built-in evidence-first action outcomes |
-| Helper app dependency | Required for iOS/Android replay | Android: owned-adb primary (no helper app needed for common commands); iOS simulator: axe CLI; iOS physical: WDA (one-time setup, see [WDA Setup Guide](docs/guides/wda-setup.md)) |
+| Helper app dependency | Required for iOS/Android replay | Android: owned-adb primary (no helper app needed for common commands); iOS simulator: axe CLI; iOS physical: WDA (one-time setup, see [External Tools Guide](docs/guides/external-tools.md)) |
 
 ## FAQ 
 

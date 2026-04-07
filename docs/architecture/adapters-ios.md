@@ -4,7 +4,7 @@ For current implementation-oriented file placement inside `packages/adapter-maes
 
 ## 1. Backend Roles
 
-- **[AXe CLI](https://github.com/cameroncooke/AXe)**: primary simulator backend for all UI actions (hierarchy, tap, type, swipe, screenshot). Single binary, no daemon. `brew install cameroncooke/axe/axe`.
+- **[AXe CLI](https://github.com/cameroncooke/AXe)**: primary simulator backend for all UI actions (hierarchy, tap, type, swipe, screenshot). Single binary, no daemon. `brew install cameroncooke/axe/axe`. See [External Tools Guide](../guides/external-tools.md#axe-cli).
 - **xcrun simctl**: simulator lifecycle, install/uninstall, screenshots (secondary), media, deep links.
 - **xcrun devicectl**: physical device lifecycle (install, launch, terminate, logs, crashes).
 - **Maestro**: UI interaction execution backend for physical devices (devicectl generates Maestro flow YAML).
