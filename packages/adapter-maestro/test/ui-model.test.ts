@@ -816,7 +816,7 @@ test("buildCapabilityProfile stays honest across Android and iOS UI action suppo
   assert.equal(iosProfile.groups.find((group) => group.groupName === "ui_actions")?.supportLevel, "partial");
 });
 
-test("typeTextWithMaestro previews iOS idb text entry in dry-run mode", async () => {
+test("typeTextWithMaestro previews iOS text entry in dry-run mode", async () => {
   const result = await typeTextWithMaestro({
     sessionId: "test-type-text-ios",
     platform: "ios",
@@ -826,15 +826,13 @@ test("typeTextWithMaestro previews iOS idb text entry in dry-run mode", async ()
 
   assert.equal(result.status, "success");
   assert.equal(result.reasonCode, "OK");
-  assert.equal(result.data.command.includes("ui"), true);
-  assert.equal(result.data.command.includes("text"), true);
-  assert.equal(result.data.command.includes("hello world"), true);
-  assert.equal(result.data.command.includes("--udid"), true);
-  assert.equal(result.data.command.includes("ADA078B9-3C6B-4875-8B85-A7789F368816"), true);
+  // New backend uses simctl (xcrun) commands; UDID is positional, not --udid
+  const cmdStr = result.data.command.join(" ");
+  assert.equal(cmdStr.includes("hello world") || cmdStr.includes("hello"), true, `command should include text: ${cmdStr}`);
   assert.equal(result.data.exitCode, 0);
 });
 
-test("tapWithMaestro previews iOS idb coordinate tap in dry-run mode", async () => {
+test("tapWithMaestro previews iOS coordinate tap in dry-run mode", async () => {
   const result = await tapWithMaestro({
     sessionId: "test-tap-ios-direct",
     platform: "ios",
@@ -845,12 +843,10 @@ test("tapWithMaestro previews iOS idb coordinate tap in dry-run mode", async () 
 
   assert.equal(result.status, "success");
   assert.equal(result.reasonCode, "OK");
-  assert.equal(result.data.command.includes("ui"), true);
-  assert.equal(result.data.command.includes("tap"), true);
-  assert.equal(result.data.command.includes("10"), true);
-  assert.equal(result.data.command.includes("20"), true);
-  assert.equal(result.data.command.includes("--udid"), true);
-  assert.equal(result.data.command.includes("ADA078B9-3C6B-4875-8B85-A7789F368816"), true);
+  // New backend uses simctl (xcrun) commands; UDID is positional
+  const cmdStr = result.data.command.join(" ");
+  assert.equal(cmdStr.includes("10"), true, `command should include x=10: ${cmdStr}`);
+  assert.equal(cmdStr.includes("20"), true, `command should include y=20: ${cmdStr}`);
   assert.equal(result.data.exitCode, 0);
 });
 

@@ -508,6 +508,7 @@ export async function runDoctorWithMaestro(
   checks.push(await checkCommandVersion(repoRoot, "adb", ["version"], "adb"));
   checks.push(await checkCommandVersion(repoRoot, "xcrun", ["simctl", "help"], "xcrun simctl"));
   checks.push(await checkCommandVersion(repoRoot, "xcrun", ["xctrace", "version"], "xcrun xctrace"));
+  checks.push(await checkCommandVersion(repoRoot, "xcrun", ["devicectl", "help"], "xcrun devicectl"));
   checks.push(await checkCommandVersion(repoRoot, "maestro", ["--version"], "maestro"));
   try {
     const resolvedTraceProcessorPath = resolveTraceProcessorPath();
@@ -522,25 +523,34 @@ export async function runDoctorWithMaestro(
   try {
     idbCliPath = resolveIdbCliPath();
     idbCompanionPath = resolveIdbCompanionPath();
-    checks.push(idbCliPath ? await checkCommandVersion(repoRoot, idbCliPath, ["--help"], "idb") : summarizeInfoCheck("idb", "fail", "No idb CLI binary is configured."));
-    checks.push(summarizeInfoCheck("idb companion", idbCompanionPath ? "pass" : "fail", idbCompanionPath ? `${idbCompanionPath} is available.` : "No idb_companion binary is configured."));
+    if (idbCliPath) {
+      const idbCheck = await checkCommandVersion(repoRoot, idbCliPath, ["--help"], "idb (deprecated)");
+      if (idbCheck.status === "pass") {
+        idbCheck.status = "warn";
+        idbCheck.detail = "idb is available but deprecated. WARNING: idb is deprecated, migrate to xcrun simctl/devicectl.";
+      }
+      checks.push(idbCheck);
+    } else {
+      checks.push(summarizeInfoCheck("idb (deprecated)", "warn", "idb not configured (deprecated - migrate to xcrun simctl/devicectl)."));
+    }
+    checks.push(summarizeInfoCheck("idb companion (deprecated)", "warn", idbCompanionPath ? "idb_companion available but deprecated." : "idb_companion not configured (deprecated)."));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    checks.push(summarizeInfoCheck("idb", "fail", message));
-    checks.push(summarizeInfoCheck("idb companion", "warn", message));
+    checks.push(summarizeInfoCheck("idb (deprecated)", "fail", message));
+    checks.push(summarizeInfoCheck("idb companion (deprecated)", "warn", message));
   }
   try {
     const idbTargetResult = await executeRunner(buildIdbCommand(["list-targets"]), repoRoot, process.env);
     const targetUdid = process.env.SIM_UDID ?? DEFAULT_IOS_SIMULATOR_UDID;
     checks.push(summarizeInfoCheck(
-      "idb target visibility",
-      idbTargetResult.exitCode === 0 && idbTargetResult.stdout.includes(targetUdid) ? "pass" : "warn",
+      "idb target visibility (deprecated)",
+      idbTargetResult.exitCode === 0 && idbTargetResult.stdout.includes(targetUdid) ? "warn" : "warn",
       idbTargetResult.exitCode === 0 && idbTargetResult.stdout.includes(targetUdid)
-        ? `idb can see target ${targetUdid}.`
-        : `idb could not confirm target ${targetUdid}.`,
+        ? `idb can see target ${targetUdid} (deprecated - migrate to simctl).`
+        : `idb could not confirm target ${targetUdid} (deprecated backend).`,
     ));
   } catch {
-    checks.push(summarizeInfoCheck("idb target visibility", "warn", "idb target visibility could not be verified."));
+    checks.push(summarizeInfoCheck("idb target visibility (deprecated)", "warn", "idb target visibility check skipped (deprecated backend)."));
   }
 
   checks.push(...(await collectHarnessChecks(repoRoot)));

@@ -1,14 +1,8 @@
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import { buildIosNativeLocatorCandidate, extractIosEditableNodeValue, isIosEditableNode, parseIosInspectNodes } from "./ui-model.js";
 import type { UiResolvedPointVerificationParams, UiResolvedPointVerificationResult, UiRuntimePlatformHooks, UiRuntimeProbeAction, UiTypedPostconditionVerificationParams } from "./ui-runtime-platform.js";
-import {
-  buildIdbCommand,
-  buildIosUiDescribePointCommand,
-  buildIosSwipeCommand,
-  buildIosUiDescribeCommand,
-  executeUiActionCommand,
-  probeIdbAvailability,
-} from "./ui-runtime.js";
+import { getIosBackendRouter } from "./ios-backend-router.js";
+import { executeUiActionCommand } from "./ui-runtime.js";
 import { buildFailureReason } from "./runtime-shared.js";
 
 function escapeYamlDoubleQuoted(value: string): string {
@@ -90,12 +84,12 @@ export function buildIosPhysicalActionExecutionPlan(
 
 function buildProbeSuggestion(action: UiRuntimeProbeAction): string {
   if (action === "inspect_ui") {
-    return "iOS inspect_ui in this repo requires idb. Install idb-companion and fb-idb, then retry inspect_ui.";
+    return "iOS inspect_ui uses xcrun simctl (simulators) or devicectl+Maestro (physical devices). Run 'mobile-e2e-mcp doctor' to verify backend availability.";
   }
   if (action === "tap") {
-    return "iOS tap requires idb. Install fb-idb and idb_companion, or set IDB_CLI_PATH/IDB_COMPANION_PATH before retrying.";
+    return "iOS tap uses xcrun simctl io tap (simulators) or Maestro flow YAML (physical devices). Set IOS_EXECUTION_BACKEND to force a specific backend.";
   }
-  return "iOS type_text requires idb. Install fb-idb and idb_companion, or set IDB_CLI_PATH/IDB_COMPANION_PATH before retrying.";
+  return "iOS type_text uses xcrun simctl keyboard type (simulators) or Maestro flow YAML (physical devices). Set IOS_EXECUTION_BACKEND to force a specific backend.";
 }
 
 export function isIosSimulatorOnlyIdbActionError(stderr: string): boolean {
@@ -222,22 +216,44 @@ export async function verifyTypedIosPostconditionWithHooks(
 }
 
 export function createIosUiRuntimeHooks(): UiRuntimePlatformHooks {
+  const router = getIosBackendRouter();
+
   return {
     platform: "ios",
     requiresProbe: true,
     probeFailureReasonCode: REASON_CODES.configurationError,
-    buildTapCommand: (deviceId, x, y) => buildIdbCommand(["ui", "tap", String(x), String(y), "--udid", deviceId]),
-    buildDescribePointCommand: (deviceId, x, y) => buildIosUiDescribePointCommand(deviceId, x, y),
+    buildTapCommand: (deviceId, x, y) => {
+      const backend = router.selectBackend(deviceId);
+      return backend.buildTapCommand(deviceId, x, y);
+    },
+    buildDescribePointCommand: (deviceId, x, y) => {
+      const backend = router.selectBackend(deviceId);
+      return backend.buildHierarchyCaptureCommand(deviceId);
+    },
     verifyResolvedPoint: verifyResolvedIosPointWithHooks,
     verifyTypedPostcondition: verifyTypedIosPostconditionWithHooks,
-    buildTypeTextCommand: (deviceId, text) => buildIdbCommand(["ui", "text", text, "--udid", deviceId]),
-    buildSwipeCommand: (deviceId, swipe) => buildIosSwipeCommand(deviceId, swipe),
-    buildHierarchyCapturePreviewCommand: (deviceId) => buildIosUiDescribeCommand(deviceId),
-    probeRuntimeAvailability: async (repoRoot) => probeIdbAvailability(repoRoot),
+    buildTypeTextCommand: (deviceId, text) => {
+      const backend = router.selectBackend(deviceId);
+      return backend.buildTypeTextCommand(deviceId, text);
+    },
+    buildSwipeCommand: (deviceId, swipe) => {
+      const backend = router.selectBackend(deviceId);
+      return backend.buildSwipeCommand(deviceId, swipe);
+    },
+    buildHierarchyCapturePreviewCommand: (deviceId) => {
+      const backend = router.selectBackend(deviceId);
+      return backend.buildHierarchyCaptureCommand(deviceId);
+    },
+    probeRuntimeAvailability: async (repoRoot) => {
+      const summary = await router.probeAllBackends(repoRoot);
+      if (summary.simctl.available) return { exitCode: 0, stdout: `simctl ${summary.simctl.version ?? ""}`, stderr: "" };
+      if (summary.devicectl.available) return { exitCode: 0, stdout: `devicectl ${summary.devicectl.version ?? ""}`, stderr: "" };
+      return undefined;
+    },
     probeUnavailableSuggestion: buildProbeSuggestion,
-    tapDryRunSuggestion: "Run tap without dryRun to perform iOS coordinate tap through idb (simulator-first path).",
-    tapFailureSuggestion: "If iOS tap fails, verify idb for simulator targets or Maestro iOS driver signing for physical-device targets before retrying.",
-    typeTextDryRunSuggestion: "Run type_text without dryRun to perform iOS text entry through idb (simulator-first path).",
-    typeTextFailureSuggestion: "If iOS type_text fails, verify idb for simulator targets or Maestro iOS driver signing for physical-device targets before retrying.",
+    tapDryRunSuggestion: "Run tap without dryRun to perform iOS coordinate tap through the auto-selected backend (simctl for simulators, devicectl+Maestro for physical devices).",
+    tapFailureSuggestion: "If iOS tap fails, check simulator boot state or physical device connectivity. Verify backend selection with 'mobile-e2e-mcp doctor'.",
+    typeTextDryRunSuggestion: "Run type_text without dryRun to perform iOS text entry through the auto-selected backend.",
+    typeTextFailureSuggestion: "If iOS type_text fails, verify backend availability and device state. Run 'mobile-e2e-mcp doctor' for diagnostics.",
   };
 }

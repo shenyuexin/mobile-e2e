@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { isIosPhysicalDeviceId } from "./device-runtime.js";
 import type { CrashSignalExecutionResult, DeviceRuntimePlatformHooks } from "./device-runtime-platform.js";
-import { probeIdbAvailability } from "./ui-runtime.js";
+import { getIosBackendRouter } from "./ios-backend-router.js";
 import { executeRunner, shellEscape, type CommandExecution } from "./runtime-shared.js";
 
 const DEFAULT_DEVICE_COMMAND_TIMEOUT_MS = 5000;
@@ -79,8 +79,14 @@ async function listArtifacts(rootPath: string, repoRoot: string): Promise<string
   return files;
 }
 
-async function runIdbPreflight(repoRoot: string): Promise<void> {
-  await probeIdbAvailability(repoRoot).catch(() => undefined);
+async function runIosBackendPreflight(repoRoot: string): Promise<void> {
+  const router = getIosBackendRouter();
+  const summary = await router.probeAllBackends(repoRoot).catch(() => undefined);
+  // Preflight passes if at least one backend is available
+  if (summary?.simctl.available || summary?.devicectl.available) {
+    return;
+  }
+  // No backend available - don't throw, just silently continue (same as old behavior)
 }
 
 export function extractIosPhysicalAppName(devicectlAppsOutput: string, appId: string): string | undefined {
@@ -563,7 +569,7 @@ export function createIosDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
       }
 
       // Simulator path (existing)
-      await runIdbPreflight(repoRoot);
+      await runIosBackendPreflight(repoRoot);
       const homeExecution = await executeRunner(capture.commands[0], repoRoot, process.env);
       if (homeExecution.exitCode !== 0) {
         return {

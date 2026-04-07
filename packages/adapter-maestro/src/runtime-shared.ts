@@ -134,3 +134,30 @@ export async function executeRunner(command: string[], repoRoot: string, env: No
     child.on("close", (exitCode) => finish(() => resolve({ exitCode, stdout, stderr })));
   });
 }
+
+// -- Test hooks --
+
+let _testExecuteRunner: typeof executeRunner | null = null;
+
+/** Override executeRunner for testing. */
+export function setExecuteRunnerForTesting(fn: typeof executeRunner | null): void {
+  _testExecuteRunner = fn;
+}
+
+/** Clear the executeRunner test override. */
+export function resetExecuteRunnerForTesting(): void {
+  _testExecuteRunner = null;
+}
+
+/** Internal executeRunner wrapper that respects test overrides. */
+export async function executeRunnerWithTestHooks(
+  command: string[],
+  repoRoot: string,
+  env: NodeJS.ProcessEnv,
+  options?: CommandExecutionOptions,
+): Promise<CommandExecution> {
+  if (_testExecuteRunner) {
+    return _testExecuteRunner(command, repoRoot, env, options);
+  }
+  return executeRunner(command, repoRoot, env, options);
+}

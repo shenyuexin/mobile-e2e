@@ -13,11 +13,7 @@ import type {
 	RecordingPlatformHooks,
 } from "./recording-runtime-platform.js";
 import { executeRunner, shellEscape } from "./runtime-shared.js";
-import {
-    buildIdbCommand,
-	buildIosUiDescribeCommand,
-	probeIdbAvailability,
-} from "./ui-runtime.js";
+import { getIosBackendRouter } from "./ios-backend-router.js";
 
 export interface SimctlDeviceEntry {
 	udid: string;
@@ -165,14 +161,16 @@ export async function captureIosContextSnapshot(
 		};
 	}
 
-	const idbProbe = await probeIdbAvailability(params.repoRoot);
-	if (!idbProbe || idbProbe.exitCode !== 0) {
-		warnings.push("Failed to capture iOS UI snapshot: idb is unavailable.");
+	const router = getIosBackendRouter();
+	const backend = router.selectBackend(params.deviceId);
+	const probeResult = await backend.probeAvailability(params.repoRoot);
+	if (!probeResult.available) {
+		warnings.push(`Failed to capture iOS UI snapshot: ${backend.backendName} is unavailable (${probeResult.error ?? ""})`);
 		return { warnings };
 	}
 
 	await mkdir(path.dirname(snapshotAbsolutePath), { recursive: true });
-	const command = buildIosUiDescribeCommand(params.deviceId);
+	const command = backend.buildHierarchyCaptureCommand(params.deviceId);
 	const snapshotResult = await executeRunner(
 		command,
 		params.repoRoot,
@@ -302,11 +300,12 @@ export async function startIosCaptureProcesses(
 		return {};
 	}
 	const isPhysicalDevice = isIosPhysicalRecordingDeviceId(params.deviceId);
-	const idbProbe = await probeIdbAvailability(params.repoRoot);
-	if (!idbProbe || idbProbe.exitCode !== 0) {
+	const router = getIosBackendRouter();
+	const backend = router.selectBackend(params.deviceId);
+	const probeResult = await backend.probeAvailability(params.repoRoot);
+	if (!probeResult.available) {
 		return {
-			failureSuggestion:
-				"iOS recording requires idb + idb_companion. Install and verify with `idb list-targets`, then retry start_record_session.",
+			failureSuggestion: `iOS recording requires ${backend.backendName}. ${probeResult.error ?? "Verify backend availability with 'mobile-e2e-mcp doctor'."}`,
 		};
 	}
 
@@ -323,10 +322,7 @@ export async function startIosCaptureProcesses(
 			};
 		}
 	} else {
-		const idbLogCommand = buildIdbCommand(["log", "--udid", params.deviceId])
-			.map((segment) => shellEscape(segment))
-			.join(" ");
-		const shellCommand = `${idbLogCommand} > ${shellEscape(params.rawEventsAbsolutePath)} 2>&1`;
+		const shellCommand = `xcrun devicectl device info logs --device ${shellEscape(params.deviceId)} > ${shellEscape(params.rawEventsAbsolutePath)} 2>&1`;
 		pid = spawnDetachedShell(shellCommand, params.repoRoot, process.env);
 		if (!pid) {
 			return {
@@ -346,7 +342,8 @@ export async function startIosCaptureProcesses(
 		snapshotDirRelativePath,
 	);
 	await mkdir(snapshotDirAbsolutePath, { recursive: true });
-	const describeCommand = buildIosUiDescribeCommand(params.deviceId)
+	const describeArgs = backend.buildHierarchyCaptureCommand(params.deviceId);
+	const describeCommand = describeArgs
 		.map((segment) => shellEscape(segment))
 		.join(" ");
 	const snapshotLoop = `while true; do ts=$(date +%s%3N); local_path=${shellEscape(path.join(snapshotDirAbsolutePath, `${params.recordSessionId}-$ts.json`))}; ${describeCommand} > $local_path 2>/dev/null; sleep 0.7; done`;

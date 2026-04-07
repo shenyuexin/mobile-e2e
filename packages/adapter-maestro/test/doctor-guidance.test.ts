@@ -3,31 +3,29 @@ import test from "node:test";
 import type { DoctorCheck } from "@mobile-e2e-mcp/contracts";
 import { buildDoctorGuidance, buildDoctorNextSuggestions } from "../src/doctor-guidance.js";
 
-test("buildDoctorNextSuggestions appends IDB install guidance when idb checks fail", () => {
+test("buildDoctorNextSuggestions appends simctl install guidance when xcrun simctl checks fail", () => {
   const checks: DoctorCheck[] = [
     { name: "node", status: "pass", detail: "v22.0.0" },
-    { name: "idb", status: "fail", detail: "No idb CLI binary is configured." },
-    { name: "idb companion", status: "fail", detail: "No idb_companion binary is configured." },
+    { name: "xcrun simctl", status: "fail", detail: "xcrun simctl returned an error." },
   ];
 
   const suggestions = buildDoctorNextSuggestions(checks);
 
-  assert.equal(suggestions.some((item) => item.includes("Resolve idb:")), true);
-  assert.equal(suggestions.some((item) => item.includes("pipx install fb-idb")), true);
-  assert.equal(suggestions.some((item) => item.includes("brew install idb-companion")), true);
-  assert.equal(suggestions.some((item) => item.includes("IDB_CLI_PATH")), true);
+  assert.equal(suggestions.some((item) => item.includes("Resolve xcrun simctl:")), true);
+  assert.equal(suggestions.some((item) => item.includes("xcode-select --install")), true);
+  assert.equal(suggestions.some((item) => item.includes("IOS_EXECUTION_BACKEND")), true);
 });
 
-test("buildDoctorNextSuggestions keeps regular resolution hints when idb checks pass", () => {
+test("buildDoctorNextSuggestions keeps regular resolution hints when simctl checks pass", () => {
   const checks: DoctorCheck[] = [
-    { name: "idb", status: "pass", detail: "idb is available." },
+    { name: "xcrun simctl", status: "pass", detail: "xcrun simctl is available." },
     { name: "maestro", status: "warn", detail: "maestro not found" },
   ];
 
   const suggestions = buildDoctorNextSuggestions(checks);
 
   assert.equal(suggestions.some((item) => item.includes("Resolve maestro:")), true);
-  assert.equal(suggestions.some((item) => item.includes("pipx install fb-idb")), false);
+  assert.equal(suggestions.some((item) => item.includes("xcode-select --install")), false);
 });
 
 test("buildDoctorGuidance returns structured guidance for known dependencies", () => {

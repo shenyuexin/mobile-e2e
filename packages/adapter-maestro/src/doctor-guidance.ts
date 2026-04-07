@@ -25,20 +25,23 @@ function buildResolveSuggestion(check: DoctorCheck): string {
 
 const GUIDANCE_RULES: DoctorGuidanceRule[] = [
   {
-    dependency: "idb",
+    dependency: "idb (deprecated)",
     platformScope: "ios",
     matches: (check) => check.name.toLowerCase() === "idb",
-    installCommands: ["pipx install fb-idb", "pip3 install --user fb-idb"],
-    verifyCommands: ["which idb", "idb list-targets"],
-    envHints: ["Set IDB_CLI_PATH when idb is installed in a non-standard location.", "Required for iOS start_record_session snapshot capture."],
+    installCommands: ["pipx install fb-idb"],
+    verifyCommands: ["which idb"],
+    envHints: [
+      "WARNING: idb is deprecated. Migrate to xcrun simctl for simulators or devicectl for physical devices.",
+      "Set IOS_EXECUTION_BACKEND=idb to continue using idb temporarily.",
+    ],
   },
   {
-    dependency: "idb_companion",
+    dependency: "idb_companion (deprecated)",
     platformScope: "ios",
     matches: (check) => check.name.toLowerCase() === "idb companion",
-    installCommands: ["brew install idb-companion"],
-    verifyCommands: ["which idb_companion", "idb list-targets"],
-    envHints: ["Set IDB_COMPANION_PATH when idb_companion is installed in a non-standard location.", "Required for iOS start_record_session snapshot capture."],
+    installCommands: [],
+    verifyCommands: [],
+    envHints: ["idb_companion is deprecated and no longer needed with xcrun simctl/devicectl backends."],
   },
   {
     dependency: "adb",
@@ -54,7 +57,11 @@ const GUIDANCE_RULES: DoctorGuidanceRule[] = [
     matches: (check) => check.name.toLowerCase() === "xcrun simctl",
     installCommands: ["xcode-select --install", "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"],
     verifyCommands: ["xcrun simctl help", "xcrun simctl list devices"],
-    envHints: ["Accept Xcode license: sudo xcodebuild -license accept.", "Required for iOS simulator log-stream capture used by start_record_session."],
+    envHints: [
+      "Accept Xcode license: sudo xcodebuild -license accept.",
+      "Primary backend for iOS simulator actions (tap, type, swipe, hierarchy, screenshot).",
+      "Set IOS_EXECUTION_BACKEND=simctl to force simctl backend.",
+    ],
   },
   {
     dependency: "xcrun-xctrace",
@@ -63,6 +70,19 @@ const GUIDANCE_RULES: DoctorGuidanceRule[] = [
     installCommands: ["xcode-select --install", "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"],
     verifyCommands: ["xcrun xctrace version"],
     envHints: ["Ensure full Xcode command line tools are available for performance capture."],
+  },
+  {
+    dependency: "xcrun-devicectl",
+    platformScope: "ios",
+    matches: (check) => check.name.toLowerCase() === "xcrun devicectl",
+    installCommands: ["xcode-select --install", "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"],
+    verifyCommands: ["xcrun devicectl help"],
+    envHints: [
+      "Requires Xcode 14+ (devicectl introduced in Xcode 14).",
+      "Used for physical device lifecycle (install, launch, terminate, logs, crashes).",
+      "UI interactions on physical devices use Maestro flow YAML as execution backend.",
+      "Set IOS_EXECUTION_BACKEND=devicectl to force devicectl backend.",
+    ],
   },
   {
     dependency: "maestro",
