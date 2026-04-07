@@ -510,6 +510,16 @@ export async function runDoctorWithMaestro(
   checks.push(await checkCommandVersion(repoRoot, "xcrun", ["xctrace", "version"], "xcrun xctrace"));
   checks.push(await checkCommandVersion(repoRoot, "xcrun", ["devicectl", "help"], "xcrun devicectl"));
   checks.push(await checkCommandVersion(repoRoot, "axe", ["--version"], "axe"));
+
+  // WDA HTTP endpoint check
+  try {
+    const wdaCheck = await fetch("http://localhost:8100/status", { signal: AbortSignal.timeout(2000) });
+    checks.push(summarizeInfoCheck("wda", wdaCheck.ok ? "pass" : "warn",
+      wdaCheck.ok ? "WDA is responding on localhost:8100." : `WDA returned ${wdaCheck.status}.`));
+  } catch {
+    checks.push(summarizeInfoCheck("wda", "warn", "WDA is not responding on localhost:8100. Run 'iproxy 8100 8100 --udid <udid> &' first."));
+  }
+
   checks.push(await checkCommandVersion(repoRoot, "maestro", ["--version"], "maestro"));
   try {
     const resolvedTraceProcessorPath = resolveTraceProcessorPath();

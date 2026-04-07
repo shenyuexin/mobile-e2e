@@ -76,6 +76,22 @@ const GUIDANCE_RULES: DoctorGuidanceRule[] = [
     ],
   },
   {
+    dependency: "wda",
+    platformScope: "ios",
+    matches: (check) => check.name.toLowerCase() === "wda",
+    installCommands: [
+      "brew install libusbmuxd",
+      "git clone https://github.com/appium/WebDriverAgent",
+      "Open WebDriverAgent.xcodeproj in Xcode and build to device",
+    ],
+    verifyCommands: ["iproxy --version", "curl http://localhost:8100/status"],
+    envHints: [
+      "Run 'iproxy 8100 8100 --udid <deviceId> &' before using WDA backend.",
+      "WDA requires code signing. Free Apple ID works (7-day expiry).",
+      "Set IOS_EXECUTION_BACKEND=wda to force WDA backend for physical devices.",
+    ],
+  },
+  {
     dependency: "xcrun-xctrace",
     platformScope: "ios",
     matches: (check) => check.name.toLowerCase() === "xcrun xctrace",

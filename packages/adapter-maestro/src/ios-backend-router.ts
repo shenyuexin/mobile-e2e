@@ -2,6 +2,7 @@ import type { IosExecutionBackend, BackendProbeResult, BackendProbeSummary } fro
 import { SimctlSimulatorBackend } from "./ios-backend-simctl.js";
 import { AxeSimulatorBackend } from "./ios-backend-axe.js";
 import { DevicectlPhysicalBackend } from "./ios-backend-devicectl.js";
+import { WdaRealDeviceBackend } from "./ios-backend-wda.js";
 import { isIosPhysicalDeviceId } from "./device-runtime.js";
 import { executeRunnerWithTestHooks } from "./runtime-shared.js";
 
@@ -21,9 +22,9 @@ export function resetForTesting(): void {
 
 // -- Router class --
 
-type BackendId = "simctl" | "devicectl" | "maestro" | "idb" | "axe";
+type BackendId = "simctl" | "devicectl" | "maestro" | "idb" | "axe" | "wda";
 
-const VALID_BACKENDS = new Set<BackendId>(["simctl", "devicectl", "maestro", "idb", "axe"]);
+const VALID_BACKENDS = new Set<BackendId>(["simctl", "devicectl", "maestro", "idb", "axe", "wda"]);
 
 function isValidBackendId(value: string): value is BackendId {
   return VALID_BACKENDS.has(value as BackendId);
@@ -31,6 +32,7 @@ function isValidBackendId(value: string): value is BackendId {
 
 export class IosBackendRouter {
   private axeBackend = new AxeSimulatorBackend();
+  private wdaBackend = new WdaRealDeviceBackend();
   private simctlBackend = new SimctlSimulatorBackend();
   private devicectlBackend = new DevicectlPhysicalBackend();
 
@@ -78,14 +80,15 @@ export class IosBackendRouter {
    * Used for doctor checks and fallback-chain diagnostics.
    */
   async probeAllBackends(repoRoot: string): Promise<BackendProbeSummary> {
-    const [axe, simctl, devicectl, maestro] = await Promise.all([
+    const [wda, axe, simctl, devicectl, maestro] = await Promise.all([
+      this.probeWdaAvailability(repoRoot),
       this.axeBackend.probeAvailability(repoRoot),
       this.simctlBackend.probeAvailability(repoRoot),
       this.probeDevicectlAvailability(repoRoot),
       this.probeMaestroAvailability(repoRoot),
     ]);
 
-    return { axe, simctl, devicectl, maestro };
+    return { wda, axe, simctl, devicectl, maestro };
   }
 
   // -- Private helpers --
@@ -111,6 +114,8 @@ export class IosBackendRouter {
           'Backend "idb" is deprecated and not implemented in this phase. ' +
           "Migrate to simctl or devicectl.",
         );
+      case "wda":
+        return this.wdaBackend;
       default: {
         const _exhaustive: never = backendId;
         throw new Error(`Unknown backend: ${String(_exhaustive)}`);
@@ -143,6 +148,10 @@ export class IosBackendRouter {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  private async probeWdaAvailability(repoRoot: string): Promise<BackendProbeResult> {
+    return this.wdaBackend.probeAvailability(repoRoot);
   }
 }
 

@@ -39,6 +39,12 @@ test("selectBackend uses axe when IOS_EXECUTION_BACKEND=axe", () => {
   assert.equal(backend.backendId, "axe");
 });
 
+test("selectBackend uses wda when IOS_EXECUTION_BACKEND=wda", () => {
+  const router = new IosBackendRouter();
+  const backend = router.selectBackend("any-device", { IOS_EXECUTION_BACKEND: "wda" } as NodeJS.ProcessEnv);
+  assert.equal(backend.backendId, "wda");
+});
+
 test("selectBackend throws for invalid IOS_EXECUTION_BACKEND", () => {
   const router = new IosBackendRouter();
   assert.throws(
