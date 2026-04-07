@@ -19,8 +19,8 @@
 | 能力域 | Android | iOS | React Native | Flutter | Preconditions | Determinism Tier | Allowed Fallback | Required Scope(示例) | Emitted Telemetry/Artifacts | 关键 Caveat |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Device/App 生命周期 | Supported | Supported | 复用平台能力（Supported） | 复用平台能力（Android Supported, iOS Partial） | device lease + valid app id | D0 | 无 | install/uninstall/clear-data | lifecycle events, install logs | 设备租约冲突需调度层兜底 |
-| UI inspect/query/resolve | Supported | Partial（idb hierarchy 基线） | 复用平台 + debug 补充（Partial+） | 依赖语义质量（Partial） | app foreground + inspect permission | D0 | D1（OCR） | inspect/screenshot | ui tree snapshot, query traces | iOS 与 Flutter 语义覆盖不均 |
-| tap/type/wait/flow | Supported | Partial（idb 路径） | 复用平台执行 lane（Partial） | Android Partial，iOS Partial | resolved target + write scope | D0 | D1/D2（有界） | tap/type/swipe | action outcome, attempts, timeline | post-condition 校验必须开启 |
+| UI inspect/query/resolve | Supported | Partial（AXe hierarchy 基线，真机 WDA Phase 15+） | 复用平台 + debug 补充（Partial+） | 依赖语义质量（Partial） | app foreground + inspect permission | D0 | D1（OCR） | inspect/screenshot | ui tree snapshot, query traces | iOS 与 Flutter 语义覆盖不均 |
+| tap/type/wait/flow | Supported | Partial（AXe / WDA 路径） | 复用平台执行 lane（Partial） | Android Partial，iOS Partial | resolved target + write scope | D0 | D1/D2（有界） | tap/type/swipe | action outcome, attempts, timeline | post-condition 校验必须开启 |
 | interruption handling | Supported（规则基线） | Supported（规则基线） | 复用平台 interruption flow | 复用平台 interruption flow | pre/post guard enabled | D0 | D1（未知中断仅证据化） | interrupt / interrupt-high-risk | interruption events, screenshot/tree bundle | 高风险自动处置默认禁用 |
 | OCR fallback | 有界支持 | 有界支持 | 有界支持 | 有界支持（更常见） | deterministic fail + policy allow + confidence gate | D1 | D2（仅显式放行） | ocr-action（目标） | OCR output, confidence, fallback trace | 当前 scope 粒度仍在演进 |
 | JS debug observability | N/A | N/A | Supported（snapshot 模式） | N/A | Metro inspector reachable + read scope | D0（只读观测） | 无 | js-debug-read（目标） | console/network snapshots | 非 full debugger，不替代执行面 |
@@ -37,7 +37,7 @@
 
 ### iOS
 
-- 当前仓库以 `idb` 为层级与动作主路径，非 full WDA parity。
+- 当前仓库 iOS 模拟器使用 AXe CLI，真机使用 WDA（Phase 15+）；`idb` 已废弃。
 - selector 能力边界需对调用方显式暴露。
 
 ### React Native

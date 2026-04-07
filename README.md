@@ -206,7 +206,7 @@ Tool registry/signature dispatch live in `packages/mcp-server/src/server.ts`, wh
 
 ## Complete MCP Tool Catalog (Current)
 
-The server currently exposes **55 tools**. For AI agents, this is the current tool surface.
+The server currently exposes **56 tools**. For AI agents, this is the current tool surface.
 
 ### 1) Session & lifecycle
 

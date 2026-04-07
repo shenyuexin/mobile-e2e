@@ -30,6 +30,7 @@ Starting from Phase 13, iOS execution uses a backend router instead of direct `i
 | `ios-backend-axe.ts` | `AxeSimulatorBackend` — simulator actions via AXe CLI (Phase 14+) |
 | `ios-backend-simctl.ts` | `SimctlSimulatorBackend` — screenshot only (simplified in Phase 14) |
 | `ios-backend-devicectl.ts` | `DevicectlPhysicalBackend` — physical device via devicectl + Maestro YAML fallback |
+| `ios-backend-wda.ts` | `WdaRealDeviceBackend` — physical device via WDA HTTP API over iproxy (Phase 15+) |
 | `ios-backend-router.ts` | `IosBackendRouter` — selection logic, probe summary, test hooks |
 
 ### Simulator Backend (FULL support — Phase 14+)
@@ -52,7 +53,7 @@ AXe uses Apple's Accessibility APIs + idb's lower-level frameworks directly, but
 
 ### Backend Selection Logic
 
-1. **Environment variable**: `IOS_EXECUTION_BACKEND=axe|simctl|devicectl|maestro|idb`
+1. **Environment variable**: `IOS_EXECUTION_BACKEND=axe|wda|simctl|devicectl|maestro|idb`
 2. **Auto-detect**: Simulator UDID → axe, Physical UDID → devicectl
 3. **Fallback**: devicectl unavailable → maestro; axe unavailable throws (install axe: `brew install cameroncooke/axe/axe`)
 
@@ -79,9 +80,9 @@ From devicectl + Maestro (physical devices):
 - UI interactions: Maestro flow YAML (tapOn, inputText, swipe)
 - logs/crashes: `xcrun devicectl device info logs|crashes`
 
-From WDA model (future):
+From WDA (Phase 15+):
 
-- WebDriver-compatible element interaction
+- WebDriver-compatible element interaction via direct HTTP API over iproxy tunnel
 - app lifecycle control
 - scrolling/tap/type/assertions on iOS/tvOS
 
@@ -100,9 +101,11 @@ From WDA model (future):
 
 Important note for the current repository state (Phase 13+):
 
-- `inspect_ui`, `query_ui`, `resolve_ui_target`, `wait_for_ui`, and `scroll_and_resolve_ui_target` use `xcrun simctl spawn accessibility dump` for simulators and Maestro snapshot for physical devices.
-- Direct iOS `tap` and `type_text` are wired through `xcrun simctl io tap` and `xcrun simctl keyboard type` for simulators, and Maestro flow YAML for physical devices.
-- Selector-driven `tap_element`, `type_into_element`, and `scroll_and_tap_element` are implemented through hierarchy resolution plus the simctl/Maestro-backed action path.
+- `inspect_ui`, `query_ui`, `resolve_ui_target`, `wait_for_ui`, and `scroll_and_resolve_ui_target` use `axe describe-ui` (AXe CLI) for simulators and Maestro snapshot for physical devices.
+- Direct iOS `tap` and `type_text` are wired through `axe tap` and `axe type` (AXe CLI) for simulators, and Maestro flow YAML for physical devices.
+- `swipe` uses `axe swipe` (AXe CLI) for simulators.
+- `screenshot` uses `xcrun simctl io screenshot` (simctl, kept as secondary).
+- Selector-driven `tap_element`, `type_into_element`, and `scroll_and_tap_element` are implemented through hierarchy resolution plus the AXe CLI/Maestro-backed action path.
 - Physical device UI interactions are marked PARTIAL due to Maestro dependency for execution.
 
 ## Phase 1

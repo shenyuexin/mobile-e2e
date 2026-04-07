@@ -28,7 +28,7 @@ graph TD
 
     subgraph "Mobile Ecosystem (物理/模拟环境)"
         Android[Android ADB / UIAutomator / Maestro]
-        iOS[iOS idb / simctl / XCUITest]
+        iOS[iOS axe / WDA / simctl / devicectl]
     end
 
     Agent <--> MCP
@@ -60,7 +60,7 @@ graph TD
 ### 2.2 执行平面 (Execution Plane)
 - **Maestro Adapter (`packages/adapter-maestro`)**:
     - **确定性优先**: 优先通过 UI Tree (XML/JSON) 进行元素定位。
-    - **原生通信**: 直接调用 ADB (Android) 和 idb/simctl (iOS) 的底层命令。
+    - **原生通信**: 直接调用 ADB (Android) 和 axe/WDA/simctl/devicectl (iOS) 的底层命令。
 - **Vision Adapter (`packages/adapter-vision`)**:
     - **OCR 兜底**: 当 UI 树失效时，使用 macOS Vision 框架进行文字识别。
     - **模糊匹配**: 处理 UI 变动带来的不确定性。
