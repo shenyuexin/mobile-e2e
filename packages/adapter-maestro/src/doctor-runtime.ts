@@ -511,6 +511,9 @@ export async function runDoctorWithMaestro(
   checks.push(await checkCommandVersion(repoRoot, "xcrun", ["devicectl", "help"], "xcrun devicectl"));
   checks.push(await checkCommandVersion(repoRoot, "axe", ["--version"], "axe"));
 
+  // iproxy check (needed for WDA port forwarding)
+  checks.push(await checkCommandVersion(repoRoot, "iproxy", ["--version"], "iproxy"));
+
   // WDA HTTP endpoint check
   try {
     const wdaCheck = await fetch("http://localhost:8100/status", { signal: AbortSignal.timeout(2000) });

@@ -62,6 +62,7 @@
 | 失败处理 | 命令或断言失败信息 | 结构化诊断 + 候选根因排序 + 修复建议 |
 | AI 适配 | 可接入，但非一等抽象 | 原生面向 AI Agent 设计 |
 | 证据模型 | 依赖外部拼装 | 内建证据优先 action outcome |
+| Helper app 依赖 | iOS/Android 回放都需要 | Android: owned-adb 主路径（常用命令不需要 helper app）；iOS 模拟器: axe CLI；iOS 真机: WDA（一次性配置） |
 
 ## FAQ
 

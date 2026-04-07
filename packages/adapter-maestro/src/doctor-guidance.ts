@@ -92,6 +92,17 @@ const GUIDANCE_RULES: DoctorGuidanceRule[] = [
     ],
   },
   {
+    dependency: "iproxy",
+    platformScope: "ios",
+    matches: (check) => check.name.toLowerCase() === "iproxy",
+    installCommands: ["brew install libusbmuxd"],
+    verifyCommands: ["iproxy --version"],
+    envHints: [
+      "iproxy is required for WDA port forwarding (device localhost:8100 → Mac localhost:8100).",
+      "Install: brew install libusbmuxd",
+    ],
+  },
+  {
     dependency: "xcrun-xctrace",
     platformScope: "ios",
     matches: (check) => check.name.toLowerCase() === "xcrun xctrace",

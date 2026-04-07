@@ -1,6 +1,8 @@
 # Vivo/Oppo 多用户（XSpace）回放排查与操作手册
 
-> 适用场景：`run_flow` 在 vivo/oppo 真机上出现 `dev.mobile.maestro` 重复安装请求，或回放在首个 UI 步骤超时。
+> 适用场景：`run_flow` 在 vivo/oppo 真机上需要执行 Maestro 专属命令（extendedWaitUntil, setClipboard, openLink 等），或者回放在首个 UI 步骤超时。
+>
+> **注意**：Phase 16 之后，绝大多数 Android 回放命令（launchApp, tapOn, inputText, assertVisible, assertNotVisible, swipe, back, home, hideKeyboard, stopApp, clearState）已通过 owned-adb 原生执行，**不需要安装 `dev.mobile.maestro` helper app**。仅当 flow 包含 owned-adb 不支持的命令时才会回退到 Maestro。
 
 ## 1) 先确认是否是多用户场景
 
