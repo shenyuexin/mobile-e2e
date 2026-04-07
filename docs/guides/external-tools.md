@@ -9,7 +9,7 @@
 | Tool | Platform | Install | Used For | Required? |
 |---|---|---|---|---|
 | **axe** | macOS | `brew install cameroncooke/axe/axe` | iOS simulator UI automation | ✅ Yes (iOS simulators) |
-| **WebDriverAgent** | macOS + iOS | Build from source (see [WDA Setup](wda-setup.md)) | iOS physical device UI automation | ✅ Yes (iOS physical devices) |
+| **WebDriverAgent** | macOS + iOS | Build from source (see [WDA Setup](wda-setup.md)) | iOS physical device UI automation (primary) | ✅ Yes (iOS physical devices) |
 | **iproxy** | macOS | `brew install libusbmuxd` | WDA port forwarding | ✅ Yes (iOS physical devices) |
 | **adb** | macOS/Linux/Windows | `brew install android-platform-tools` | Android device communication | ✅ Yes (Android devices) |
 | **Maestro** | macOS/Linux/Windows | `curl -Ls https://get.maestro.mobile.dev \| bash` | Fallback for edge-case replay commands | ⚠️ Optional (edge-case commands only) |
@@ -80,13 +80,12 @@ See the dedicated **[WDA Setup Guide](wda-setup.md)** for complete instructions.
 
 ### Quick summary
 
-| Step | Command |
-|---|---|
-| 1. Clone | `git clone https://github.com/appium/WebDriverAgent && cd WebDriverAgent` |
-| 2. Build | Open in Xcode → Build For Testing → select device |
-| 3. Launch | `xcrun devicectl device process launch --device <UDID> <BUNDLE_ID>` |
-| 4. Forward | `iproxy 8100 8100 --udid <UDID> &` |
-| 5. Verify | `curl -s http://localhost:8100/status` |
+WDA is auto-selected when you target a physical device UDID. No environment variable needed — the router detects device type and routes accordingly:
+
+```
+Simulator UDID (ABCD1234-...)  → axe backend
+Physical UDID   (00008110-...) → wda backend (direct HTTP API)
+```
 
 ---
 

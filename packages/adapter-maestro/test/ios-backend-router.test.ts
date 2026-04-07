@@ -14,11 +14,11 @@ test("selectBackend selects axe for simulator UDID", () => {
   assert.equal(backend.backendId, "axe");
 });
 
-test("selectBackend selects devicectl for physical device UDID", () => {
+test("selectBackend selects wda for physical device UDID", () => {
   const router = new IosBackendRouter();
   // Physical device UDIDs are not UUIDs - they're hex strings like "00008110-001234567890001E"
   const backend = router.selectBackend("00008110-001234567890001E");
-  assert.equal(backend.backendId, "devicectl");
+  assert.equal(backend.backendId, "wda");
 });
 
 test("selectBackend uses simctl when IOS_EXECUTION_BACKEND=simctl", () => {

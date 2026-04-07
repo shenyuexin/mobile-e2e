@@ -42,7 +42,7 @@ export class IosBackendRouter {
    * Priority:
    * 1. Test override (setBackendForTesting)
    * 2. Explicit IOS_EXECUTION_BACKEND environment variable
-   * 3. Auto-detect by device type (physical UDID -> devicectl, simulator UDID -> axe)
+   * 3. Auto-detect by device type (physical UDID -> wda, simulator UDID -> axe)
    */
   selectBackend(deviceId: string, env: NodeJS.ProcessEnv = process.env): IosExecutionBackend {
     // Test override
@@ -70,7 +70,7 @@ export class IosBackendRouter {
 
     // 2. Auto-detect by device type
     if (isIosPhysicalDeviceId(deviceId)) {
-      return this.devicectlBackend;
+      return this.wdaBackend;
     }
     return this.axeBackend;
   }
