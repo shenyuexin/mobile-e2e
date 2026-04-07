@@ -50,10 +50,14 @@ export class SimctlSimulatorBackend implements IosExecutionBackend {
     return ["xcrun", "simctl", "io", deviceId, "screenshot", outputPath];
   }
 
-  buildFailureSuggestion(action: string, deviceId: string): string {
+  buildFailureSuggestion(action: string, _deviceId: string): string {
     const suggestions: Record<string, string> = {
       screenshot: "Check simulator is booted and output path is writable.",
+      tap: "simctl does not support tap. Use axe backend: brew install cameroncooke/axe/axe",
+      typeText: "simctl does not support typeText. Use axe backend: brew install cameroncooke/axe/axe",
+      swipe: "simctl does not support swipe. Use axe backend: brew install cameroncooke/axe/axe",
+      hierarchy: "simctl does not support hierarchy. Use axe backend: brew install cameroncooke/axe/axe",
     };
-    return suggestions[action] ?? `Check simulator state for ${action} action.`;
+    return suggestions[action] ?? `Check simulator state for ${action} action. Install axe for full UI support: brew install cameroncooke/axe/axe`;
   }
 }

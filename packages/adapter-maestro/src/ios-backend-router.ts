@@ -40,7 +40,7 @@ export class IosBackendRouter {
    * Priority:
    * 1. Test override (setBackendForTesting)
    * 2. Explicit IOS_EXECUTION_BACKEND environment variable
-   * 3. Auto-detect by device type (physical UDID -> devicectl, simulator UDID -> simctl)
+   * 3. Auto-detect by device type (physical UDID -> devicectl, simulator UDID -> axe)
    */
   selectBackend(deviceId: string, env: NodeJS.ProcessEnv = process.env): IosExecutionBackend {
     // Test override
@@ -127,10 +127,6 @@ export class IosBackendRouter {
         error: error instanceof Error ? error.message : String(error),
       };
     }
-  }
-
-  private async probeAxeAvailability(repoRoot: string): Promise<BackendProbeResult> {
-    return this.axeBackend.probeAvailability(repoRoot);
   }
 
   private async probeMaestroAvailability(repoRoot: string): Promise<BackendProbeResult> {

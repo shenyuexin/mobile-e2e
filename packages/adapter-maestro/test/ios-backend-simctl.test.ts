@@ -97,6 +97,13 @@ test("buildFailureSuggestion returns screenshot-specific suggestion", () => {
   assert.ok(suggestion.includes("simulator is booted"));
 });
 
+test("buildFailureSuggestion returns axe suggestion for unsupported tap", () => {
+  const backend = new SimctlSimulatorBackend();
+  const suggestion = backend.buildFailureSuggestion("tap", "ABCD-1234");
+  assert.ok(suggestion.includes("axe"));
+  assert.ok(suggestion.includes("brew install"));
+});
+
 test("buildFailureSuggestion returns generic suggestion for unsupported action", () => {
   const backend = new SimctlSimulatorBackend();
   const suggestion = backend.buildFailureSuggestion("unknown", "ABCD-1234");

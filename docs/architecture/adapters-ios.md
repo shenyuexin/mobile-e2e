@@ -54,7 +54,7 @@ AXe uses Apple's Accessibility APIs + idb's lower-level frameworks directly, but
 
 1. **Environment variable**: `IOS_EXECUTION_BACKEND=axe|simctl|devicectl|maestro|idb`
 2. **Auto-detect**: Simulator UDID → axe, Physical UDID → devicectl
-3. **Fallback**: axe unavailable → idb (deprecated warning) → error; devicectl unavailable → maestro
+3. **Fallback**: devicectl unavailable → maestro; axe unavailable throws (install axe: `brew install cameroncooke/axe/axe`)
 
 ---
 
