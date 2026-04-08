@@ -3,7 +3,7 @@ import type { ReasonCode } from "./reason-codes.js";
 export type Platform = "android" | "ios";
 export type ToolStatus = "success" | "failed" | "partial";
 export type RunnerProfile = "phase1" | "native_android" | "native_ios" | "flutter_android";
-export type CapabilitySupportLevel = "full" | "partial" | "unsupported";
+export type CapabilitySupportLevel = "full" | "conditional" | "partial" | "unsupported";
 export type ManualHandoffReason = "otp_required" | "captcha_required" | "consent_required" | "protected_page" | "secure_input_required" | "unknown";
 export type ProtectedPageObservability = "normal" | "ui_tree_only" | "screenshot_limited" | "limited";
 export type ExecutionEvidenceKind = "ui_dump" | "screenshot" | "screen_recording" | "log" | "crash_signal" | "diagnostics_bundle" | "debug_summary" | "performance_trace" | "performance_summary" | "performance_export";
@@ -225,6 +225,7 @@ export interface ToolCapability {
   supportLevel: CapabilitySupportLevel;
   note: string;
   requiresSession?: boolean;
+  condition?: string;
   promotionGate?: SupportPromotionGate;
 }
 
@@ -233,6 +234,7 @@ export interface CapabilityGroup {
   supportLevel: CapabilitySupportLevel;
   toolNames: string[];
   note?: string;
+  condition?: string;
   promotionGate?: SupportPromotionGate;
 }
 
