@@ -85,6 +85,7 @@ import { terminateApp } from "./tools/terminate-app.js";
 import { typeIntoElement } from "./tools/type-into-element.js";
 import { typeText } from "./tools/type-text.js";
 import { validateFlowTool } from "./tools/validate-flow.js";
+import { probeNetworkReadinessTool } from "./tools/probe-network-readiness.js";
 import { waitForUi } from "./tools/wait-for-ui.js";
 
 interface ActiveSessionCandidate {
@@ -952,6 +953,14 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     handler: waitForUi,
     policy: { enforced: true, requiredScopes: ["read"] },
     session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "probe_network_readiness",
+    description: "Probe network readiness on Android or iOS device, returning connectivity status, latency, DNS health, backend reachability, and a recovery strategy recommendation.",
+    handler: probeNetworkReadinessTool,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({

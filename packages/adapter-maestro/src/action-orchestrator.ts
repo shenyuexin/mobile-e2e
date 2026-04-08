@@ -2,6 +2,8 @@ import {
   type ActionIntent,
   type ManualHandoffRecommendation,
   type ActionOutcomeSummary,
+  type NetworkReadinessProbe,
+  type NetworkRecoveryStrategy,
   type PerformActionWithEvidenceData,
   type PerformActionWithEvidenceInput,
   type Platform,
@@ -36,6 +38,7 @@ import {
   buildRetryRecommendations,
   classifyActionFailureCategory,
   classifyNetworkReadiness,
+  classifyNetworkRecoveryStrategy,
   classifyRetryRecommendationTier,
   classifyStepState,
   classifyTargetQuality,
@@ -46,6 +49,9 @@ import {
   shouldRetryStep,
   uniqueNonEmpty,
 } from "./action-orchestrator-model.js";
+import {
+  probeNetworkReadiness,
+} from "./network-probe.js";
 import {
   canAttemptOcrFallback,
   executeOcrFallback,
@@ -783,6 +789,41 @@ export async function performActionWithEvidenceWithMaestro(
     }
   }
 
+  // Plan 18-01: Network probe in failure path only — do NOT modify happy path
+  const networkRelatedCategories = ["waiting", "transport", "no_state_change"];
+  const shouldProbeNetwork = finalToolStatus !== "success"
+    && networkRelatedCategories.includes(finalOutcome.failureCategory ?? "");
+
+  let networkProbeResult: NetworkReadinessProbe | undefined;
+  let networkRecoveryStrategyResult: NetworkRecoveryStrategy | undefined;
+  if (shouldProbeNetwork) {
+    const probeSessionRecord = sessionRecord;
+    const probeDeviceId = input.deviceId ?? probeSessionRecord?.session.deviceId;
+    const probeAppId = input.appId ?? probeSessionRecord?.session.appId;
+    if (probeDeviceId) {
+      try {
+        const probeResult = await probeNetworkReadiness({
+          sessionId: input.sessionId,
+          platform,
+          runnerProfile,
+          harnessConfigPath: input.harnessConfigPath,
+          deviceId: probeDeviceId,
+          appId: probeAppId,
+        });
+        networkProbeResult = probeResult.data.probe;
+        networkRecoveryStrategyResult = probeResult.data.recoveryStrategy;
+      } catch {
+        // Best-effort: do not fail the action outcome if network probe itself fails
+      }
+    }
+  }
+
+  const networkNextSuggestions = networkRecoveryStrategyResult && networkRecoveryStrategyResult.strategy !== "none"
+    ? [
+        `Network recovery: ${networkRecoveryStrategyResult.strategy} — ${networkRecoveryStrategyResult.reason}`,
+      ]
+    : [];
+
   return {
     status: finalToolStatus,
     reasonCode: finalToolReasonCode,
@@ -816,8 +857,11 @@ export async function performActionWithEvidenceWithMaestro(
       preActionInterruption: preActionInterruption.data,
       postActionInterruption: postActionInterruption.data,
       crashAttribution: postStateResult.data.crashAttribution,
+      networkProbe: networkProbeResult,
+      networkRecoveryStrategy: networkRecoveryStrategyResult,
     },
     nextSuggestions: uniqueNonEmpty([
+      ...networkNextSuggestions,
       ...buildManualHandoffNextSuggestions(manualHandoffContext?.recommendation),
       ...buildRetryRecommendations({
         finalStatus: finalToolStatus,

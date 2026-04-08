@@ -1084,6 +1084,10 @@ export interface PerformActionWithEvidenceData {
   postActionInterruption?: ResolveInterruptionData;
   /** Structured crash attribution from post-action state. Only present when crash signals detected. */
   crashAttribution?: CrashAttribution;
+  /** Network probe result attached when failure category is network-related (Plan 18-01). */
+  networkProbe?: NetworkReadinessProbe;
+  /** Recovery strategy derived from network probe (Plan 18-01). */
+  networkRecoveryStrategy?: NetworkRecoveryStrategy;
 }
 export interface DetectInterruptionInput {
   sessionId: string;
@@ -1914,4 +1918,42 @@ export interface ValidateFlowData {
   warnedSteps: FlowStepValidation[];
   overallConfidence: number;
   validationSummary: string;
+}
+
+// --- Plan 18-01: Network-Aware Orchestration ---
+
+export interface NetworkReadinessProbe {
+  connected: boolean;
+  latencyMs?: number;
+  type: "wifi" | "cellular" | "ethernet" | "unknown";
+  dnsOk: boolean;
+  backendReachable: boolean;
+  backendLatencyMs?: number;
+  platform: "android" | "ios";
+  /** Additional context about probe limitations (e.g., physical device probing is limited). */
+  probeNote?: string;
+}
+
+export interface NetworkRecoveryStrategy {
+  strategy: "toggle_airplane_mode" | "retry_extended_timeout" | "check_network_config" | "wait_and_retry" | "bounded_wait_for_backend" | "none";
+  reason: string;
+  maxRetries?: number;
+  timeoutMs?: number;
+}
+
+export interface NetworkProbeInput {
+  sessionId: string;
+  platform?: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  appId?: string;
+  backendUrl?: string;
+  dryRun?: boolean;
+}
+
+export interface NetworkProbeData {
+  probe: NetworkReadinessProbe;
+  recoveryStrategy?: NetworkRecoveryStrategy;
+  durationMs: number;
 }

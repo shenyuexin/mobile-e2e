@@ -4,6 +4,8 @@ import type {
   EvidenceConfidence,
   EvidenceDeltaSummary,
   LogSummary,
+  NetworkReadinessProbe,
+  NetworkRecoveryStrategy,
   OrchestrationStepState,
   PerformActionWithEvidenceData,
   PostconditionStatus,
@@ -622,4 +624,59 @@ export function buildActionEvidenceDelta(params: {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export function classifyNetworkRecoveryStrategy(
+  probe: NetworkReadinessProbe,
+  _failureCategory?: string,
+): NetworkRecoveryStrategy {
+  // a. No network connectivity
+  if (!probe.connected) {
+    return {
+      strategy: "toggle_airplane_mode",
+      reason: "No network connectivity detected",
+      maxRetries: 1,
+    };
+  }
+
+  // b. High latency (> 1000ms)
+  if (probe.latencyMs && probe.latencyMs > 1000) {
+    return {
+      strategy: "retry_extended_timeout",
+      reason: "High latency detected",
+      timeoutMs: 30000,
+    };
+  }
+
+  // c. DNS resolution failed
+  if (!probe.dnsOk) {
+    return {
+      strategy: "check_network_config",
+      reason: "DNS resolution failed",
+    };
+  }
+
+  // d. Backend unreachable but network is up
+  if (!probe.backendReachable && probe.connected) {
+    return {
+      strategy: "wait_and_retry",
+      reason: "Backend unreachable but network is up — likely server-side issue",
+      maxRetries: 3,
+    };
+  }
+
+  // e. Connected but slow (latency > 500ms)
+  if (probe.connected && probe.latencyMs && probe.latencyMs > 500) {
+    return {
+      strategy: "bounded_wait_for_backend",
+      reason: "Slow network, bounded wait recommended",
+      timeoutMs: 15000,
+    };
+  }
+
+  // f. Default: network is healthy
+  return {
+    strategy: "none",
+    reason: "Network appears healthy",
+  };
 }

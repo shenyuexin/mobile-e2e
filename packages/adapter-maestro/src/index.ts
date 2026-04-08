@@ -406,6 +406,10 @@ export { detectInterruptionFromSummary } from "./interruption-detector.js";
 export { buildInterruptionEvent, decideInterruptionResolution } from "./interruption-resolver.js";
 export { buildInterruptionTimelineEvent, buildResumeCheckpoint, hasStateDrift, pickEventSource, summarizeInterruptionDetail } from "./interruption-orchestrator.js";
 export { classifyDoctorOutcome, isDoctorCriticalFailure } from "./doctor-runtime.js";
+export {
+  probeNetworkReadiness,
+  classifyNetworkRecoveryStrategy,
+} from "./network-probe.js";
 
 export function buildLogSummary(content: string, query?: string): LogSummary {
   return buildLogSummaryWithSessionState(content, query);

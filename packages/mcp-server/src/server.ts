@@ -119,6 +119,8 @@ import type {
   WaitForUiInput,
   EndSessionData,
   ListDevicesData,
+  NetworkProbeInput,
+  NetworkProbeData,
 } from "@mobile-e2e-mcp/contracts";
 
 interface ToolContract<TInput, TOutputData> {
@@ -186,6 +188,7 @@ export interface MobileE2EMcpToolContractMap {
   validate_flow: ToolContract<ValidateFlowInput, ValidateFlowData>;
   wait_for_ui: ToolContract<WaitForUiInput, WaitForUiData>;
   end_session: ToolContract<EndSessionInput, EndSessionData>;
+  probe_network_readiness: ToolContract<NetworkProbeInput, NetworkProbeData>;
 }
 
 export type MobileE2EMcpToolName = keyof MobileE2EMcpToolContractMap;
