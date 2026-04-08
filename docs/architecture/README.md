@@ -17,18 +17,14 @@ This directory contains the architecture and design documentation for mobile-e2e
 - [Adapter Code Placement](./adapter-code-placement.md) — where to put new code in packages/adapter-maestro
 - [RN Debugger Sequence](./rn-debugger-sequence.md) — Metro inspector capability gap analysis
 - [Network Anomaly Runtime](./network-anomaly-runtime-architecture.md) — network-aware retry and stop logic
-- [Human Handoff](./human-handoff-and-protected-page-awareness.md) — OTP/captcha/consent handling
 
 ## Chinese-Language Documents (zh-CN)
 
 - [中文文档导航](./README.zh-CN.md) — 统一中文索引
-- [Session Orchestration](./session-orchestration-architecture.zh-CN.md)
-- [Policy Engine Runtime](./policy-engine-runtime-architecture.zh-CN.md)
-- [Execution Coordinator](./execution-coordinator-and-fallback-ladder.zh-CN.md)
-- [Evidence Timeline](./evidence-timeline-architecture.zh-CN.md)
-- [Failure Attribution](./failure-attribution-and-recovery-architecture.zh-CN.md)
-- [Interruption Orchestrator V2](./interruption-orchestrator-v2.zh-CN.md)
-- [Platform Implementation Matrix](./platform-implementation-matrix.zh-CN.md)
+- [Session Orchestration](./session-orchestration-architecture.zh-CN.md) — Session 编排深度细节
+- [Policy Engine Runtime](./policy-engine-runtime-architecture.zh-CN.md) — 策略引擎运行时深度细节
+- [Interruption Orchestrator V2](./interruption-orchestrator-v2.zh-CN.md) — 中断处理 V2 详细设计
+- [Platform Implementation Matrix](./platform-implementation-matrix.zh-CN.md) — 跨平台实现矩阵
 
 ## Guides
 

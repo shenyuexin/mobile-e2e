@@ -16,44 +16,33 @@ For English readers, start with the numbered core documents:
 
 ## 1. 总览与原则
 
-- [overview.md](./overview.md) — 目标、非目标、设计原则
-- [architecture.md](./architecture.md) — 参考架构（控制平面/执行平面）
-- [system-architecture-overview.md](./system-architecture-overview.md) — 系统架构图（Mermaid）
+> 已合并到英文核心文档（见上方 English Core Documents）
 
 ## 2. 运行时架构（推荐优先阅读）
 
-- [session-orchestration-architecture.zh-CN.md](./session-orchestration-architecture.zh-CN.md)
-- [policy-engine-runtime-architecture.zh-CN.md](./policy-engine-runtime-architecture.zh-CN.md)
-- [execution-coordinator-and-fallback-ladder.zh-CN.md](./execution-coordinator-and-fallback-ladder.zh-CN.md)
-- [evidence-timeline-architecture.zh-CN.md](./evidence-timeline-architecture.zh-CN.md)
-- [failure-attribution-and-recovery-architecture.zh-CN.md](./failure-attribution-and-recovery-architecture.zh-CN.md)
+> 已合并到 [04-runtime-architecture.md](./04-runtime-architecture.md)。以下为补充/深度 zh-CN 原文：
+
+- [session-orchestration-architecture.zh-CN.md](./session-orchestration-architecture.zh-CN.md) — Session 编排深度细节
+- [policy-engine-runtime-architecture.zh-CN.md](./policy-engine-runtime-architecture.zh-CN.md) — 策略引擎运行时深度细节
+- [interruption-orchestrator-v2.zh-CN.md](./interruption-orchestrator-v2.zh-CN.md) — 中断处理 V2 详细设计
 
 ## 3. 平台与框架
 
-- [adapters-android.md](./adapters-android.md)
-- [adapters-ios.md](./adapters-ios.md)
-- [adapters-react-native.md](./adapters-react-native.md)
-- [adapters-flutter.md](./adapters-flutter.md)
-- [framework-coverage.md](./framework-coverage.md) — platform adapter / framework profile 分层说明与 Mermaid 图
-- [platform-implementation-matrix.zh-CN.md](./platform-implementation-matrix.zh-CN.md)
+- [platform-implementation-matrix.zh-CN.md](./platform-implementation-matrix.zh-CN.md) — 跨平台实现矩阵
+
+> 平台适配器详情已合并到 [02-platform-adapters.md](./02-platform-adapters.md)
 
 ## 4. 可靠性与治理专题
 
-- [orchestration-robustness-strategy.md](./orchestration-robustness-strategy.md) — 高频自动化场景下的能力深化优先级：先做 orchestration robustness，再做 network anomaly handling
-- [bounded-retry-and-state-change-evidence-architecture.md](./bounded-retry-and-state-change-evidence-architecture.md) — bounded retry、state-change evidence、checkpoint / replay-safe boundary 的运行时深化设计
-- [network-anomaly-runtime-architecture.md](./network-anomaly-runtime-architecture.md) — network-aware readiness、retry、stop 与平台边界的运行时架构
-- [orchestration-robustness-implementation-checklist.md](./orchestration-robustness-implementation-checklist.md) — orchestration robustness 的可直接执行实施清单与验证门禁
-- [interruption-orchestrator-v2.zh-CN.md](./interruption-orchestrator-v2.zh-CN.md)
-- [mobile-e2e-ocr-fallback-design.md](./mobile-e2e-ocr-fallback-design.md)
-- [mobile-e2e-ocr-fallback-implementation-checklist.md](./mobile-e2e-ocr-fallback-implementation-checklist.md)
-- [governance-security.md](./governance-security.md)
-- [capability-map.md](./capability-map.md)
-- [ai-first-capability-model.md](./ai-first-capability-model.md)
+- [network-anomaly-runtime-architecture.md](./network-anomaly-runtime-architecture.md) — 网络异常处理运行时架构
+- [adapter-code-placement.md](./adapter-code-placement.md) — 代码放置指南
+
+> 其余专题已合并到 [04-runtime-architecture.md](./04-runtime-architecture.md)（执行协调、失败归因、证据时间线、OCR 回退、编排鲁棒性）
+> 治理详情已合并到 [05-governance-security.md](./05-governance-security.md)
 
 ## 5. 竞争与演进
 
-- [differentiation-strategy.md](./differentiation-strategy.md)
-- [ecosystem-landscape-2026.md](./ecosystem-landscape-2026.md)
+> 已移至 [`docs/strategy/`](../strategy/)
 
 ---
 
