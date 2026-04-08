@@ -1,6 +1,16 @@
 # Architecture 文档导航（zh-CN）
 
-本文档是 `docs/architecture` 的统一入口，按“总览 -> 运行时 -> 平台/框架 -> 专题”组织。
+本文档是 `docs/architecture` 的统一入口，按"总览 -> 运行时 -> 平台/框架 -> 专题"组织。
+
+## English Core Documents
+
+For English readers, start with the numbered core documents:
+
+1. [System Architecture (01)](./01-system-architecture.md) — topology, control plane, execution plane, contracts
+2. [Platform Adapters (02)](./02-platform-adapters.md) — Android/iOS backends, framework profiles
+3. [Capability Model (03)](./03-capability-model.md) — AI-first capability layers, maturity levels
+4. [Runtime Architecture (04)](./04-runtime-architecture.md) — execution coordinator, fallback ladder, recovery
+5. [Governance & Security (05)](./05-governance-security.md) — policy, audit, human handoff
 
 ---
 
