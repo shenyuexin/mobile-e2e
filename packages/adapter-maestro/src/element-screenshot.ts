@@ -1,7 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { Jimp } from "jimp";
-import type { JimpInstance } from "jimp";
 import type {
   ElementBounds,
   ElementScreenshotData,

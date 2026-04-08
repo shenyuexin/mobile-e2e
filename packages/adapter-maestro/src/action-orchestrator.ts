@@ -809,6 +809,7 @@ export async function performActionWithEvidenceWithMaestro(
           harnessConfigPath: input.harnessConfigPath,
           deviceId: probeDeviceId,
           appId: probeAppId,
+          backendUrl: input.backendUrl,
         });
         networkProbeResult = probeResult.data.probe;
         networkRecoveryStrategyResult = probeResult.data.recoveryStrategy;

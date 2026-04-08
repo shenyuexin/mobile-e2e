@@ -293,8 +293,30 @@ export async function validateFlow(input: ValidateFlowInput): Promise<ToolResult
   // Load flow steps from either source
   if (input.flowPath) {
     const absoluteFlowPath = input.flowPath.startsWith("/") ? input.flowPath : `${repoRoot}/${input.flowPath}`;
-    const yamlContent = await readFile(absoluteFlowPath, "utf8");
-    flowSteps = parseFlowStepsFromYaml(yamlContent);
+    try {
+      const yamlContent = await readFile(absoluteFlowPath, "utf8");
+      flowSteps = parseFlowStepsFromYaml(yamlContent);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        status: "failed" as const,
+        reasonCode: REASON_CODES.configurationError,
+        sessionId: input.sessionId ?? `validate-flow-${Date.now()}`,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          valid: false,
+          totalSteps: 0,
+          passedSteps: 0,
+          failedSteps: [],
+          warnedSteps: [],
+          overallConfidence: 0,
+          validationSummary: `Flow file not found or unreadable: ${input.flowPath} (${message})`,
+        },
+        nextSuggestions: ["Verify the flowPath points to an existing, readable YAML file."],
+      };
+    }
   } else if (input.sessionId) {
     flowSteps = await buildStepsFromSessionRecords(repoRoot, input.sessionId);
   }

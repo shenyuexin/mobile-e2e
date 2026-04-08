@@ -1054,6 +1054,7 @@ export interface PerformActionWithEvidenceInput {
   harnessConfigPath?: string;
   deviceId?: string;
   appId?: string;
+  backendUrl?: string;
   includeDebugSignals?: boolean;
   autoRemediate?: boolean;
   action: ActionIntent;

@@ -271,37 +271,44 @@ export async function probeNetworkReadiness(input: NetworkProbeInput): Promise<T
 
   let probe: NetworkReadinessProbe;
 
-  if (platform === "android") {
-    probe = await probeAndroidNetwork(repoRoot, deviceId, backendUrl);
-  } else if (platform === "ios") {
-    const isPhysical = isIosPhysicalDeviceId(deviceId);
-    if (isPhysical) {
-      probe = await probeIosPhysicalDeviceNetwork(repoRoot, deviceId, backendUrl);
-    } else {
-      probe = await probeIosSimulatorNetwork(repoRoot, deviceId, backendUrl);
+  // Wrap probe in aggregate timeout to respect total budget
+  const totalTimeoutMs = DEFAULT_PROBE_TOTAL_BUDGET_MS;
+  const probePromise = (async () => {
+    if (platform === "android") {
+      return probeAndroidNetwork(repoRoot, deviceId, backendUrl);
+    } else if (platform === "ios") {
+      const isPhysical = isIosPhysicalDeviceId(deviceId);
+      if (isPhysical) {
+        return probeIosPhysicalDeviceNetwork(repoRoot, deviceId, backendUrl);
+      } else {
+        return probeIosSimulatorNetwork(repoRoot, deviceId, backendUrl);
+      }
     }
-  } else {
+    // Should not reach here — guarded above
     return {
-      status: "failed",
-      reasonCode: REASON_CODES.unsupportedOperation,
-      sessionId: input.sessionId,
-      durationMs: Date.now() - startTime,
-      attempts: 1,
-      artifacts: [],
-      data: {
-        probe: {
-          connected: false,
-          type: "unknown",
-          dnsOk: false,
-          backendReachable: false,
-          platform,
-          probeNote: `Unsupported platform: ${platform}.`,
-        },
-        durationMs: Date.now() - startTime,
-      },
-      nextSuggestions: [`Network probing is only supported on Android and iOS. Received: ${platform}`],
+      connected: false,
+      type: "unknown" as const,
+      dnsOk: false,
+      backendReachable: false,
+      platform,
+      probeNote: `Unsupported platform: ${platform}.`,
     };
-  }
+  })();
+
+  const timeoutPromise = new Promise<NetworkReadinessProbe>((resolve) => {
+    setTimeout(() => {
+      resolve({
+        connected: false,
+        type: "unknown",
+        dnsOk: false,
+        backendReachable: false,
+        platform,
+        probeNote: `Network probe exceeded total budget (${totalTimeoutMs}ms). Returning partial result.`,
+      });
+    }, totalTimeoutMs);
+  });
+
+  probe = await Promise.race([probePromise, timeoutPromise]);
 
   const durationMs = Date.now() - startTime;
   const recoveryStrategy = classifyNetworkRecoveryStrategy(probe);

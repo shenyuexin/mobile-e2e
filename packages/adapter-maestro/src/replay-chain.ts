@@ -77,7 +77,9 @@ function isReplaySafeAction(record: PersistedActionRecord): boolean {
 }
 
 function findLastStableCheckpoint(records: PersistedActionRecord[]): PersistedActionRecord | undefined {
-  for (const record of records) {
+  // Walk backwards from most recent action to find the last (most recent) stable checkpoint
+  for (let i = records.length - 1; i >= 0; i--) {
+    const record = records[i];
     if (
       record.outcome.outcome === "success"
       && (record.outcome.progressMarker === "full" || record.outcome.postconditionStatus === "met")
@@ -213,7 +215,7 @@ export async function replayCheckpointChain(
 
   // Step 3: Collect all actions AFTER the anchor
   const anchorIndex = allRecords.findIndex((r) => r.actionId === anchorRecord.actionId);
-  const actionsAfterAnchor = allRecords.slice(0, anchorIndex);
+  const actionsAfterAnchor = allRecords.slice(anchorIndex + 1);
 
   if (actionsAfterAnchor.length === 0) {
     return {

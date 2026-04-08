@@ -33,6 +33,7 @@ export const REASON_CODES = {
   networkAmbiguityUnresolved: "NETWORK_AMBIGUITY_UNRESOLVED",
   timeout: "TIMEOUT",
   unsupportedOperation: "UNSUPPORTED_OPERATION",
+  visualDiffExceeded: "VISUAL_DIFF_EXCEEDED",
 } as const;
 
 export type ReasonCode = (typeof REASON_CODES)[keyof typeof REASON_CODES];

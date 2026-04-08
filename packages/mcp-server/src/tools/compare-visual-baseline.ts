@@ -46,7 +46,7 @@ export async function compareVisualBaselineTool(input: VisualDiffInput): Promise
     const diffResult = await compareVisualBaseline(enhancedInput);
     return {
       status: diffResult.result.passed ? "success" : "partial",
-      reasonCode: diffResult.result.passed ? REASON_CODES.ok : REASON_CODES.ok,
+      reasonCode: diffResult.result.passed ? REASON_CODES.ok : REASON_CODES.visualDiffExceeded,
       sessionId: input.sessionId,
       durationMs: diffResult.durationMs + screenshotResult.durationMs,
       attempts: 1,
