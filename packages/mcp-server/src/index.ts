@@ -27,10 +27,12 @@ import {
 } from "./server.js";
 import { captureJsConsoleLogs } from "./tools/capture-js-console-logs.js";
 import { captureJsNetworkEvents } from "./tools/capture-js-network-events.js";
+import { captureElementScreenshot } from "./tools/capture-element-screenshot.js";
 import { classifyInterruption } from "./tools/classify-interruption.js";
 import { collectDebugEvidence } from "./tools/collect-debug-evidence.js";
 import { collectDiagnostics } from "./tools/collect-diagnostics.js";
 import { compareAgainstBaseline } from "./tools/compare-against-baseline.js";
+import { compareVisualBaselineTool } from "./tools/compare-visual-baseline.js";
 import { describeCapabilities } from "./tools/describe-capabilities.js";
 import { detectInterruption } from "./tools/detect-interruption.js";
 import { doctor } from "./tools/doctor.js";
@@ -490,9 +492,25 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
+    name: "capture_element_screenshot",
+    description: "Capture a screenshot cropped to a specific UI element's bounds for visual regression testing.",
+    handler: captureElementScreenshot,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
     name: "compare_against_baseline",
     description: "Compare the current action outcome against a previously successful local baseline.",
     handler: compareAgainstBaseline,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "compare_visual_baseline",
+    description: "Compare a current screenshot against a visual baseline image, returning pixel-diff percentage and pass/fail status.",
+    handler: compareVisualBaselineTool,
     policy: { enforced: true, requiredScopes: ["read"] },
     session: { required: false },
     audit: { captureResultEvidence: false },

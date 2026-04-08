@@ -765,3 +765,5 @@ export async function runDoctor(
 ): Promise<ToolResult<{ checks: DoctorCheck[]; devices: { android: DeviceInfo[]; ios: DeviceInfo[] }; guidance: Array<{ dependency: string; status: "pass" | "warn" | "fail"; platformScope: "android" | "ios" | "cross"; installCommands: string[]; verifyCommands: string[]; envHints: string[] }> }>> {
   return runDoctorWithMaestro(input);
 }
+
+export { cropElementScreenshot } from "./element-screenshot.js";

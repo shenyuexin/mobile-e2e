@@ -22,6 +22,8 @@ import type {
   DeviceInfo,
   DoctorData,
   DoctorInput,
+  ElementScreenshotData,
+  ElementScreenshotInput,
   EndRecordSessionData,
   EndRecordSessionInput,
   EndSessionInput,
@@ -107,6 +109,8 @@ import type {
   TypeIntoElementInput,
   TypeTextData,
   TypeTextInput,
+  VisualDiffData,
+  VisualDiffInput,
   WaitForUiData,
   WaitForUiInput,
   EndSessionData,
@@ -121,7 +125,9 @@ interface ToolContract<TInput, TOutputData> {
 export interface MobileE2EMcpToolContractMap {
   capture_js_console_logs: ToolContract<CaptureJsConsoleLogsInput, CaptureJsConsoleLogsData>;
   capture_js_network_events: ToolContract<CaptureJsNetworkEventsInput, CaptureJsNetworkEventsData>;
+  capture_element_screenshot: ToolContract<ElementScreenshotInput, ElementScreenshotData>;
   compare_against_baseline: ToolContract<CompareAgainstBaselineInput, CompareAgainstBaselineData>;
+  compare_visual_baseline: ToolContract<VisualDiffInput, VisualDiffData>;
   collect_debug_evidence: ToolContract<CollectDebugEvidenceInput, CollectDebugEvidenceData>;
   collect_diagnostics: ToolContract<CollectDiagnosticsInput, CollectDiagnosticsData>;
   detect_interruption: ToolContract<DetectInterruptionInput, DetectInterruptionData>;

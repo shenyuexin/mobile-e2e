@@ -4,3 +4,4 @@ export * from "./ocr/resolver/resolve-text-target.js";
 export * from "./ocr/service/ocr-service.js";
 export * from "./ocr/types.js";
 export * from "./ocr/verification/verify-ocr-action.js";
+export * from "./visual-diff.js";

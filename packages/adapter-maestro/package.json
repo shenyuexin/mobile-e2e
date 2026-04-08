@@ -15,6 +15,7 @@
     "@mobile-e2e-mcp/adapter-vision": "workspace:*",
     "@mobile-e2e-mcp/core": "workspace:*",
     "@mobile-e2e-mcp/contracts": "workspace:*",
+    "jimp": "^1.6.0",
     "yaml": "^2.8.1"
   },
   "scripts": {

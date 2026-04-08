@@ -12,7 +12,8 @@
     }
   },
   "dependencies": {
-    "@mobile-e2e-mcp/contracts": "workspace:*"
+    "@mobile-e2e-mcp/contracts": "workspace:*",
+    "jimp": "^1.6.0"
   },
   "scripts": {
     "build": "pnpm --filter @mobile-e2e-mcp/contracts build && tsc -p tsconfig.json",

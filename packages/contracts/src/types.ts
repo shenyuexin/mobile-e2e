@@ -1778,3 +1778,71 @@ export interface StartSessionInput { platform: Platform; sessionId?: string; dev
 export interface EndSessionInput { sessionId: string; artifacts?: string[]; }
 export interface EndSessionData { closed: boolean; endedAt: string; }
 export interface ListDevicesData { android: DeviceInfo[]; ios: DeviceInfo[]; }
+
+// --- Plan 18-04: Element Screenshot & Visual Baseline ---
+
+export interface ElementScreenshotInput {
+  sessionId: string;
+  selector: {
+    text?: string;
+    resourceId?: string;
+    contentDesc?: string;
+    role?: string;
+  };
+  outputPath?: string;
+  cropPadding?: number;
+  platform?: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  dryRun?: boolean;
+}
+
+export interface ElementBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ElementScreenshotData {
+  fullScreenshotPath: string;
+  croppedElementPath: string;
+  elementBounds: ElementBounds;
+  cropPadding: number;
+  confidence: number;
+}
+
+export interface VisualDiffInput {
+  sessionId?: string;
+  selector?: {
+    text?: string;
+    resourceId?: string;
+    contentDesc?: string;
+    role?: string;
+  };
+  baselinePath?: string;
+  currentPath?: string;
+  threshold?: number;
+  platform?: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  dryRun?: boolean;
+}
+
+export interface VisualStructuralDiff {
+  addedElements?: string[];
+  removedElements?: string[];
+  changedText?: string[];
+}
+
+export interface VisualDiffData {
+  baselinePath: string;
+  currentPath: string;
+  diffPath?: string;
+  pixelDiffPercent: number;
+  threshold: number;
+  passed: boolean;
+  structuralDiff?: VisualStructuralDiff;
+}
