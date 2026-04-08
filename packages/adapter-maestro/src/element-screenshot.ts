@@ -324,20 +324,15 @@ async function cropFromNodes(
 
   const clamped = clampCrop(cropX, cropY, cropW, cropH, imageWidth, imageHeight);
 
-  // Create cropped image and composite the region from full image
-  const croppedImage = new Jimp({ width: clamped.width, height: clamped.height });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (croppedImage as any).composite(fullImage, 0, 0, {
-    sourceX: clamped.x,
-    sourceY: clamped.y,
-    sourceWidth: clamped.width,
-    sourceHeight: clamped.height,
-  });
+  // Create cropped image using clone + crop approach
+  const croppedImage = fullImage.clone();
+  // @ts-expect-error Jimp v1.x crop method with x,y,w,h
+  croppedImage.crop(clamped.x, clamped.y, clamped.width, clamped.height);
 
   // Ensure output directory exists
   await mkdir(path.dirname(croppedOutputPath), { recursive: true });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (croppedImage as any).write(croppedOutputPath as any);
+  // @ts-expect-error Jimp v1.x write returns Promise<void>
+  await croppedImage.write(croppedOutputPath);
 
   const elementBoundsResult: ElementBounds = {
     x: bounds.left,
