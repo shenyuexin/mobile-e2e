@@ -812,7 +812,7 @@ test("buildCapabilityProfile stays honest across Android and iOS UI action suppo
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "scroll_and_resolve_ui_target")?.supportLevel, "full");
   assert.equal(androidProfile.toolCapabilities.find((tool) => tool.toolName === "record_screen")?.supportLevel, "full");
-  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "reset_app_state")?.supportLevel, "partial");
+  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "reset_app_state")?.supportLevel, "conditional");
   assert.equal(iosProfile.groups.find((group) => group.groupName === "ui_actions")?.supportLevel, "conditional");
 });
 

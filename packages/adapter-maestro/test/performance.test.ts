@@ -6,7 +6,7 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 import { buildIosAppScopeNote, classifyDoctorOutcome, isPerfettoShellProbeAvailable, measureAndroidPerformanceWithMaestro, measureIosPerformanceWithMaestro, runDoctor, shouldResolveIosAttachTarget } from "../src/index.ts";
 import type { DoctorCheck } from "@mobile-e2e-mcp/contracts";
-import { IOS_PARTIAL_GROUP_FRONTIER, IOS_PARTIAL_TOOL_FRONTIER, buildCapabilityProfile } from "../src/capability-model.ts";
+import { IOS_CONDITIONAL_GROUP_FRONTIER, IOS_CONDITIONAL_TOOL_FRONTIER, buildCapabilityProfile } from "../src/capability-model.ts";
 import { extractIosSimulatorProcessId } from "../src/device-runtime-ios.ts";
 import { buildAndroidPerformancePlan, buildIosPerformancePlan, resolveAndroidPerformancePlanStrategy, resolveTraceProcessorPath } from "../src/performance-runtime.ts";
 import { buildIosExportInspectionManifest, buildPerformanceNextSuggestions, parseTraceProcessorTsv, summarizeAndroidPerformance, summarizeIosPerformance } from "../src/performance-model.ts";
@@ -66,7 +66,7 @@ test("buildCapabilityProfile explains the current iOS performance template matri
   const profile = buildCapabilityProfile("ios", "phase1");
   const performanceTool = profile.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance");
 
-  assert.equal(performanceTool?.supportLevel, "partial");
+  assert.equal(performanceTool?.supportLevel, "conditional");
   assert.match(performanceTool?.note ?? "", /Time Profiler is real-validated/);
   assert.match(performanceTool?.note ?? "", /Allocations can be real-validated via attach-to-app/);
   assert.match(performanceTool?.note ?? "", /Animation Hitches remains platform-limited/);
@@ -137,42 +137,34 @@ test("buildIosAppScopeNote stays explicit when app-scoped attach could not be es
   );
 });
 
-test("buildCapabilityProfile locks the current iOS partial frontier", () => {
+test("buildCapabilityProfile locks the current iOS conditional frontier", () => {
   const profile = buildCapabilityProfile("ios", "phase1");
 
-  const partialTools = profile.toolCapabilities
-    .filter((tool) => tool.supportLevel === "partial")
+  const conditionalTools = profile.toolCapabilities
+    .filter((tool) => tool.supportLevel === "conditional")
     .map((tool) => tool.toolName)
     .sort();
-  const partialGroups = profile.groups
-    .filter((group) => group.supportLevel === "partial")
+  const conditionalGroups = profile.groups
+    .filter((group) => group.supportLevel === "conditional")
     .map((group) => group.groupName)
     .sort();
 
-  assert.deepEqual(partialTools, [...IOS_PARTIAL_TOOL_FRONTIER].sort());
-  assert.deepEqual(partialGroups, [...IOS_PARTIAL_GROUP_FRONTIER].sort());
+  assert.deepEqual(conditionalTools, [...IOS_CONDITIONAL_TOOL_FRONTIER].sort());
+  assert.deepEqual(conditionalGroups, [...IOS_CONDITIONAL_GROUP_FRONTIER].sort());
 
   const inspectTool = profile.toolCapabilities.find((tool) => tool.toolName === "inspect_ui") as ({ note?: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
   const perfTool = profile.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance") as ({ note?: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
   const listDevicesTool = profile.toolCapabilities.find((tool) => tool.toolName === "list_devices") as ({ note?: string } | undefined);
-  const diagnosticsGroup = profile.groups.find((group) => group.groupName === "artifacts_and_diagnostics") as ({ promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
   const inspectNote = inspectTool?.note ?? "";
   const perfNote = perfTool?.note ?? "";
-  const inspectGate = inspectTool?.promotionGate;
-  const diagnosticsGate = diagnosticsGroup?.promotionGate;
-  assert.match(inspectNote, /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./);
-  assert.match(perfNote, /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./);
+  assert.match(inspectNote, /axe describe-ui/);
+  assert.match(inspectNote, /WDA \/source/);
+  assert.match(perfNote, /Time Profiler is real-validated/);
+  assert.match(perfNote, /Allocations can be real-validated/);
   assert.match(listDevicesTool?.note ?? "", /physical-device discovery/);
-  assert.deepEqual(inspectGate, {
-    blocked: true,
-    requiredProofLanes: ["simulator", "real_device"],
-    blockingReasons: ["Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established."],
-  });
-  assert.deepEqual(diagnosticsGate, {
-    blocked: true,
-    requiredProofLanes: ["simulator", "real_device"],
-    blockingReasons: ["Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established."],
-  });
+  // Conditional tools do not have promotion gates — they are platform-dependent, not blocked.
+  assert.equal(inspectTool?.promotionGate, undefined);
+  assert.equal(perfTool?.promotionGate, undefined);
 });
 
 test("extractIosSimulatorProcessId parses launchctl output for app pid", () => {
