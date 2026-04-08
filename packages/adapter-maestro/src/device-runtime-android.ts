@@ -173,21 +173,35 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
         : baseCrashCommand;
       const crashExecution = await executeRunner(crashCommand, repoRoot, process.env, { timeoutMs: 5000 });
       const anrExecution = await executeRunner(anrCommand, repoRoot, process.env, { timeoutMs: 5000 });
-      const entries = anrExecution.exitCode === 0
+      const allEntries = anrExecution.exitCode === 0
         ? anrExecution.stdout.replaceAll(String.fromCharCode(13), "").split(String.fromCharCode(10)).map((line) => line.trim()).filter(Boolean)
         : [];
 
       // Pull actual ANR trace content (Phase 11-01)
-      const anrTraces = entries.length > 0
-        ? await pullAndParseAnrTraces(repoRoot, deviceId, entries)
+      const allAnrTraces = allEntries.length > 0
+        ? await pullAndParseAnrTraces(repoRoot, deviceId, allEntries)
         : [];
+
+      // Filter ANR traces to current app only — stale ANR files from other apps
+      // must not pollute the crash summary for the active session's appId.
+      const anrTraces = appId
+        ? allAnrTraces.filter((trace) => trace.processName === appId)
+        : allAnrTraces;
+
+      // Also filter the entries list so content and signalCount stay consistent
+      const entryFileNames = appId
+        ? anrTraces.map((trace) => trace.fileName)
+        : allEntries;
+
+      // Use filtered set for signal count
+      const effectiveSignalCount = anrTraces.length + countNonEmptyLines(crashExecution.stdout);
 
       const contentLines = [
         "# Android crash log buffer",
         crashExecution.stdout.trim(),
         "",
         "# Android ANR entries",
-        entries.join(String.fromCharCode(10)),
+        entryFileNames.join(String.fromCharCode(10)),
       ];
 
       if (anrTraces.length > 0) {
@@ -206,8 +220,8 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
         exitCode,
         stderr: crashExecution.stderr || anrExecution.stderr,
         commands: [crashCommand, anrCommand],
-        entries,
-        signalCount: entries.length + countNonEmptyLines(crashExecution.stdout),
+        entries: entryFileNames,
+        signalCount: effectiveSignalCount,
         content: exitCode === 0 ? content : undefined,
         platformExtensions: anrTraces.length > 0 ? { anrTraces } : undefined,
       };

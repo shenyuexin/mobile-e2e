@@ -370,7 +370,7 @@ export async function executeUiActionCommand(options: {
 
 export function buildAndroidUiDumpCommands(deviceId: string): { dumpCommand: string[]; readCommand: string[] } {
   return {
-    dumpCommand: ["adb", "-s", deviceId, "shell", "uiautomator", "dump", "/sdcard/view.xml"],
+    dumpCommand: ["adb", "-s", deviceId, "shell", "-T", "uiautomator", "dump", "/sdcard/view.xml"],
     readCommand: ["adb", "-s", deviceId, "shell", "cat", "/sdcard/view.xml"],
   };
 }

@@ -26,6 +26,7 @@ This roadmap is an internal planning artifact. It is intended to coordinate exec
 - [x] **Phase 12: Action-Integrated Crash Attribution and Log Filtering (partial — 6 of 10 sub-plans)** - Auto-attach crash attribution to action outcomes, add log severity filtering, fix iOS syslog semantics, parallelize size checks, fix silent error swallowing, move inline types to contracts.
 - [ ] **Phase 13: iOS Native Backend Router** - Replace iOS idb dependency with xcrun simctl/devicectl native backend router, introduce IosExecutionBackend abstraction, and establish deterministic backend selection (env var > auto-detect > fallback chain).
 - [x] **Phase 18: Workflow Optimization P0** — Implement 4 P0 developer workflow gaps: network-aware orchestration, multi-step checkpoint chain, flow validation before export, element screenshot/visual baseline.
+- [ ] **Phase 19: Guardrail Automation and Output Contract Hardening** - Turn architecture guardrails into executable validation gates and tighten tool-specific output payload contracts without breaking the shared ToolResult envelope.
 
 ## Phase Details
 
@@ -94,6 +95,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 10. Android Real-Device Replay Dependency Reduction | 0/1 | Planned | - |
 | 13. iOS Native Backend Router | 0/1 | Planned | - |
 | 18. Workflow Optimization P0 | 4/4 | Completed | 2026-04-08 |
+| 19. Guardrail Automation and Output Contract Hardening | 0/1 | Planned | - |
 
 ## Maintenance Rules
 
@@ -255,3 +257,13 @@ Plans:
 - [x] 18-02: Multi-step checkpoint chain replay
 - [x] 18-03: Flow validation before export (dry-run)
 - [x] 18-04: Element screenshot & visual baseline comparison
+
+### Phase 19: Guardrail Automation and Output Contract Hardening
+
+**Goal:** Reduce reliance on reviewer memory by turning key architecture guardrails into repo-enforced checks and raise confidence in AI-facing tool payloads by layering tool-specific output validation on top of the shared `ToolResult` envelope.
+**Requirements**: [ARC-01, ARC-02, CON-01, CON-02, DOC-03]
+**Depends on:** Phase 3 (capability truth guardrails), Phase 18 (recent workflow feature expansion that widened the tool surface)
+**Plans:** 1 plan
+
+Plans:
+- [ ] 19-01: Automate architecture guardrails and harden tool output contracts
