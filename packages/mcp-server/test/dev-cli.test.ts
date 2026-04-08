@@ -855,11 +855,8 @@ test("main dispatches describe_capabilities through the CLI", async () => {
   assert.equal(output.describeCapabilitiesResult.reasonCode, "OK");
   assert.equal(output.describeCapabilitiesResult.data.capabilities.platform, "ios");
   assert.equal(output.describeCapabilitiesResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "full");
-  assert.deepEqual(output.describeCapabilitiesResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "inspect_ui")?.promotionGate, {
-    blocked: true,
-    requiredProofLanes: ["simulator", "real_device"],
-    blockingReasons: ["Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established."],
-  });
+  // iOS conditional tools do not have promotion gates — they are platform-dependent, not blocked.
+  assert.equal(output.describeCapabilitiesResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "inspect_ui")?.supportLevel, "conditional");
   assert.equal(output.describeCapabilitiesResult.data.capabilities.ocrFallback?.hostRequirement, "darwin");
   assert.equal(Array.isArray(output.describeCapabilitiesResult.data.capabilities.ocrFallback?.configuredProviders), true);
 });

@@ -153,7 +153,7 @@ test("handleRequest supports tools/call alias for describe_capabilities", async 
   assert.equal(Array.isArray(typedResult.data.capabilities.ocrFallback?.configuredProviders), true);
 });
 
-test("handleRequest describe_capabilities carries iOS promotion gate through stdio", async () => {
+test("handleRequest describe_capabilities carries iOS conditional tool info through stdio", async () => {
   const result = await handleRequest({
     id: 71,
     method: "tools/call",
@@ -171,19 +171,15 @@ test("handleRequest describe_capabilities carries iOS promotion gate through std
     reasonCode: string;
     data: {
       capabilities: {
-        toolCapabilities: Array<{ toolName: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } }>;
+        toolCapabilities: Array<{ toolName: string; supportLevel: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } }>;
       };
     };
   };
 
-  assert.deepEqual(
-    typedResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "inspect_ui")?.promotionGate,
-    {
-      blocked: true,
-      requiredProofLanes: ["simulator", "real_device"],
-      blockingReasons: ["Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established."],
-    },
-  );
+  const inspectTool = typedResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "inspect_ui");
+  // Conditional tools do not have promotion gates — they are platform-dependent, not blocked.
+  assert.equal(inspectTool?.supportLevel, "conditional");
+  assert.equal(inspectTool?.promotionGate, undefined);
 });
 
 test("handleRequest supports m2e_ prefixed tool alias", async () => {

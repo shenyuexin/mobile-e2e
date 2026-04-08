@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { buildActionRecordRelativePath, buildDeviceLeaseRecordRelativePath, buildRecordEventsRelativePath, buildRecordedStepsRelativePath, buildRecordSessionRelativePath, buildSessionAuditRelativePath, buildSessionRecordRelativePath, persistActionRecord } from "@mobile-e2e-mcp/core";
+import { IOS_CONDITIONAL_GROUP_FRONTIER, IOS_CONDITIONAL_TOOL_FRONTIER } from "../../adapter-maestro/src/capability-model.ts";
 import { createServer } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -1289,7 +1290,7 @@ test("server invoke supports measure_ios_performance animation-hitches dry-run",
   assert.equal(result.data.template, "animation-hitches");
 });
 
-test("server invoke describe_capabilities keeps the current iOS partial frontier locked", async () => {
+test("server invoke describe_capabilities keeps the current iOS conditional frontier locked", async () => {
   const server = createServer();
   const result = await server.invoke("describe_capabilities", {
     platform: "ios",
@@ -1298,51 +1299,21 @@ test("server invoke describe_capabilities keeps the current iOS partial frontier
 
   assert.equal(result.status, "success");
   assert.equal(result.reasonCode, "OK");
-  const partialTools = result.data.capabilities.toolCapabilities
-    .filter((tool) => tool.supportLevel === "partial")
+  const conditionalTools = result.data.capabilities.toolCapabilities
+    .filter((tool) => tool.supportLevel === "conditional")
     .map((tool) => tool.toolName)
     .sort();
-  const partialGroups = result.data.capabilities.groups
-    .filter((group) => group.supportLevel === "partial")
+  const conditionalGroups = result.data.capabilities.groups
+    .filter((group) => group.supportLevel === "conditional")
     .map((group) => group.groupName)
     .sort();
 
-  assert.deepEqual(partialTools, [
-    "cancel_record_session",
-    "capture_js_console_logs",
-    "capture_js_network_events",
-    "end_record_session",
-    "get_record_session_status",
-    "inspect_ui",
-    "measure_ios_performance",
-    "record_screen",
-    "reset_app_state",
-    "start_record_session",
-    "tap",
-    "tap_element",
-    "type_into_element",
-    "type_text",
-  ]);
-  assert.deepEqual(partialGroups, [
-    "app_lifecycle",
-    "artifacts_and_diagnostics",
-    "recording_and_replay",
-    "ui_actions",
-    "ui_inspection",
-  ]);
-  assert.match(
-    result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance")?.note ?? "",
-    /Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established\./,
-  );
-  const perfTool = result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance") as ({ promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
-  assert.deepEqual(
-    perfTool?.promotionGate,
-    {
-      blocked: true,
-      requiredProofLanes: ["simulator", "real_device"],
-      blockingReasons: ["Support promotion is blocked until simulator proof and real-device proof lanes are both explicitly established."],
-    },
-  );
+  assert.deepEqual(conditionalTools, [...IOS_CONDITIONAL_TOOL_FRONTIER].sort());
+  assert.deepEqual(conditionalGroups, [...IOS_CONDITIONAL_GROUP_FRONTIER].sort());
+  const perfTool = result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "measure_ios_performance") as ({ note?: string; promotionGate?: { blocked: boolean; requiredProofLanes: string[]; blockingReasons: string[] } } | undefined);
+  assert.match(perfTool?.note ?? "", /Time Profiler is real-validated/);
+  // Conditional tools do not have promotion gates — they are platform-dependent, not blocked.
+  assert.equal(perfTool?.promotionGate, undefined);
 });
 
 test("server invoke supports list_js_debug_targets dry-run", async () => {

@@ -155,6 +155,7 @@ function buildValidPayload(toolName: string): Record<string, unknown> {
     case "get_session_state":
       return {
         platform: "android",
+        runnerProfile: "phase1",
         sessionRecordFound: true,
         state: {
           appPhase: "ready",
