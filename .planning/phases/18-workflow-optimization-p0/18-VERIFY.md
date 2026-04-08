@@ -3,10 +3,44 @@
 **Phase:** 18
 **Status:** ✅ Completed
 **Verified:** 2026-04-08
+**Code Review Findings:** 3 CRITICAL + 5 WARNING found, all resolved.
 
 ---
 
-## Verification Summary
+## Code Review Findings (Resolved)
+
+### CRITICAL — All 3 Resolved
+
+| ID | Issue | Status | Resolution |
+|----|-------|--------|-----------|
+| C1 | `replay-chain.ts` `slice(0, anchorIndex)` returned actions **before** anchor, not after | ✅ Fixed | Changed to `slice(anchorIndex + 1)` |
+| C2 | `findLastStableCheckpoint` iterated forward, returned **earliest** not **last** checkpoint | ✅ Fixed | Changed to reverse iteration `for (let i = records.length - 1; i >= 0; i--)` |
+| C3 | `action-orchestrator.ts` did not pass `backendUrl` to `probeNetworkReadiness` — backend check always skipped | ✅ Fixed | Added `backendUrl` to `PerformActionWithEvidenceInput` and passed through in orchestrator call |
+
+### WARNING — All 5 Resolved
+
+| ID | Issue | Status | Resolution |
+|----|-------|--------|-----------|
+| W1 | `compareVisualBaseline` returned `passed: false` with `pixelDiffPercent: 0` for missing paths | ✅ Accepted | MCP wrapper handles `sessionId+selector` case by calling `cropElementScreenshot` first; library function caveat documented |
+| W2 | `compare-visual-baseline.ts` reasonCode always `REASON_CODES.ok` regardless of pass/fail | ✅ Fixed | Added `VISUAL_DIFF_EXCEEDED` reason code; returns it when `passed: false` |
+| W3 | `flow-validation.ts` `readFile` had no error handling — would throw `ENOENT` on missing file | ✅ Fixed | Wrapped in try/catch, returns proper `ToolResult` with `status: "failed"` |
+| W4 | Network probe sequential worst-case (DNS 3s + ping 3s + backend 5s + connectivity 3s = 14s) exceeded 10s budget | ✅ Fixed | Wrapped entire probe sequence in `Promise.race` with `DEFAULT_PROBE_TOTAL_BUDGET_MS` timeout |
+| W5 | Magic divergence threshold `2` in replay chain | ✅ Accepted | Value is reasonable for bounded replay; added comment in code |
+
+### INFO — All 6 Addressed
+
+| ID | Issue | Resolution |
+|----|-------|-----------|
+| I1 | Dead `JimpInstance` import in element-screenshot.ts | Removed |
+| I2 | `computeStructuralDiff` dead code in visual-diff.ts | Left as future enhancement; function defined but not called |
+| I3 | `as any` casts for Jimp v1.x API | Replaced with `@ts-expect-error` + clone+crop approach |
+| I4 | Unused `_failureCategory` param in `classifyNetworkRecoveryStrategy` | Left as-is; parameter reserved for future use |
+| I5 | Thin tool wrappers (no input validation) | Accepted; follows existing project convention |
+| I6 | Synthetic `sessionId` for flow-path-only validation | Accepted; clearly prefixed with `validate-flow-` |
+
+---
+
+## Final Verification Summary
 
 All 4 P0 plans implemented, build passes, typecheck passes.
 
