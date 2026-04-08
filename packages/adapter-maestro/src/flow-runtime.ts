@@ -114,7 +114,7 @@ interface AndroidBackendSelection {
   blockingReason?: string;
 }
 
-async function selectAndroidReplayBackend(params: {
+export async function selectAndroidReplayBackend(params: {
   flowContent: string;
   deviceId: string;
   userId?: string;

@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { runFlowWithRuntime } from "../src/flow-runtime.ts";
+import { runFlowWithRuntime, selectAndroidReplayBackend } from "../src/flow-runtime.ts";
 import { resolveRepoPath } from "../src/harness-config.ts";
 
 test("runFlowWithRuntime passes iOS physical-device env vars to custom runner scripts", async () => {
@@ -58,4 +58,59 @@ test("runFlowWithRuntime passes iOS physical-device env vars to custom runner sc
     }
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+// --- Android backend selection tests ---
+
+test("selectAndroidReplayBackend returns owned-adb for flow with only supported commands", async () => {
+  const flowContent = [
+    `- launchApp:\n    appId: com.example.app`,
+    `- tapOn:\n    text: Submit`,
+    `- inputText: hello`,
+    `- assertVisible:\n    text: Welcome`,
+  ].join("\n");
+  const result = await selectAndroidReplayBackend({
+    flowContent,
+    deviceId: "emulator-5554",
+    userId: undefined,
+    repoRoot: "/Users/linan/Documents/mobile-e2e-mcp",
+  });
+  assert.equal(result.backend, "owned-adb");
+  assert.equal(result.helperAppsRequired, false);
+});
+
+test("selectAndroidReplayBackend returns maestro for flow with unsupported commands", async () => {
+  const flowContent = [
+    `- launchApp:\n    appId: com.example.app`,
+    `- extendedWaitUntil:\n    visible: Loading\n    timeout: 5000`,
+  ].join("\n");
+  const result = await selectAndroidReplayBackend({
+    flowContent,
+    deviceId: "emulator-5554",
+    userId: undefined,
+    repoRoot: "/Users/linan/Documents/mobile-e2e-mcp",
+  });
+  assert.equal(result.backend, "maestro");
+});
+
+test("selectAndroidReplayBackend returns owned-adb for flow with newly supported commands", async () => {
+  const flowContent = [
+    `- launchApp:\n    appId: com.example.app`,
+    `- tapOn:\n    point: "540,960"`,
+    `- swipe:\n    start: "500,1000"\n    end: "500,200"\n    duration: 300`,
+    `- back`,
+    `- home`,
+    `- hideKeyboard`,
+    `- stopApp:\n    appId: com.example.app`,
+    `- clearState:\n    appId: com.example.app`,
+    `- assertNotVisible:\n    text: Loading`,
+  ].join("\n");
+  const result = await selectAndroidReplayBackend({
+    flowContent,
+    deviceId: "emulator-5554",
+    userId: undefined,
+    repoRoot: "/Users/linan/Documents/mobile-e2e-mcp",
+  });
+  assert.equal(result.backend, "owned-adb");
+  assert.equal(result.helperAppsRequired, false);
 });

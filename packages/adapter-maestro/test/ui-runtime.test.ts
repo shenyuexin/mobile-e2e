@@ -318,3 +318,20 @@ test("runUiScrollResolveLoop keeps a barely visible single match in off_screen s
   }
   assert.equal(outcome.state.resolution.status, "off_screen");
 });
+
+// --- captureIosUiSnapshot backend routing tests ---
+
+import { captureIosUiSnapshot } from "../src/ui-runtime.js";
+
+test("captureIosUiSnapshot returns configurationError when no backend available", async () => {
+  const result = await captureIosUiSnapshot(
+    "/Users/linan/Documents/mobile-e2e-mcp",
+    "nonexistent-device-udid",
+    "test-session",
+    "test-profile",
+    undefined,
+    { identifier: "test" },
+  );
+  // Should fail because neither axe nor WDA is available for a nonexistent device
+  assert.equal(result.reasonCode, "CONFIGURATION_ERROR");
+});
