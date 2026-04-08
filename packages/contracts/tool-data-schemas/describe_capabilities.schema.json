@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/tool-data/describe_capabilities.schema.json",
+  "title": "DescribeCapabilitiesData",
+  "description": "Output payload for describe_capabilities — returns platform capability profile.",
+  "type": "object",
+  "required": ["platform", "capabilities"],
+  "properties": {
+    "platform": { "type": "string", "enum": ["android", "ios"] },
+    "runnerProfile": { "type": ["string", "null"] },
+    "capabilities": {
+      "type": "object",
+      "required": ["platform", "toolCapabilities", "groups"],
+      "properties": {
+        "platform": { "type": "string" },
+        "runnerProfile": { "type": ["string", "null"] },
+        "toolCapabilities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["toolName", "supportLevel", "note"],
+            "properties": {
+              "toolName": { "type": "string" },
+              "supportLevel": { "type": "string", "enum": ["full", "conditional", "partial", "unsupported"] },
+              "note": { "type": "string" },
+              "requiresSession": { "type": "boolean" },
+              "condition": { "type": "string" }
+            }
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["groupName", "supportLevel", "toolNames"],
+            "properties": {
+              "groupName": { "type": "string" },
+              "supportLevel": { "type": "string" },
+              "toolNames": { "type": "array", "items": { "type": "string" } },
+              "note": { "type": "string" },
+              "condition": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

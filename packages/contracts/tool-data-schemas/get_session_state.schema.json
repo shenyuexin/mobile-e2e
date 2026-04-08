@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/tool-data/get_session_state.schema.json",
+  "title": "GetSessionStateData",
+  "description": "Output payload for get_session_state — returns current session state summary.",
+  "type": "object",
+  "required": ["platform", "sessionRecordFound", "state", "capabilities", "screenSummary"],
+  "properties": {
+    "dryRun": { "type": "boolean" },
+    "platform": { "type": "string", "enum": ["android", "ios"] },
+    "runnerProfile": { "type": "string" },
+    "sessionRecordFound": { "type": "boolean" },
+    "state": {
+      "type": "object",
+      "required": ["appPhase", "readiness"],
+      "properties": {
+        "screenId": { "type": "string" },
+        "screenTitle": { "type": "string" },
+        "appPhase": { "type": "string" },
+        "readiness": { "type": "string" },
+        "blockingSignals": { "type": "array", "items": { "type": "string" } },
+        "stateConfidence": { "type": "number" }
+      }
+    },
+    "latestKnownStateDelta": { "type": "array", "items": { "type": "string" } },
+    "capabilities": {
+      "type": "object",
+      "required": ["platform", "toolCapabilities"],
+      "properties": {
+        "platform": { "type": "string" },
+        "toolCapabilities": { "type": "array", "items": { "type": "object" } },
+        "groups": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "screenSummary": {
+      "type": "object",
+      "required": ["appPhase", "readiness"],
+      "properties": {
+        "appPhase": { "type": "string" },
+        "readiness": { "type": "string" },
+        "blockingSignals": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "crashAttribution": { "type": "object" },
+    "evidence": { "type": "array", "items": { "type": "object" } }
+  }
+}

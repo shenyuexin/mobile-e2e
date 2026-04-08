@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/tool-data/perform_action_with_evidence.schema.json",
+  "title": "PerformActionWithEvidenceData",
+  "description": "Output payload for perform_action_with_evidence — the primary AI-facing action execution tool.",
+  "type": "object",
+  "required": [
+    "sessionRecordFound",
+    "outcome",
+    "evidenceDelta",
+    "lowLevelStatus",
+    "lowLevelReasonCode"
+  ],
+  "properties": {
+    "sessionRecordFound": {
+      "type": "boolean",
+      "description": "Whether a valid session record was found and used."
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["actionId", "actionType", "outcome", "stateChanged"],
+      "properties": {
+        "actionId": { "type": "string" },
+        "actionType": { "type": "string" },
+        "resolutionStrategy": { "type": "string", "enum": ["deterministic", "semantic", "ocr", "cv"] },
+        "outcome": { "type": "string", "enum": ["success", "failed", "partial", "unknown"] },
+        "stateChanged": { "type": "boolean" },
+        "fallbackUsed": { "type": "boolean" },
+        "retryCount": { "type": "integer", "minimum": 0 },
+        "ocrEvidence": { "type": "object" },
+        "failureCategory": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "evidenceDelta": {
+      "type": "object",
+      "description": "Summary of evidence changes between pre and post action state."
+    },
+    "preStateSummary": {
+      "type": "object",
+      "description": "Pre-action state summary (optional)."
+    },
+    "postStateSummary": {
+      "type": "object",
+      "description": "Post-action state summary (optional)."
+    },
+    "retryRecommendationTier": {
+      "type": "string",
+      "enum": ["none", "inspect_only", "refine_selector", "wait_then_retry", "refresh_context", "recover_first", "handoff_required"]
+    },
+    "manualHandoffRequired": { "type": "boolean" },
+    "manualHandoffReason": { "type": "string" },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "autoRemediation": { "type": "object" },
+    "crashAttribution": { "type": "object" },
+    "networkProbe": { "type": "object" },
+    "networkRecoveryStrategy": { "type": "string" }
+  }
+}

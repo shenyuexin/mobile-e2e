@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/tool-data/index.json",
+  "title": "Tool Data Schema Registry",
+  "description": "Registry of tool-specific output payload schemas for Tier 1 AI-critical tools.",
+  "type": "object",
+  "properties": {
+    "perform_action_with_evidence": {
+      "$ref": "./perform_action_with_evidence.schema.json"
+    },
+    "get_action_outcome": {
+      "$ref": "./get_action_outcome.schema.json"
+    },
+    "explain_last_failure": {
+      "$ref": "./explain_last_failure.schema.json"
+    },
+    "rank_failure_candidates": {
+      "$ref": "./rank_failure_candidates.schema.json"
+    },
+    "describe_capabilities": {
+      "$ref": "./describe_capabilities.schema.json"
+    },
+    "get_session_state": {
+      "$ref": "./get_session_state.schema.json"
+    }
+  },
+  "metadata": {
+    "tier": "tier-1",
+    "description": "AI-critical tools whose payload quality most affects downstream AI reasoning",
+    "enforcement": "warning-first",
+    "note": "Schemas validate the `data` field within the shared ToolResult envelope, not the envelope itself."
+  }
+}

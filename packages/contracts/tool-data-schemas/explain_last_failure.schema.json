@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/tool-data/explain_last_failure.schema.json",
+  "title": "ExplainLastFailureData",
+  "description": "Output payload for explain_last_failure — deterministic failure attribution.",
+  "type": "object",
+  "required": ["found"],
+  "properties": {
+    "found": { "type": "boolean" },
+    "actionId": { "type": "string" },
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "actionId": { "type": "string" },
+        "actionType": { "type": "string" },
+        "outcome": { "type": "string", "enum": ["success", "failed", "partial", "unknown"] },
+        "failureCategory": { "type": "string" }
+      }
+    },
+    "diagnosisPacket": {
+      "type": "object",
+      "properties": {
+        "strongestSuspectLayer": { "type": "string" },
+        "strongestCausalSignal": { "type": "string" },
+        "confidence": { "type": "string", "enum": ["strong", "moderate", "weak", "none"] },
+        "recommendedNextProbe": { "type": "string" },
+        "recommendedRecovery": { "type": "string" },
+        "escalationThreshold": { "type": "string" }
+      }
+    },
+    "retryRecommendationTier": { "type": "string" },
+    "attribution": {
+      "type": "object",
+      "properties": {
+        "affectedLayer": { "type": "string" },
+        "mostLikelyCause": { "type": "string" },
+        "candidateCauses": { "type": "array", "items": { "type": "string" } },
+        "missingEvidence": { "type": "array", "items": { "type": "string" } },
+        "recommendedNextProbe": { "type": "string" },
+        "recommendedRecovery": { "type": "string" }
+      }
+    }
+  }
+}

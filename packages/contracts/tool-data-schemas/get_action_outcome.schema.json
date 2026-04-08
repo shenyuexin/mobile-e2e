@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/tool-data/get_action_outcome.schema.json",
+  "title": "GetActionOutcomeData",
+  "description": "Output payload for get_action_outcome — retrieves a previously recorded action outcome.",
+  "type": "object",
+  "required": ["found", "actionId"],
+  "properties": {
+    "found": { "type": "boolean" },
+    "actionId": { "type": "string" },
+    "sessionId": { "type": "string" },
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "actionId": { "type": "string" },
+        "actionType": { "type": "string" },
+        "outcome": { "type": "string", "enum": ["success", "failed", "partial", "unknown"] },
+        "stateChanged": { "type": "boolean" }
+      }
+    },
+    "diagnosisPacket": { "type": "object" },
+    "retryRecommendationTier": { "type": "string" },
+    "evidence": { "type": "array", "items": { "type": "object" } },
+    "lowLevelStatus": { "type": "string", "enum": ["success", "failed", "partial"] },
+    "lowLevelReasonCode": { "type": "string" }
+  }
+}

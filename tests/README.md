@@ -72,9 +72,32 @@ Current regression layers are now explicitly named:
 - `pnpm test:smoke` - asserted root dry-run validation layer
 - `pnpm test:ci` - build + typecheck + unit + smoke in one CI-oriented sequence
 
+Architecture guardrail and contract validation layers (Phase 19):
+
+- `pnpm validate:architecture-guardrails` — repo-local architecture guardrail validator
+  - Hotspot file size reporting (soft: 500 lines warn, hard: 1000 lines fail)
+  - Thin-facade boundary enforcement for `adapter-maestro/src/index.ts`
+  - Platform leakage detection (pure modules must not import execution modules)
+  - Dependency direction validation (no reverse imports)
+  - Tool catalog drift detection (registry vs README)
+  - PR template completeness check
+- `pnpm validate:tool-output-contracts` — tool-output payload validation
+  - ToolResult envelope integrity check
+  - Tier 1 tool-specific schema validation (synthetic payload well-formedness)
+  - MCP registry completeness for Tier 1 tools
+- `packages/mcp-server/test/tool-output-contracts.test.ts` — focused payload validation regression coverage
+  - Schema metadata completeness
+  - Valid/invalid payload success/failure semantics
+  - ToolResult envelope required fields
+  - Schema index completeness
+
 Current GitHub Actions CI scope:
 
 - `.github/workflows/ci.yml` runs on `ubuntu-latest` because the current workflow is intentionally limited to no-device, no-simulator regression layers
+  - `unit-and-typecheck` — build, typecheck, and unit tests
+  - `dry-run-smoke` — asserted root dry-run validation
+  - `architecture-guardrails` — architecture rule enforcement (Phase 19)
+  - `tool-output-contracts` — tool payload contract validation (Phase 19)
 - `.github/workflows/ocr-smoke.yml` is a separate macOS-only lane; it runs automatically only when OCR-related paths change, and it can also be started manually with `workflow_dispatch`
 - real Android emulator and real iOS simulator/device regression are still separate future lanes and should not be inferred from the current Ubuntu-only workflow
 

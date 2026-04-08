@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/tool-data/rank_failure_candidates.schema.json",
+  "title": "RankFailureCandidatesData",
+  "description": "Output payload for rank_failure_candidates — ranks possible failure causes.",
+  "type": "object",
+  "required": ["found", "candidates"],
+  "properties": {
+    "found": { "type": "boolean" },
+    "actionId": { "type": "string" },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["affectedLayer", "mostLikelyCause"],
+        "properties": {
+          "affectedLayer": { "type": "string" },
+          "mostLikelyCause": { "type": "string" },
+          "candidateCauses": { "type": "array", "items": { "type": "string" } },
+          "missingEvidence": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

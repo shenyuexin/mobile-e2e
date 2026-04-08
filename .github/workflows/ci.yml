@@ -97,5 +97,95 @@ jobs:
             echo "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo "- Artifact: \`ci-dry-run-smoke-metadata\`"
             echo "- Evidence guide: docs/showcase/ci-evidence.md"
-            echo "- Boundary: Ubuntu CI does not validate physical-device behavior; use showcase real-device evidence for that." 
+            echo "- Boundary: Ubuntu CI does not validate physical-device behavior; use showcase real-device evidence for that."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  architecture-guardrails:
+    runs-on: ubuntu-latest
+    needs: unit-and-typecheck
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm validate:architecture-guardrails
+      - name: Prepare CI metadata artifact (architecture-guardrails)
+        if: always()
+        run: |
+          mkdir -p ci-metadata
+          cat > ci-metadata/architecture-guardrails.txt <<'EOF'
+          job: architecture-guardrails
+          workflow: CI
+          run_id: ${{ github.run_id }}
+          run_attempt: ${{ github.run_attempt }}
+          ref: ${{ github.ref }}
+          sha: ${{ github.sha }}
+          status: ${{ job.status }}
+          EOF
+      - name: Upload CI metadata artifact (architecture-guardrails)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-architecture-guardrails-metadata
+          path: ci-metadata/architecture-guardrails.txt
+          if-no-files-found: error
+      - name: Append job summary (architecture-guardrails)
+        if: always()
+        run: |
+          {
+            echo "## CI Job Summary: architecture-guardrails"
+            echo "- Status: **${{ job.status }}**"
+            echo "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`ci-architecture-guardrails-metadata\`"
+            echo "- Checks: hotspot sizes, thin-facade boundary, platform leakage, dependency direction, tool catalog drift"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  tool-output-contracts:
+    runs-on: ubuntu-latest
+    needs: unit-and-typecheck
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm validate:tool-output-contracts
+      - name: Prepare CI metadata artifact (tool-output-contracts)
+        if: always()
+        run: |
+          mkdir -p ci-metadata
+          cat > ci-metadata/tool-output-contracts.txt <<'EOF'
+          job: tool-output-contracts
+          workflow: CI
+          run_id: ${{ github.run_id }}
+          run_attempt: ${{ github.run_attempt }}
+          ref: ${{ github.ref }}
+          sha: ${{ github.sha }}
+          status: ${{ job.status }}
+          EOF
+      - name: Upload CI metadata artifact (tool-output-contracts)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-tool-output-contracts-metadata
+          path: ci-metadata/tool-output-contracts.txt
+          if-no-files-found: error
+      - name: Append job summary (tool-output-contracts)
+        if: always()
+        run: |
+          {
+            echo "## CI Job Summary: tool-output-contracts"
+            echo "- Status: **${{ job.status }}**"
+            echo "- Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Artifact: \`ci-tool-output-contracts-metadata\`"
+            echo "- Checks: ToolResult envelope, Tier 1 tool schemas, registry completeness"
           } >> "$GITHUB_STEP_SUMMARY"

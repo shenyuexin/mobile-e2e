@@ -29,6 +29,8 @@
 - [ ] `pnpm build`
 - [ ] `pnpm typecheck`
 - [ ] `pnpm test:ci`
+- [ ] `pnpm validate:architecture-guardrails` (CI-enforced)
+- [ ] `pnpm validate:tool-output-contracts` (CI-enforced)
 - [ ] Additional targeted validation noted below
 
 ### Validation evidence
@@ -36,6 +38,22 @@
 - Targeted tests, flows, or fixtures:
 - Device / simulator / environment notes:
 - Screenshots, logs, or artifacts (if applicable):
+
+### Machine-checked vs reviewer-only
+
+The following architecture guardrails are now **CI-enforced** (no longer reviewer-only):
+- Hotspot file size limits (soft: 500 lines warn, hard: 1000 lines fail)
+- Thin-facade boundary violations in `adapter-maestro/src/index.ts`
+- Platform leakage into pure model/config modules
+- Dependency direction (no reverse imports from focused modules into orchestration)
+- Tool catalog drift (registered tools vs README documentation)
+- ToolResult envelope integrity and Tier 1 tool payload contracts
+
+The following remain **reviewer-only** checks:
+- AI-first capability guideline consultation quality
+- Support boundary language appropriateness
+- Deterministic-first design judgment
+- Scope focus and reviewability
 
 ## Risks and rollback
 
