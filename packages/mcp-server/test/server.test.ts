@@ -965,7 +965,7 @@ test("server invoke surfaces unsupported generated flow commands explicitly", as
   const sessionId = `server-unsupported-flow-${Date.now()}`;
   const flowPath = `flows/samples/generated/${sessionId}.yaml`;
   try {
-    await writeFile(path.resolve(repoRoot, flowPath), 'appId: com.example.demo\n---\n- swipe:\n    start: 10,10\n    end: 20,20\n', 'utf8');
+    await writeFile(path.resolve(repoRoot, flowPath), 'appId: com.example.demo\n---\n- extendedWaitUntil:\n    visible: SomeElement\n    timeout: 5000\n', 'utf8');
     const replay = await server.invoke("run_flow", {
       sessionId,
       platform: "android",
@@ -995,7 +995,7 @@ test("server invoke marks supported generated steps as skipped when a later step
   try {
     await writeFile(
       path.resolve(repoRoot, flowPath),
-      'appId: com.example.demo\n---\n- launchApp:\n    appId: com.example.demo\n- tapOn:\n    point: 10,10\n',
+      'appId: com.example.demo\n---\n- launchApp:\n    appId: com.example.demo\n- extendedWaitUntil:\n    visible: SomeElement\n    timeout: 5000\n',
       'utf8',
     );
 
@@ -1121,7 +1121,8 @@ test("server invoke supports iOS tap dry-run through idb", async () => {
 
   assert.equal(result.status, "success");
   assert.equal(result.reasonCode, "OK");
-  assert.equal(result.data.command.includes("ui"), true);
+  // AXe CLI format: ["axe", "tap", "-x", "12", "-y", "34", "--udid", "..."]
+  assert.equal(result.data.command[0], "axe");
   assert.equal(result.data.command.includes("tap"), true);
   assert.equal(result.data.command.includes("12"), true);
   assert.equal(result.data.command.includes("34"), true);
@@ -1140,8 +1141,8 @@ test("server invoke supports iOS type_text dry-run through idb", async () => {
 
   assert.equal(result.status, "success");
   assert.equal(result.reasonCode, "OK");
-  assert.equal(result.data.command.includes("ui"), true);
-  assert.equal(result.data.command.includes("text"), true);
+  // AXe CLI format: ["axe", "type", "hello", "--udid", "..."]
+  assert.equal(result.data.command[0], "axe");
   assert.equal(result.data.command.includes("hello"), true);
   assert.equal(result.data.command.includes("--udid"), true);
   assert.equal(result.data.command.includes("ADA078B9-3C6B-4875-8B85-A7789F368816"), true);

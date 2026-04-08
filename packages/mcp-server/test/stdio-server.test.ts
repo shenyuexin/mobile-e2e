@@ -2314,7 +2314,8 @@ test("handleRequest supports tools/call alias for iOS tap dry-run", async () => 
 
   assert.equal(typedResult.status, "success");
   assert.equal(typedResult.reasonCode, "OK");
-  assert.equal(typedResult.data.command.includes("ui"), true);
+  // AXe CLI format: ["axe", "tap", "-x", "12", "-y", "34", "--udid", "..."]
+  assert.equal(typedResult.data.command[0], "axe");
   assert.equal(typedResult.data.command.includes("tap"), true);
   assert.equal(typedResult.data.command.includes("12"), true);
   assert.equal(typedResult.data.command.includes("34"), true);
@@ -2344,8 +2345,8 @@ test("handleRequest supports tools/call alias for iOS type_text dry-run", async 
 
   assert.equal(typedResult.status, "success");
   assert.equal(typedResult.reasonCode, "OK");
-  assert.equal(typedResult.data.command.includes("ui"), true);
-  assert.equal(typedResult.data.command.includes("text"), true);
+  // AXe CLI format: ["axe", "type", "hello", "--udid", "..."]
+  assert.equal(typedResult.data.command[0], "axe");
   assert.equal(typedResult.data.command.includes("hello"), true);
   assert.equal(typedResult.data.command.includes("--udid"), true);
   assert.equal(typedResult.data.command.includes("ADA078B9-3C6B-4875-8B85-A7789F368816"), true);

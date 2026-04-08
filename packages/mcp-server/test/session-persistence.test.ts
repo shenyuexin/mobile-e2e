@@ -466,7 +466,7 @@ test("run_flow unsupported generated preview appends rejection replay timeline e
       profile: "phase1",
     });
 
-    await writeFile(path.resolve(repoRoot, flowPath), 'appId: com.example.demo\n---\n- tapOn:\n    point: 10,10\n', 'utf8');
+    await writeFile(path.resolve(repoRoot, flowPath), 'appId: com.example.demo\n---\n- extendedWaitUntil:\n    visible: SomeElement\n    timeout: 5000\n', 'utf8');
 
     const replay = await server.invoke("run_flow", {
       sessionId,

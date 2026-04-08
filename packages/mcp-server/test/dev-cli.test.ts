@@ -797,7 +797,8 @@ test("main dispatches iOS tap dry-run through the CLI", async () => {
 
   assert.equal(output.tapResult.status, "success");
   assert.equal(output.tapResult.reasonCode, "OK");
-  assert.equal(output.tapResult.data.command.includes("ui"), true);
+  // AXe CLI format: ["axe", "tap", "-x", "12", "-y", "34", "--udid", "..."]
+  assert.equal(output.tapResult.data.command[0], "axe");
   assert.equal(output.tapResult.data.command.includes("tap"), true);
   assert.equal(output.tapResult.data.command.includes("12"), true);
   assert.equal(output.tapResult.data.command.includes("34"), true);
@@ -821,8 +822,8 @@ test("main dispatches iOS type_text dry-run through the CLI", async () => {
 
   assert.equal(output.typeTextResult.status, "success");
   assert.equal(output.typeTextResult.reasonCode, "OK");
-  assert.equal(output.typeTextResult.data.command.includes("ui"), true);
-  assert.equal(output.typeTextResult.data.command.includes("text"), true);
+  // AXe CLI format: ["axe", "type", "hello", "--udid", "..."]
+  assert.equal(output.typeTextResult.data.command[0], "axe");
   assert.equal(output.typeTextResult.data.command.includes("hello"), true);
   assert.equal(output.typeTextResult.data.command.includes("--udid"), true);
   assert.equal(output.typeTextResult.data.command.includes("ADA078B9-3C6B-4875-8B85-A7789F368816"), true);
