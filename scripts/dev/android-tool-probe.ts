@@ -93,6 +93,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   const runnerProfile = (process.env.M2E_RUNNER_PROFILE ?? "phase1") as "phase1";
   const appId = process.env.M2E_APP_ID ?? "com.android.settings";
   const flowPath = process.env.M2E_FLOW_PATH ?? "flows/samples/ci/android-settings-smoke.yaml";
+  const checklistSource = process.env.M2E_CHECKLIST_PATH ?? "docs/testing/android-tool-probe-checklist.md";
 
   const artifactsDir = join("artifacts", "android-tool-probe", runId);
   const reportsDir = "reports";
@@ -356,7 +357,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   const summary = summarize(records);
   const report = {
     runId,
-    checklistSource: "/tmp/TOOL-VERIFICATION-TEMP-CHECKLIST.md",
+    checklistSource,
     sessionId,
     deviceId,
     platform,
