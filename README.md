@@ -206,7 +206,7 @@ Tool registry/signature dispatch live in `packages/mcp-server/src/server.ts`, wh
 
 ## Complete MCP Tool Catalog (Current)
 
-The server currently exposes **56 tools**. For AI agents, this is the current tool surface.
+The server currently exposes **61 tools**. For AI agents, this is the current tool surface.
 
 ### 1) Session & lifecycle
 
@@ -214,7 +214,7 @@ The server currently exposes **56 tools**. For AI agents, this is the current to
 
 ### 2) Task orchestration & flow capture
 
-`execute_intent`, `complete_task`, `start_record_session`, `get_record_session_status`, `end_record_session`, `cancel_record_session`, `export_session_flow`, `record_task_flow`
+`execute_intent`, `complete_task`, `start_record_session`, `get_record_session_status`, `end_record_session`, `cancel_record_session`, `export_session_flow`, `record_task_flow`, `validate_flow`
 
 ### 3) Device & app control
 
@@ -226,7 +226,7 @@ The server currently exposes **56 tools**. For AI agents, this is the current to
 
 ### 5) Evidence, observability, and diagnostics
 
-`take_screenshot`, `record_screen`, `get_logs`, `get_crash_signals`, `collect_diagnostics`, `collect_debug_evidence`, `get_screen_summary`, `get_session_state`, `capture_js_console_logs`, `capture_js_network_events`, `list_js_debug_targets`
+`take_screenshot`, `record_screen`, `get_logs`, `get_crash_signals`, `collect_diagnostics`, `collect_debug_evidence`, `get_screen_summary`, `get_session_state`, `capture_js_console_logs`, `capture_js_network_events`, `list_js_debug_targets`, `capture_element_screenshot`, `compare_visual_baseline`
 
 ### 6) Interruption handling
 
@@ -234,11 +234,15 @@ The server currently exposes **56 tools**. For AI agents, this is the current to
 
 ### 7) Failure analysis, recovery, and remediation
 
-`perform_action_with_evidence`, `get_action_outcome`, `explain_last_failure`, `rank_failure_candidates`, `find_similar_failures`, `compare_against_baseline`, `recover_to_known_state`, `replay_last_stable_path`, `suggest_known_remediation`
+`perform_action_with_evidence`, `get_action_outcome`, `explain_last_failure`, `rank_failure_candidates`, `find_similar_failures`, `compare_against_baseline`, `recover_to_known_state`, `replay_last_stable_path`, `suggest_known_remediation`, `replay_checkpoint_chain`
 
 ### 8) Performance profiling
 
 `measure_android_performance`, `measure_ios_performance`
+
+### 9) Network diagnostics
+
+`probe_network_readiness`
 
 For exact signatures and supported inputs/outputs, use `packages/mcp-server/src/server.ts` (the tool registry source of truth).
 

@@ -181,7 +181,7 @@
 
 ## 完整 MCP 工具目录（当前）
 
-当前服务共暴露 **56 个工具**。对于 AI Agent，这是最快建立"可做什么"的入口。
+当前服务共暴露 **61 个工具**。对于 AI Agent，这是最快建立"可做什么"的入口。
 
 ### 1）会话与生命周期
 
@@ -189,7 +189,7 @@
 
 ### 2）任务编排与流程采集
 
-`execute_intent`、`complete_task`、`start_record_session`、`get_record_session_status`、`end_record_session`、`cancel_record_session`、`export_session_flow`、`record_task_flow`
+`execute_intent`、`complete_task`、`start_record_session`、`get_record_session_status`、`end_record_session`、`cancel_record_session`、`export_session_flow`、`record_task_flow`、`validate_flow`
 
 ### 3）设备与应用控制
 
@@ -201,7 +201,7 @@
 
 ### 5）证据、可观测与诊断
 
-`take_screenshot`、`record_screen`、`get_logs`、`get_crash_signals`、`collect_diagnostics`、`collect_debug_evidence`、`get_screen_summary`、`get_session_state`、`capture_js_console_logs`、`capture_js_network_events`、`list_js_debug_targets`
+`take_screenshot`、`record_screen`、`get_logs`、`get_crash_signals`、`collect_diagnostics`、`collect_debug_evidence`、`get_screen_summary`、`get_session_state`、`capture_js_console_logs`、`capture_js_network_events`、`list_js_debug_targets`、`capture_element_screenshot`、`compare_visual_baseline`
 
 ### 6）中断处理
 
@@ -209,11 +209,15 @@
 
 ### 7）失败分析、恢复与修复建议
 
-`perform_action_with_evidence`、`get_action_outcome`、`explain_last_failure`、`rank_failure_candidates`、`find_similar_failures`、`compare_against_baseline`、`recover_to_known_state`、`replay_last_stable_path`、`suggest_known_remediation`
+`perform_action_with_evidence`、`get_action_outcome`、`explain_last_failure`、`rank_failure_candidates`、`find_similar_failures`、`compare_against_baseline`、`recover_to_known_state`、`replay_last_stable_path`、`suggest_known_remediation`、`replay_checkpoint_chain`
 
 ### 8）性能分析
 
 `measure_android_performance`、`measure_ios_performance`
+
+### 9）网络诊断
+
+`probe_network_readiness`
 
 精确签名与输入输出以 `packages/mcp-server/src/server.ts`（工具注册源）为准。
 
