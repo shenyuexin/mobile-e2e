@@ -1215,6 +1215,43 @@ export interface ReplayLastStablePathData {
   summary: RecoverySummary;
   replayedOutcome?: ActionOutcomeSummary;
 }
+
+// --- Plan 18-02: Multi-Step Checkpoint Chain ---
+
+export interface ReplayStepResult {
+  stepIndex: number;
+  actionId: string;
+  actionType: string;
+  status: "success" | "diverged" | "failed" | "skipped";
+  reason?: string;
+  originalOutcome?: ActionOutcomeSummary;
+  replayedOutcome?: ActionOutcomeSummary;
+}
+
+export interface ReplayCheckpointChainInput {
+  sessionId: string;
+  platform?: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  appId?: string;
+  fromStep?: number;
+  maxSteps?: number;
+  dryRun?: boolean;
+}
+
+export interface ReplayCheckpointChainData {
+  anchorActionId: string;
+  replayedCount: number;
+  succeededCount: number;
+  divergedCount: number;
+  skippedCount: number;
+  perStepResults: ReplayStepResult[];
+  overallStatus: "full" | "partial" | "failed";
+  checkpointDecision?: CheckpointDecisionTrace;
+  note: string;
+}
+
 export interface FindSimilarFailuresInput {
   sessionId: string;
   actionId?: string;

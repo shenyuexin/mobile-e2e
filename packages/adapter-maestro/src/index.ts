@@ -85,6 +85,8 @@ import {
   type ResetAppStateInput,
   type ResetAppStateStrategy,
   type RecoverySummary,
+  type ReplayCheckpointChainData,
+  type ReplayCheckpointChainInput,
   type ReplayLastStablePathData,
   type ReplayLastStablePathInput,
   type ReasonCode,
@@ -310,6 +312,9 @@ import {
   recoverToKnownStateWithMaestro as recoverToKnownStateWithMaestroFromRecoveryTools,
   replayLastStablePathWithMaestro as replayLastStablePathWithMaestroFromRecoveryTools,
 } from "./recovery-tools.js";
+import {
+  replayCheckpointChain as replayCheckpointChainFromReplayChain,
+} from "./replay-chain.js";
 import {
   completeTaskWithMaestro as completeTaskWithMaestroFromTaskPlanner,
   executeIntentPlanWithMaestro as executeIntentPlanWithMaestroFromTaskPlanner,
@@ -587,6 +592,15 @@ export async function replayLastStablePathWithMaestro(
   return replayLastStablePathWithMaestroFromRecoveryTools(input, {
     getSessionStateWithMaestro,
     launchAppWithMaestro,
+    performActionWithEvidenceWithMaestro,
+  });
+}
+
+export async function replayCheckpointChainWithMaestro(
+  input: ReplayCheckpointChainInput,
+): Promise<ToolResult<ReplayCheckpointChainData>> {
+  return replayCheckpointChainFromReplayChain(input, {
+    getSessionStateWithMaestro,
     performActionWithEvidenceWithMaestro,
   });
 }

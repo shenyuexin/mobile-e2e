@@ -76,6 +76,8 @@ import type {
   RecoverToKnownStateInput,
   ReplayLastStablePathData,
   ReplayLastStablePathInput,
+  ReplayCheckpointChainInput,
+  ReplayCheckpointChainData,
   ResolveInterruptionData,
   ResolveInterruptionInput,
   ResolveUiTargetData,
@@ -159,6 +161,7 @@ export interface MobileE2EMcpToolContractMap {
   resume_interrupted_action: ToolContract<ResumeInterruptedActionInput, ResumeInterruptedActionData>;
   resolve_ui_target: ToolContract<ResolveUiTargetInput, ResolveUiTargetData>;
   replay_last_stable_path: ToolContract<ReplayLastStablePathInput, ReplayLastStablePathData>;
+  replay_checkpoint_chain: ToolContract<ReplayCheckpointChainInput, ReplayCheckpointChainData>;
   scroll_and_resolve_ui_target: ToolContract<ScrollAndResolveUiTargetInput, ScrollAndResolveUiTargetData>;
   scroll_and_tap_element: ToolContract<ScrollAndTapElementInput, ScrollAndTapElementData>;
   install_app: ToolContract<InstallAppInput, InstallAppData>;

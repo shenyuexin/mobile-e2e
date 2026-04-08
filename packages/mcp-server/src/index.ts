@@ -68,6 +68,7 @@ import { recordScreen } from "./tools/record-screen.js";
 import { requestManualHandoff } from "./tools/request-manual-handoff.js";
 import { recoverToKnownState } from "./tools/recover-to-known-state.js";
 import { replayLastStablePath } from "./tools/replay-last-stable-path.js";
+import { replayCheckpointChainTool } from "./tools/replay-checkpoint-chain.js";
 import { resetAppState } from "./tools/reset-app-state.js";
 import { resolveInterruption } from "./tools/resolve-interruption.js";
 import { resolveUiTarget } from "./tools/resolve-ui-target.js";
@@ -869,6 +870,14 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     name: "replay_last_stable_path",
     description: "Replay the latest successful bounded action recorded for this session.",
     handler: replayLastStablePath,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "replay_checkpoint_chain",
+    description: "Replay a chain of low-risk actions from the last stable checkpoint in a session, with divergence detection.",
+    handler: replayCheckpointChainTool,
     policy: { enforced: true, requiredScopes: ["write"] },
     session: { required: true, requireResolvedSessionContext: true },
     audit: { captureResultEvidence: false },
