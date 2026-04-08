@@ -7,6 +7,10 @@ import {
   uiActionToolInternals,
 } from "../src/ui-action-tools.ts";
 import {
+  buildIosPhysicalExecutionEvidencePaths,
+  buildOwnedRunnerActionEnv,
+} from "../src/ui-action-tools-ios-physical.ts";
+import {
   buildIosPhysicalActionExecutionPlan,
   isIosSimulatorOnlyIdbActionError,
   verifyTypedIosPostconditionWithHooks,
@@ -626,7 +630,7 @@ test("buildIosPhysicalFailureSuggestions keeps backend-specific fallback guidanc
 });
 
 test("buildIosPhysicalExecutionEvidencePaths keeps session-scoped deterministic artifact path", () => {
-  const paths = uiActionToolInternals.buildIosPhysicalExecutionEvidencePaths(
+  const paths = buildIosPhysicalExecutionEvidencePaths(
     "/tmp/repo",
     "session-xyz",
     "tap",
@@ -635,7 +639,7 @@ test("buildIosPhysicalExecutionEvidencePaths keeps session-scoped deterministic 
 });
 
 test("buildOwnedRunnerActionEnv extracts tap action payload from flow content", () => {
-  const envPatch = uiActionToolInternals.buildOwnedRunnerActionEnv({
+  const envPatch = buildOwnedRunnerActionEnv({
     actionType: "tap",
     flowContent: [
       "appId: com.example.app",
@@ -653,7 +657,7 @@ test("buildOwnedRunnerActionEnv extracts tap action payload from flow content", 
 });
 
 test("buildOwnedRunnerActionEnv extracts text payload from type_text flow content", () => {
-  const envPatch = uiActionToolInternals.buildOwnedRunnerActionEnv({
+  const envPatch = buildOwnedRunnerActionEnv({
     actionType: "type_text",
     flowContent: [
       "appId: com.example.app",
@@ -667,7 +671,7 @@ test("buildOwnedRunnerActionEnv extracts text payload from type_text flow conten
 });
 
 test("buildOwnedRunnerActionEnv ignores wildcard flow appId and preserves action payload", () => {
-  const envPatch = uiActionToolInternals.buildOwnedRunnerActionEnv({
+  const envPatch = buildOwnedRunnerActionEnv({
     actionType: "tap",
     flowContent: [
       'appId: "*"',
