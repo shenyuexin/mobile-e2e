@@ -86,3 +86,13 @@ Canonical policy, trigger paths, and exemptions are maintained in:
 
 - `docs/delivery/npm-release-and-git-tagging.zh-CN.md`
 
+## 7) GitNexus — Code Intelligence
+
+This project is indexed by GitNexus. Full tool guide, workflows, and skill files are in:
+**`docs/engineering/gitnexus-agent-guide.md`**
+
+Quick reference:
+- Before editing any symbol: run `gitnexus_impact({target: "symbolName", direction: "upstream"})`
+- Before committing: run `gitnexus_detect_changes()` to verify scope
+- If index is stale: run `npx gitnexus analyze`
+- Skill files: `.agent/skills/gitnexus/` (exploring, debugging, refactoring, impact analysis, guide, CLI)

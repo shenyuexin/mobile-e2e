@@ -79,6 +79,12 @@ coverage/
 .qwen/
 .omq/
 
+# Claude Code local config (replaced by generic .agent/)
+.claude/
+
+# Codex local config (Codex uses global ~/.agents/)
+.codex/
+
 # Optional open-source scope trimming (internal/phase artifacts)
 # NOTE: For already tracked files, run `git rm --cached <path>` to stop publishing.
 docs/phases/
@@ -110,3 +116,4 @@ configs/matrices/*
 flows/samples/generated/*.yaml
 !flows/samples/generated/.gitkeep
 !flows/samples/generated/example-login-smoke.yaml
+.gitnexus
