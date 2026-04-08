@@ -255,4 +255,7 @@ export type {
   UiScrollDirection,
   RawRecordedEvent,
   FlowGenerationReport,
+  FlowStepValidation,
+  ValidateFlowInput,
+  ValidateFlowData,
 } from "./types.js";

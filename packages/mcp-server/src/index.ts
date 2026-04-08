@@ -83,6 +83,7 @@ import { tapElement } from "./tools/tap-element.js";
 import { terminateApp } from "./tools/terminate-app.js";
 import { typeIntoElement } from "./tools/type-into-element.js";
 import { typeText } from "./tools/type-text.js";
+import { validateFlowTool } from "./tools/validate-flow.js";
 import { waitForUi } from "./tools/wait-for-ui.js";
 
 interface ActiveSessionCandidate {
@@ -926,6 +927,14 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     handler: typeIntoElement,
     policy: { enforced: true, requiredScopes: ["write"] },
     session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: "validate_flow",
+    description: "Validate a Maestro flow or recorded session against the current app state without executing actions.",
+    handler: validateFlowTool,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: false },
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({

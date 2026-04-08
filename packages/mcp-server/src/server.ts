@@ -109,6 +109,8 @@ import type {
   TypeIntoElementInput,
   TypeTextData,
   TypeTextInput,
+  ValidateFlowData,
+  ValidateFlowInput,
   VisualDiffData,
   VisualDiffInput,
   WaitForUiData,
@@ -178,6 +180,7 @@ export interface MobileE2EMcpToolContractMap {
   terminate_app: ToolContract<TerminateAppInput, TerminateAppData>;
   type_text: ToolContract<TypeTextInput, TypeTextData>;
   type_into_element: ToolContract<TypeIntoElementInput, TypeIntoElementData>;
+  validate_flow: ToolContract<ValidateFlowInput, ValidateFlowData>;
   wait_for_ui: ToolContract<WaitForUiInput, WaitForUiData>;
   end_session: ToolContract<EndSessionInput, EndSessionData>;
 }

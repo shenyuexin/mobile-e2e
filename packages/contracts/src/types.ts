@@ -1846,3 +1846,35 @@ export interface VisualDiffData {
   passed: boolean;
   structuralDiff?: VisualStructuralDiff;
 }
+
+// --- Plan 18-03: Flow Validation Before Export ---
+
+export interface FlowStepValidation {
+  stepIndex: number;
+  stepType: string;
+  resourceId?: string;
+  status: "pass" | "fail" | "warn";
+  reason?: string;
+  suggestion?: string;
+}
+
+export interface ValidateFlowInput {
+  sessionId?: string;
+  flowPath?: string;
+  platform?: Platform;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  deviceId?: string;
+  appId?: string;
+  dryRun?: boolean;
+}
+
+export interface ValidateFlowData {
+  valid: boolean;
+  totalSteps: number;
+  passedSteps: number;
+  failedSteps: FlowStepValidation[];
+  warnedSteps: FlowStepValidation[];
+  overallConfidence: number;
+  validationSummary: string;
+}

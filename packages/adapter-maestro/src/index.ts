@@ -767,3 +767,4 @@ export async function runDoctor(
 }
 
 export { cropElementScreenshot } from "./element-screenshot.js";
+export { validateFlow } from "./flow-validation.js";
