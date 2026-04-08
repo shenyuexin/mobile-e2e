@@ -355,7 +355,8 @@ const validationCases: ValidationCase[] = [
       const typed = result as { tapResult: { status: string; reasonCode: string; data: { command: string[] } } };
       assert.equal(typed.tapResult.status, "success");
       assert.equal(typed.tapResult.reasonCode, "OK");
-      assert.equal(typed.tapResult.data.command.includes("ui"), true);
+      // AXe CLI format: ["axe", "tap", "-x", "12", "-y", "34", "--udid", "..."]
+      assert.equal(typed.tapResult.data.command[0], "axe");
       assert.equal(typed.tapResult.data.command.includes("tap"), true);
       assert.equal(typed.tapResult.data.command.includes("12"), true);
       assert.equal(typed.tapResult.data.command.includes("34"), true);
@@ -370,8 +371,8 @@ const validationCases: ValidationCase[] = [
       const typed = result as { typeTextResult: { status: string; reasonCode: string; data: { command: string[] } } };
       assert.equal(typed.typeTextResult.status, "success");
       assert.equal(typed.typeTextResult.reasonCode, "OK");
-      assert.equal(typed.typeTextResult.data.command.includes("ui"), true);
-      assert.equal(typed.typeTextResult.data.command.includes("text"), true);
+      // AXe CLI format: ["axe", "type", "hello", "--udid", "..."]
+      assert.equal(typed.typeTextResult.data.command[0], "axe");
       assert.equal(typed.typeTextResult.data.command.includes("hello"), true);
       assert.equal(typed.typeTextResult.data.command.includes("--udid"), true);
       assert.equal(typed.typeTextResult.data.command.includes("ADA078B9-3C6B-4875-8B85-A7789F368816"), true);
