@@ -131,3 +131,33 @@ For each phase define and maintain:
 - QA/release approver
 - Security/governance approver (where applicable)
 - Evidence links required for go/no-go review
+
+---
+
+## Record → Replay Productization (Android-first)
+
+### Background
+
+Current capabilities:
+- `export_session_flow` — action records to YAML
+- `record_task_flow` — task-oriented export wrapper
+- `run_flow` — YAML replay
+
+Productization goal: simplify to 3-step workflow:
+1. `start_record_session`
+2. User manually operates app on device/emulator
+3. `end_record_session` → auto-generates replayable flow with quality report
+
+### In Scope (Phase 1)
+
+- Android-first recording loop
+- Passive event collection (tap, input, back, foreground/background)
+- Semantic mapping to action model (`tap_element`, `type_into_element`, `wait_for_ui`, `launch_app`)
+- Auto-export YAML to `flows/samples/generated/`
+- Post-export dry-run smoke test with structured report
+
+### Out of Scope (Phase 1)
+
+- Natural-language full-auto exploration (zero-anchor)
+- iOS physical device passive recording
+- Complex gesture (multi-touch, long-press drag) high-fidelity restoration

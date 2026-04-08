@@ -1,46 +1,42 @@
-# Docs Index (Public)
+# Docs Index
 
-This directory now keeps only public-facing architecture and delivery references.
+This directory contains all documentation for mobile-e2e-mcp.
 
-## Public sections
+## Core References
 
-- `engineering/` — durable implementation-facing guidance for contributors extending the harness
-- `architecture/` — reference architecture, capability model, platform/adapter design, governance/security
-- `delivery/roadmap.md` — public roadmap and phase-level delivery direction
-- `delivery/npm-release-and-git-tagging.zh-CN.md` — release/tagging operational guide
-- `showcase/` — reproducible demo evidence, recordings, and run reports
-  - `showcase/README.md` — showcase entry with reproducible scripts and canonical video assets
-  - `showcase/demo-playbook.zh-CN.md` — verified happy-path and interruption-recovery demo scripts
-- `guides/ai-agent-invocation.zh-CN.md` — canonical AI-agent invocation guide and tool-sequencing rules
-- `guides/golden-path.md` — front-door closed-loop guide for first-run success
-- `guides/flow-generation.md` — flow export/replay guide, including `run_flow` Android replay configuration
-- `guides/vivo-oppo-multi-user-replay.md` — OEM multi-user replay diagnosis and user-0 / OEM-fallback guidance
-- `templates/` — reusable templates for ADR, review, evidence, and planning artifacts
+| Directory | Content |
+|---|---|
+| [architecture/](./architecture/) | System architecture, platform adapters, capability model, runtime design, governance |
+| [guides/](./guides/) | Setup guides, usage guides, and operational manuals |
+| [delivery/](./delivery/) | Delivery roadmap and release processes |
+| [showcase/](./showcase/) | Reproducible real-device demo evidence |
+| [strategy/](./strategy/) | Differentiation strategy and ecosystem landscape |
+| [engineering/](./engineering/) | Durable implementation guidance for contributors |
+| [templates/](./templates/) | Reusable templates for ADRs, bug packets, phase charters, etc. |
 
-## Publication boundary
+## Quick Links
 
-The following document classes are intentionally not kept in public docs:
+### Getting Started
 
-- Dated execution snapshots and one-off trial records
-- Internal checklists used for temporary rollout waves
-- In-flight phase/program tracking files tied to mutable internal ownership
+1. [README.md](../README.md) — project overview
+2. [External Tools Setup](./guides/external-tools.md) — install all dependencies
+3. [WDA Setup (iOS physical)](./guides/wda-setup.md) — WebDriverAgent build and connection
+4. [Golden Path](./guides/golden-path.md) — first-run closed loop
+5. [AI Agent Invocation](./guides/ai-agent-invocation.zh-CN.md) — tool selection guide (zh-CN)
 
-If a delivery process becomes stable and reusable, promote it into `architecture/` or a durable `delivery/` document.
+### Architecture
 
-## Recommended engineering guides
+1. [01-system-architecture.md](./architecture/01-system-architecture.md) — topology, contracts, reliability
+2. [02-platform-adapters.md](./architecture/02-platform-adapters.md) — Android/iOS backends
+3. [03-capability-model.md](./architecture/03-capability-model.md) — AI-first capabilities, maturity levels
+4. [04-runtime-architecture.md](./architecture/04-runtime-architecture.md) — execution coordinator, fallback, recovery
+5. [05-governance-security.md](./architecture/05-governance-security.md) — policy, audit, human handoff
 
-- `engineering/type-export-sequencing-guideline.md` — avoid cross-package type export sequencing mistakes
-- `engineering/ai-first-capability-expansion-guideline.md` — keep new features aligned with AI-first, deterministic-first, policy-aware harness design
-- `engineering/capability-family-inventory.md` — capability family ownership and phased refactor guardrails
-- `engineering/adapter-maestro-index-decomposition-implementation-playbook.zh-CN.md` — step-by-step implementation playbook for shrinking adapter-maestro `index.ts` without boundary regressions
+### Delivery
 
-## Recommended architecture entry points
+1. [Roadmap](./delivery/roadmap.md) — phase-level delivery direction
+2. [NPM Release & Git Tagging](./delivery/npm-release-and-git-tagging.zh-CN.md) — release process (zh-CN)
 
-- `architecture/orchestration-robustness-strategy.md` — priority deepening areas for high-frequency automation-flow failures and network anomaly handling
-- `architecture/harness-deepening-debug-first-strategy.zh-CN.md` — debug-first harness deepening strategy focused on stronger evidence, attribution, recovery, and stop decisions
-- `architecture/harness-deepening-debug-first-implementation-checklist.zh-CN.md` — milestone-based execution checklist for outcome proof, diagnosis packet, session memory, recovery follow-on, and validation gates
-- `architecture/bounded-retry-and-state-change-evidence-architecture.md` — runtime design for bounded retry, checkpoint, replay-safe resume, and state-change proof
-- `architecture/network-anomaly-runtime-architecture.md` — runtime design for network-aware readiness, attribution, retry, and early-stop behavior
-- `architecture/orchestration-robustness-implementation-checklist.md` — directly executable milestone checklist for robustness work
-- `architecture/failure-attribution-and-recovery-architecture.zh-CN.md` — bounded failure-to-recovery closure
-- `architecture/interruption-orchestrator-v2.zh-CN.md` — interruption handling runtime architecture
+### Engineering Guidelines
+
+1. [AI-First Capability Expansion](./engineering/ai-first-capability-expansion-guideline.md) — how to add new capabilities correctly

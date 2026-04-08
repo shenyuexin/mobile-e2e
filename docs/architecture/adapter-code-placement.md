@@ -398,3 +398,25 @@ If you are unsure where a new feature belongs, ask this question:
 - policy/governance -> `packages/core/src/policy-engine.ts` or `packages/mcp-server/src/policy-guard.ts`
 - platform execution -> runtime module
 - tool orchestration/result shaping -> `index.ts` or a future tool module
+
+---
+
+## 9. Index Guardrails (`packages/adapter-maestro/src/index.ts`)
+
+Non-negotiable migration rules:
+
+1. New platform command builders MUST NOT be added to `index.ts`.
+2. New selector/query matching logic MUST NOT be added to `index.ts`.
+3. New policy-gate decisions MUST NOT be added to `adapter-maestro`; policy enforcement remains in `packages/mcp-server/src/policy-guard.ts` and server wrappers.
+4. `index.ts` is treated as composition/export surface; platform branches belong in `*-android.ts` / `*-ios.ts` / `*-platform.ts` hooks modules.
+
+## 10. Phase PR Checklist
+
+For each phase PR, all items must be checked:
+
+- [ ] Contracts changes (if any) land before adapter/server consumers.
+- [ ] New platform behavior is implemented via hooks modules, not via fresh `if (platform)` branches in `index.ts`.
+- [ ] Deterministic-first path is unchanged unless explicitly documented.
+- [ ] Fallback behavior changes are explicit in contract/docs and covered by tests.
+- [ ] Policy/session/audit wrapping behavior is preserved in mcp-server.
+- [ ] Support boundary text in README/docs is updated to match shipped behavior.

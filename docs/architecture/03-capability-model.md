@@ -227,3 +227,16 @@ Without this definition, capability status is considered incomplete.
 For detailed adapter design, see [02-platform-adapters.md](./02-platform-adapters.md).
 
 For the full platform implementation matrix, see [platform-implementation-matrix.zh-CN.md](./platform-implementation-matrix.zh-CN.md).
+
+---
+
+## 8. Capability Family Ownership
+
+| Family | Contracts | Adapter Runtime | MCP Wrapper | Docs Boundary |
+|---|---|---|---|---|
+| UI | `InspectUi*`, `QueryUi*`, `ResolveUiTarget*`, `WaitForUi*`, `TapElement*`, `TypeIntoElement*`, `ScrollAnd*` | `packages/adapter-maestro/src/ui-*` | `packages/mcp-server/src/tools/*ui*` | [02-platform-adapters.md](./02-platform-adapters.md) |
+| Device/App Lifecycle | `InstallApp*`, `LaunchApp*`, `TerminateApp*`, `ResetAppState*`, `ListDevices*` | `packages/adapter-maestro/src/device-*` | `install-app.ts`, `launch-app.ts`, `terminate-app.ts`, `reset-app-state.ts`, `list-devices.ts` | README.md |
+| Diagnostics/Evidence | `GetLogs*`, `GetCrashSignals*`, `CollectDiagnostics*`, `CollectDebugEvidence*`, `GetScreenSummary*`, `GetSessionState*` | `packages/adapter-maestro/src/device-*` + evidence helpers | `get-logs.ts`, `get-crash-signals.ts`, `collect-diagnostics.ts`, `collect-debug-evidence.ts`, `get-screen-summary.ts`, `get-session-state.ts` | [05-governance-security.md](./05-governance-security.md) |
+| Performance | `MeasureAndroidPerformance*`, `MeasureIosPerformance*` | `packages/adapter-maestro/src/performance-*` | `measure-android-performance.ts`, `measure-ios-performance.ts` | [03-capability-model.md](./03-capability-model.md) |
+| Recording/Replay | `StartRecordSession*`, `RecordSessionStatus*`, `EndRecordSession*`, `CancelRecordSession*`, `ExportSessionFlow*`, `RecordTaskFlow*` | `packages/adapter-maestro/src/recording-*` | `start-record-session.ts`, `get-record-session-status.ts`, `end-record-session.ts`, `cancel-record-session.ts`, `export-session-flow.ts`, `record-task-flow.ts` | [guides/flow-generation.md](../guides/flow-generation.md) |
+| Interruption/Recovery | `DetectInterruption*`, `ClassifyInterruption*`, `ResolveInterruption*`, `ResumeInterruptedAction*`, `RecoverToKnownState*`, `ReplayLastStablePath*` | `packages/adapter-maestro/src/interruption-*` | `detect-interruption.ts`, `classify-interruption.ts`, `resolve-interruption.ts`, `resume-interrupted-action.ts`, `recover-to-known-state.ts`, `replay-last-stable-path.ts` | [05-governance-security.md](./05-governance-security.md) |
