@@ -123,7 +123,12 @@ export async function selectAndroidReplayBackend(params: {
   const plan = buildReplayPlanFromFlowYaml(params.flowContent);
   const hasUnsupportedCommands = plan.unsupportedCommands.length > 0;
 
-  // Check helper app availability (needed for maestro fallback)
+  if (!hasUnsupportedCommands) {
+    // All steps supported → owned-adb primary backend, no helper apps needed
+    return { backend: "owned-adb", helperAppsRequired: false, helperAppsAvailable: false };
+  }
+
+  // Has unsupported steps → check helper app availability for maestro fallback
   const helperPackageArgs = params.userId
     ? ["adb", "-s", params.deviceId, "shell", "cmd", "package", "list", "packages", "--user", params.userId]
     : ["adb", "-s", params.deviceId, "shell", "pm", "list", "packages"];
@@ -133,13 +138,6 @@ export async function selectAndroidReplayBackend(params: {
   const hasDriverServer = /(^|\n)package:dev\.mobile\.maestro\.test(\n|$)/.test(packagesOutput);
   const helperAppsAvailable = hasDriverApp && hasDriverServer;
 
-  if (!hasUnsupportedCommands) {
-    // All steps supported → owned-adb primary backend
-    return { backend: "owned-adb", helperAppsRequired: false, helperAppsAvailable };
-  }
-
-  // Has unsupported steps → need to check position relative to first mutating step
-  // For this phase, any unsupported command triggers maestro fallback evaluation
   return {
     backend: "maestro",
     helperAppsRequired: true,
