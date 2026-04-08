@@ -42,7 +42,7 @@
 ### Machine-checked vs reviewer-only
 
 The following architecture guardrails are now **CI-enforced** (no longer reviewer-only):
-- Hotspot file size limits (soft: 500 lines warn, hard: 1000 lines fail)
+- Hotspot file size limits (soft: 500 lines warn, hard: 1500 lines warn-first rollout)
 - Thin-facade boundary violations in `adapter-maestro/src/index.ts`
 - Platform leakage into pure model/config modules
 - Dependency direction (no reverse imports from focused modules into orchestration)

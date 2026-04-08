@@ -75,7 +75,7 @@ Current regression layers are now explicitly named:
 Architecture guardrail and contract validation layers (Phase 19):
 
 - `pnpm validate:architecture-guardrails` — repo-local architecture guardrail validator
-  - Hotspot file size reporting (soft: 500 lines warn, hard: 1000 lines fail)
+  - Hotspot file size reporting (soft: 500 lines warn, hard: 1500 lines warn-first rollout)
   - Thin-facade boundary enforcement for `adapter-maestro/src/index.ts`
   - Platform leakage detection (pure modules must not import execution modules)
   - Dependency direction validation (no reverse imports)

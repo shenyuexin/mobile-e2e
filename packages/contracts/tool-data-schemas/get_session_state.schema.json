@@ -4,7 +4,7 @@
   "title": "GetSessionStateData",
   "description": "Output payload for get_session_state — returns current session state summary.",
   "type": "object",
-  "required": ["platform", "sessionRecordFound", "state", "capabilities", "screenSummary"],
+  "required": ["platform", "runnerProfile", "sessionRecordFound", "state", "capabilities", "screenSummary"],
   "properties": {
     "dryRun": { "type": "boolean" },
     "platform": { "type": "string", "enum": ["android", "ios"] },
