@@ -17,6 +17,7 @@ export function createAndroidUiRuntimeHooks(): UiRuntimePlatformHooks {
       "-s",
       deviceId,
       "shell",
+      "input",
       ACTION_TYPES.swipe,
       String(swipe.start.x),
       String(swipe.start.y),
