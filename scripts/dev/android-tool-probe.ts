@@ -221,8 +221,18 @@ export async function runAndroidToolProbe(): Promise<void> {
   await stabilize();
 
   // ========== UI inspect / action / orchestration ==========
+  // Each tool gets a fresh Settings launch to avoid state drift.
+  // force-stop + am start ensures we always land on Settings home, not a stale activity.
+  const relaunch = async () => {
+    await invoke("launch_app", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+      launchUrl: "android.settings.SETTINGS",
+      force: true, // force-stop before launching to clear activity stack
+    });
+    await stabilize(3000);
+  };
 
-  // Step 1: Wait for Wi-Fi (always visible at top of Settings home)
+  // Test wait_for_ui
   await tryTextSelector(
     "wait_for_ui", "wait visible by",
     ["Wi-Fi", "WLAN", "蓝牙", "Bluetooth"],
@@ -232,16 +242,9 @@ export async function runAndroidToolProbe(): Promise<void> {
     }),
   );
 
-  // Step 2: press_back to ensure we are at Settings home (not in a sub-page)
-  push("execute_intent", await invoke("execute_intent", {
-    sessionId, platform, runnerProfile, deviceId, appId,
-    intent: "navigate back to Settings home", actionType: "press_back",
-  }), "press back to return to Settings home");
+  await relaunch();
 
-  await stabilize();
-
-  // Step 3: resolve_ui_target - Bluetooth (vivo uses content-desc, not text)
-  // Direct approach: try content-desc="Bluetooth, On" first since vivo Bluetooth item has text=""
+  // Test resolve_ui_target - Bluetooth (vivo uses content-desc)
   const cdResult1 = await invoke("resolve_ui_target", {
     sessionId, platform, runnerProfile, deviceId,
     contentDesc: "Bluetooth, On", limit: 1,
@@ -249,7 +252,6 @@ export async function runAndroidToolProbe(): Promise<void> {
   if (cdResult1.status === "success") {
     push("resolve_ui_target", cdResult1, "resolve content-desc=Bluetooth, On");
   } else {
-    // Fallback: try text-based matching
     await tryTextSelector(
       "resolve_ui_target", "resolve",
       ["Bluetooth", "蓝牙"],
@@ -257,7 +259,9 @@ export async function runAndroidToolProbe(): Promise<void> {
     );
   }
 
-  // Step 4: scroll_and_resolve_ui_target - "About phone" is at the bottom
+  await relaunch();
+
+  // Test scroll_and_resolve_ui_target - About phone
   await tryTextSelector(
     "scroll_and_resolve_ui_target", "scroll resolve",
     ["About phone", "关于手机", "System", "系统"],
@@ -267,14 +271,14 @@ export async function runAndroidToolProbe(): Promise<void> {
     }),
   );
 
-  await stabilize();
+  await relaunch();
 
-  // Step 5: tap_element - Search settings (use content-desc for vivo compatibility)
+  // Test tap_element - Search settings
   const tapCdResult = await invoke("tap_element", {
     sessionId, platform, runnerProfile, deviceId,
     contentDesc: "Search settings", limit: 1,
   });
-  if (tapCdResult.status === "success" || tapCdResult.status === "partial") {
+  if (tapCdResult.status === "success") {
     push("tap_element", tapCdResult, "tap content-desc=Search settings");
   } else {
     await tryTextOrContentDescSelector(
@@ -285,25 +289,25 @@ export async function runAndroidToolProbe(): Promise<void> {
     );
   }
 
-  await stabilize();
+  await relaunch();
 
-  // Step 6: type_into_element - search box should be visible after tapping search
+  // Test type_into_element
   push("type_into_element", await invoke("type_into_element", {
     sessionId, platform, runnerProfile, deviceId,
     className: "android.widget.EditText", value: "wifi", limit: 1,
   }), "type into edit text");
 
-  await stabilize();
+  await relaunch();
 
-  // Step 7: execute_intent - tap Wi-Fi (back on Settings home, press_back first)
+  // Test execute_intent - tap Wi-Fi on fresh Settings home
   push("execute_intent", await invoke("execute_intent", {
     sessionId, platform, runnerProfile, deviceId, appId,
     intent: "tap wifi settings entry", actionType: "tap_element", text: "Wi-Fi",
   }), "real UI intent on Settings");
 
-  await stabilize();
+  await relaunch();
 
-  // Step 8: perform_action_with_evidence - tap Bluetooth (use content-desc)
+  // Test perform_action_with_evidence - tap Bluetooth
   const actionResult = push("perform_action_with_evidence", await invoke("perform_action_with_evidence", {
     sessionId, platform, runnerProfile, deviceId, appId, includeDebugSignals: true,
     action: {
@@ -312,9 +316,9 @@ export async function runAndroidToolProbe(): Promise<void> {
     },
   }), "tap + evidence");
 
-  await stabilize();
+  await relaunch();
 
-  // Step 9: complete_task - multi-step task
+  // Test complete_task - multi-step
   push("complete_task", await invoke("complete_task", {
     sessionId, platform, runnerProfile, deviceId, appId,
     goal: "wait and tap in Settings",
