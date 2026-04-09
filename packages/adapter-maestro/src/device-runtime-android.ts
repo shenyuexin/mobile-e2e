@@ -107,7 +107,7 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
       const durationSeconds = Math.max(1, Math.ceil(durationMs / 1000));
       const remoteOutputPath = `/sdcard/${sanitizeArtifactSegment(sessionId)}-${Date.now()}.mp4`;
       const recordCommand = [
-        "adb", "-s", deviceId, "shell", "screenrecord",
+        CLI_COMMANDS.adb, "-s", deviceId, "shell", "screenrecord",
         "--time-limit", String(Math.min(180, durationSeconds)),
         ...(bitrateMbps ? ["--bit-rate", String(Math.floor(bitrateMbps * 1_000_000))] : []),
         remoteOutputPath,
@@ -149,7 +149,7 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
       return {
         ...capture,
         command: [
-          "adb", "-s", deviceId, "logcat", "--pid", pid, "-d",
+          CLI_COMMANDS.adb, "-s", deviceId, "logcat", "--pid", pid, "-d",
           "-t", String(capture.linesRequested ?? DEFAULT_GET_LOGS_LINES),
           ...(capture.actualLevelFilterApplied ? [capture.command[capture.command.length - 1]] : []),
         ],

@@ -283,7 +283,7 @@ export async function executePreset(
     };
   }
 
-  const includesStartSession = preset.steps.some((step) => step.tool === "start_session");
+  const includesStartSession = preset.steps.some((step) => step.tool === TOOL_NAMES.startSession);
   if (includesStartSession && cliOptions.sessionId) {
     if (resolvedContext?.sessionId === "alias") {
       cliOptions.sessionId = undefined;
@@ -371,7 +371,7 @@ export async function executePreset(
 
   for (const step of preset.steps) {
     const result = await invokePresetStep(server, step.tool, cliOptions, sessionId);
-    if (step.tool === "start_session" && result.status === "success") {
+    if (step.tool === TOOL_NAMES.startSession && result.status === "success") {
       const sessionData = result.data as { sessionId?: string; deviceId?: string; appId?: string; profile?: RunnerProfile | null };
       if (sessionData.sessionId) {
         sessionId = sessionData.sessionId;

@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -436,12 +437,12 @@ export async function endRecordSessionWithMaestro(
 		) {
 			parsed.push(
 				{
-					type: "tap",
+					type: ACTION_TYPES.tap,
 					eventMonotonicMs: 100,
 					x: 160,
 					y: 280,
 					gesture: {
-						kind: "tap",
+						kind: ACTION_TYPES.tap,
 						start: { x: 160, y: 280 },
 						end: { x: 160, y: 280 },
 						durationMs: 60,

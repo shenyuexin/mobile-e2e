@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -384,7 +385,7 @@ export function buildIosUiDescribePointCommand(deviceId: string, x: number, y: n
 }
 
 export function buildIosSwipeCommand(deviceId: string, swipe: { start: { x: number; y: number }; end: { x: number; y: number }; durationMs: number }): string[] {
-  return buildIdbCommand(["ui", "swipe", String(swipe.start.x), String(swipe.start.y), String(swipe.end.x), String(swipe.end.y), "--duration", String(swipe.durationMs / 1000), "--udid", deviceId]);
+  return buildIdbCommand(["ui", ACTION_TYPES.swipe, String(swipe.start.x), String(swipe.start.y), String(swipe.end.x), String(swipe.end.y), "--duration", String(swipe.durationMs / 1000), "--udid", deviceId]);
 }
 
 export function isAndroidUiSnapshotFailure(value: AndroidUiSnapshot | AndroidUiSnapshotFailure): value is AndroidUiSnapshotFailure {

@@ -1,6 +1,6 @@
 import { resolveRepoPath } from "@mobile-e2e-mcp/adapter-maestro";
 import { isToolAllowedByProfile, loadAccessProfile, loadSessionRecord } from "@mobile-e2e-mcp/core";
-import { REASON_CODES, type StartSessionInput, type ToolResult } from "@mobile-e2e-mcp/contracts";
+import { REASON_CODES, type StartSessionInput, type ToolResult, TOOL_NAMES } from "@mobile-e2e-mcp/contracts";
 
 const DEFAULT_POLICY_PROFILE = "sample-harness-default";
 
@@ -29,13 +29,13 @@ export async function validatePolicyProfile(policyProfile: string | undefined): 
 }
 
 export async function enforcePolicyForTool<TInput>(toolName: string, input: TInput): Promise<ToolResult<{ toolName: string; policyProfile: string }> | undefined> {
-  if (toolName === "end_session") {
+  if (toolName === TOOL_NAMES.endSession) {
     return undefined;
   }
 
   const repoRoot = resolveRepoPath();
   const sessionId = extractSessionId(input);
-  const startSessionPolicyProfile = toolName === "start_session" ? extractStartSessionPolicyProfile(input) : undefined;
+  const startSessionPolicyProfile = toolName === TOOL_NAMES.startSession ? extractStartSessionPolicyProfile(input) : undefined;
   const sessionRecord = sessionId ? await loadSessionRecord(repoRoot, sessionId) : undefined;
   const policyProfile = startSessionPolicyProfile ?? sessionRecord?.session.policyProfile ?? DEFAULT_POLICY_PROFILE;
   const profile = await loadAccessProfile(repoRoot, policyProfile);
@@ -66,7 +66,7 @@ export async function enforcePolicyForTool<TInput>(toolName: string, input: TInp
     data: { toolName, policyProfile },
     nextSuggestions: [
       `Tool '${toolName}' is denied by policy profile '${policyProfile}'. Start a session with a more permissive profile if this action is intended.`,
-      ["detect_interruption", "classify_interruption", "resolve_interruption", "resume_interrupted_action"].includes(toolName)
+      ([TOOL_NAMES.detectInterruption, TOOL_NAMES.classifyInterruption, TOOL_NAMES.resolveInterruption, TOOL_NAMES.resumeInterruptedAction] as string[]).includes(toolName)
         ? "Interruption tools require 'interrupt' scope (and 'interrupt-high-risk' for destructive interruption actions)."
         : undefined,
     ].filter((value): value is string => Boolean(value)),

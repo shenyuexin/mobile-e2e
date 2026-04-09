@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import type {
   GetScreenSummaryData,
   OcrEvidence,
@@ -56,8 +57,8 @@ export interface OcrFallbackExecutionDeps {
 }
 
 export function mapIntentToOcrActionKind(action: PerformActionWithEvidenceInput["action"]): OcrFallbackActionType | undefined {
-  if (action.actionType === "tap_element") return "tap";
-  if (action.actionType === "wait_for_ui") return "assertText";
+  if (action.actionType === ACTION_TYPES.tapElement) return "tap";
+  if (action.actionType === ACTION_TYPES.waitForUi) return "assertText";
   return undefined;
 }
 
@@ -70,7 +71,7 @@ export function canAttemptOcrFallback(
   deterministicResult: ToolResult<unknown>,
 ): boolean {
   if (deterministicResult.status === "success") return false;
-  if (action.actionType !== "tap_element" && action.actionType !== "wait_for_ui") return false;
+  if (action.actionType !== ACTION_TYPES.tapElement && action.actionType !== ACTION_TYPES.waitForUi) return false;
   return Boolean(buildOcrTargetText(action));
 }
 

@@ -111,7 +111,7 @@ export class DevicectlPhysicalBackend implements IosExecutionBackend {
     // and replace <FLOW_YAML_PATH> with the actual path before execution.
     // We include the YAML as the last argument for the command builder contract.
     return [
-      "maestro",
+      CLI_COMMANDS.maestro,
       "test",
       "--platform",
       "ios",

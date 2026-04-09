@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 /**
  * iOS physical action execution helpers for UI action tools.
  *
@@ -165,7 +166,7 @@ export function buildOwnedRunnerActionEnv(params: {
   const flowAppId = normalizeAppId(appIdMatch?.[1]);
   const targetAppId = normalizeAppId(params.targetAppId) || flowAppId;
   const resolvedTargetBundleId = targetAppId && targetAppId !== "*" ? targetAppId : undefined;
-  if (params.actionType === "tap") {
+  if (params.actionType === ACTION_TYPES.tap) {
     const xMatch = params.flowContent.match(/\bx\s*:\s*(-?\d+(?:\.\d+)?)/i);
     const yMatch = params.flowContent.match(/\by\s*:\s*(-?\d+(?:\.\d+)?)/i);
     return {

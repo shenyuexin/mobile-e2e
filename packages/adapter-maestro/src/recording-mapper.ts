@@ -201,7 +201,7 @@ export function mapRawEventsToRecordedSteps(
     const event = sorted[index];
     let mappedStep: RecordedStep | undefined;
 
-    if (event.eventType === "tap") {
+    if (event.eventType === ACTION_TYPES.tap) {
       const timestampMs = parseTimestampMillis(event.timestamp);
       if (
         lastTap
@@ -277,7 +277,7 @@ export function mapRawEventsToRecordedSteps(
           value,
         },
       );
-    } else if (event.eventType === "swipe") {
+    } else if (event.eventType === ACTION_TYPES.swipe) {
       lastInputIntent = undefined;
       const gesture = (event as RawRecordedEvent & { gesture?: { start?: { x: number; y: number }; end?: { x: number; y: number }; durationMs?: number } }).gesture;
       const startX = gesture?.start?.x ?? event.x;
@@ -304,7 +304,7 @@ export function mapRawEventsToRecordedSteps(
           durationMs: gesture?.durationMs ?? 250,
         } as ActionIntent),
       );
-    } else if (event.eventType === "app_switch" || event.eventType === "home") {
+    } else if (event.eventType === "app_switch" || event.eventType === ACTION_TYPES.home) {
       lastInputIntent = undefined;
       stepNumber += 1;
       const appId = event.foregroundApp ?? options.defaultAppId;
@@ -319,7 +319,7 @@ export function mapRawEventsToRecordedSteps(
           appId,
         },
       );
-    } else if (event.eventType === "back") {
+    } else if (event.eventType === ACTION_TYPES.back) {
       lastInputIntent = undefined;
       stepNumber += 1;
       const waitIntent = buildIntentFromEventSelector(event, ACTION_TYPES.waitForUi);

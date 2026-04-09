@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -234,14 +235,14 @@ export function parseRawInputEvents(rawContent: string): ParsedRawEvent[] {
 				(durationMs ?? 0) <= SWIPE_DURATION_THRESHOLD_MS
 			) {
 				events.push({
-					type: "swipe",
+					type: ACTION_TYPES.swipe,
 					eventMonotonicMs,
 					x: startX,
 					y: startY,
 					endX,
 					endY,
 					gesture: {
-						kind: "swipe",
+						kind: ACTION_TYPES.swipe,
 						start: { x: startX, y: startY },
 						end: { x: endX, y: endY },
 						durationMs,
@@ -250,12 +251,12 @@ export function parseRawInputEvents(rawContent: string): ParsedRawEvent[] {
 				});
 			} else {
 				events.push({
-					type: "tap",
+					type: ACTION_TYPES.tap,
 					eventMonotonicMs,
 					x: endX,
 					y: endY,
 					gesture: {
-						kind: "tap",
+						kind: ACTION_TYPES.tap,
 						start: { x: startX, y: startY },
 						end: { x: endX, y: endY },
 						durationMs,
@@ -265,7 +266,7 @@ export function parseRawInputEvents(rawContent: string): ParsedRawEvent[] {
 			}
 		} else {
 			events.push({
-				type: "tap",
+				type: ACTION_TYPES.tap,
 				eventMonotonicMs,
 				x: currentX,
 				y: currentY,
@@ -336,11 +337,11 @@ export function parseRawInputEvents(rawContent: string): ParsedRawEvent[] {
 			continue;
 		}
 		if (/KEY_BACK\s+DOWN/.test(line)) {
-			events.push({ type: "back", eventMonotonicMs, rawLine: line });
+			events.push({ type: ACTION_TYPES.back, eventMonotonicMs, rawLine: line });
 			continue;
 		}
 		if (/KEY_HOME\s+DOWN/.test(line)) {
-			events.push({ type: "home", eventMonotonicMs, rawLine: line });
+			events.push({ type: ACTION_TYPES.home, eventMonotonicMs, rawLine: line });
 			continue;
 		}
 		if (/KEY_APPSELECT\s+DOWN/.test(line)) {

@@ -1,7 +1,7 @@
 import { resolveRepoPath } from "@mobile-e2e-mcp/adapter-maestro";
 import { listActionRecordsForSession, loadSessionRecord } from "@mobile-e2e-mcp/core";
 import type { ActionIntent, ExportSessionFlowData, ExportSessionFlowInput, ToolResult } from "@mobile-e2e-mcp/contracts";
-import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
+import { REASON_CODES, TOOL_NAMES } from "@mobile-e2e-mcp/contracts";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -19,11 +19,11 @@ function resolveTapTarget(intent: ActionIntent): { id?: string; text?: string } 
 }
 
 function toMaestroSteps(intent: ActionIntent, appId: string): { steps: MaestroStep[]; warnings: string[] } {
-  if (intent.actionType === "launch_app") {
+  if (intent.actionType === TOOL_NAMES.launchApp) {
     return { steps: [{ launchApp: { appId: intent.appId ?? appId, clearState: false } }], warnings: [] };
   }
 
-  if (intent.actionType === "tap_element") {
+  if (intent.actionType === TOOL_NAMES.tapElement) {
     const tapOn = resolveTapTarget(intent);
     if (!tapOn) {
       return { steps: [], warnings: ["tap_element skipped: no resourceId/text/contentDesc available."] };
@@ -31,7 +31,7 @@ function toMaestroSteps(intent: ActionIntent, appId: string): { steps: MaestroSt
     return { steps: [{ tapOn }], warnings: [] };
   }
 
-  if (intent.actionType === "type_into_element") {
+  if (intent.actionType === TOOL_NAMES.typeIntoElement) {
     const tapOn = resolveTapTarget(intent);
     if (!tapOn) {
       return { steps: [], warnings: ["type_into_element skipped: no resourceId/text/contentDesc available."] };
@@ -45,7 +45,7 @@ function toMaestroSteps(intent: ActionIntent, appId: string): { steps: MaestroSt
     };
   }
 
-  if (intent.actionType === "wait_for_ui") {
+  if (intent.actionType === TOOL_NAMES.waitForUi) {
     const target = resolveTapTarget(intent);
     if (!target) {
       return { steps: [], warnings: ["wait_for_ui skipped: no resourceId/text/contentDesc available."] };

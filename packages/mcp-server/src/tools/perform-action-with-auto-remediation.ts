@@ -20,6 +20,7 @@ import {
   type SuggestKnownRemediationData,
   type SuggestKnownRemediationInput,
   type ToolResult,
+  TOOL_NAMES,
 } from "@mobile-e2e-mcp/contracts";
 import type { ExplainLastFailureData, ExplainLastFailureInput } from "@mobile-e2e-mcp/contracts";
 
@@ -228,7 +229,7 @@ function chooseRecovery(params: {
   stateAfter?: StateSummary;
   remediationSuggestions: string[];
   baselineComparison?: CompareAgainstBaselineData["comparison"];
-}): { selectedRecovery?: "recover_to_known_state" | "replay_last_stable_path"; stopReason: AutoRemediationResult["stopReason"]; stopDetail: string } {
+}): { selectedRecovery?: typeof TOOL_NAMES.recoverToKnownState | typeof TOOL_NAMES.replayLastStablePath; stopReason: AutoRemediationResult["stopReason"]; stopDetail: string } {
   const waitingLike = params.stateAfter?.readiness === "waiting_network"
     || params.stateAfter?.readiness === "waiting_ui"
     || params.stateAfter?.appPhase === "loading"
@@ -236,7 +237,7 @@ function chooseRecovery(params: {
 
   if (params.attribution.affectedLayer === "crash" || waitingLike) {
     return {
-      selectedRecovery: "recover_to_known_state",
+      selectedRecovery: TOOL_NAMES.recoverToKnownState,
       stopReason: "recovered",
       stopDetail: "Failure attribution is within the allowlist for bounded recovery.",
     };
@@ -245,7 +246,7 @@ function chooseRecovery(params: {
   const replaySuggested = params.remediationSuggestions.some((item) => item.toLowerCase().includes("replay"));
   if (replaySuggested && canReplaySafely(params.input)) {
     return {
-      selectedRecovery: "replay_last_stable_path",
+      selectedRecovery: TOOL_NAMES.replayLastStablePath,
       stopReason: "recovered",
       stopDetail: "Known remediation suggests a bounded replay and the current action is low risk.",
     };
@@ -257,7 +258,7 @@ function chooseRecovery(params: {
     && params.baselineComparison.replayValue !== "low";
   if (driftSuggestsReplay && canReplaySafely(params.input)) {
     return {
-      selectedRecovery: "replay_last_stable_path",
+      selectedRecovery: TOOL_NAMES.replayLastStablePath,
       stopReason: "recovered",
       stopDetail: "Baseline checkpoint drift suggests replaying the last stable bounded path is safer than local retry.",
     };
@@ -510,7 +511,7 @@ export async function performActionWithAutoRemediation(
     });
   }
 
-  const recovery = recoveryPlan.selectedRecovery === "recover_to_known_state"
+  const recovery = recoveryPlan.selectedRecovery === TOOL_NAMES.recoverToKnownState
     ? await deps.recoverToKnownState({
       sessionId: input.sessionId,
       platform: input.platform,

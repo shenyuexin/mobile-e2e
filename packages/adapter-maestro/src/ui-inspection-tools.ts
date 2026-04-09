@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import type {
   InspectUiData,
   InspectUiInput,
@@ -1021,7 +1022,7 @@ export async function waitForUiWithMaestroTool(
         result: { query, totalMatches: 0, matches: [] },
         supportLevel: "partial",
       },
-      nextSuggestions: [buildMissingPlatformSuggestion("wait_for_ui")],
+      nextSuggestions: [buildMissingPlatformSuggestion(ACTION_TYPES.waitForUi)],
     };
   }
   const repoRoot = resolveRepoPath();

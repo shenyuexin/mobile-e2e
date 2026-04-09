@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import {
   type ActionOutcomeSummary,
   type BaselineComparison,
@@ -244,7 +245,7 @@ function buildFailureAttribution(params: {
     candidateCauses.push(mostLikelyCause);
     recommendedNextProbe = "Inspect backend status/error payload evidence for the failing request path.";
     recommendedRecovery = "Stop optimistic retries and surface terminal backend failure.";
-  } else if (!params.outcome.stateChanged && ["tap_element", "type_into_element", "wait_for_ui"].includes(params.outcome.actionType)) {
+  } else if (!params.outcome.stateChanged && ["tap_element", ACTION_TYPES.typeIntoElement, ACTION_TYPES.waitForUi].includes(params.outcome.actionType)) {
     affectedLayer = params.outcome.outcome === "partial" ? "ui_locator" : "ui_state";
     mostLikelyCause = params.outcome.outcome === "partial"
       ? "The selector-driven action did not execute fully, so locator ambiguity or unsupported resolution is most likely."

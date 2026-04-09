@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import type {
   ActionIntent,
   OrchestrationStepState,
@@ -125,7 +126,7 @@ export async function runReplaySteps(params: RunReplayStepsParams): Promise<{
       detail: replayStep.replayStepId,
     });
 
-    if (replayStep.actionType === "tap" && !replayStep.actionIntent) {
+    if (replayStep.actionType === ACTION_TYPES.tap && !replayStep.actionIntent) {
       const outcome: ReplayStepOutcome = {
         replayStepId: replayStep.replayStepId,
         stepNumber: replayStep.stepNumber,

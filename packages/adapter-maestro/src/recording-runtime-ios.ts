@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -225,20 +226,20 @@ export function parseIosRawInputEvents(rawContent: string): ParsedRawEvent[] {
 		const lower = line.toLowerCase();
 		const eventMonotonicMs = extractIosLogTimestampMs(line) ?? index * 50;
 
-		if (lower.includes("swipe") || lower.includes("drag")) {
+		if (lower.includes(ACTION_TYPES.swipe) || lower.includes("drag")) {
 			const pairs = extractCoordinatePairs(line);
 			if (pairs.length >= 2) {
 				const start = pairs[0];
 				const end = pairs[pairs.length - 1];
 				events.push({
-					type: "swipe",
+					type: ACTION_TYPES.swipe,
 					eventMonotonicMs,
 					x: start.x,
 					y: start.y,
 					endX: end.x,
 					endY: end.y,
 					gesture: {
-						kind: "swipe",
+						kind: ACTION_TYPES.swipe,
 						start,
 						end,
 						durationMs: 240,
@@ -249,16 +250,16 @@ export function parseIosRawInputEvents(rawContent: string): ParsedRawEvent[] {
 			continue;
 		}
 
-		if (lower.includes("tap") || lower.includes("touch")) {
+		if (lower.includes(ACTION_TYPES.tap) || lower.includes("touch")) {
 			const pair = extractCoordinatePairs(line)[0];
 			events.push({
-				type: "tap",
+				type: ACTION_TYPES.tap,
 				eventMonotonicMs,
 				x: pair?.x,
 				y: pair?.y,
 				gesture: pair
 					? {
-							kind: "tap",
+							kind: ACTION_TYPES.tap,
 							start: pair,
 							end: pair,
 							durationMs: 60,

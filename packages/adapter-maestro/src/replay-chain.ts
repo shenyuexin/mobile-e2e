@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import {
   type ActionIntent,
   type ActionOutcomeSummary,
@@ -20,7 +21,7 @@ const HIGH_RISK_REPLAY_KEYWORDS = [
   "delete", "remove", "send", "submit", "confirm",
 ];
 
-const REPLAY_SAFE_ACTION_TYPES = ["tap_element", "type_into_element", "wait_for_ui", "launch_app", "terminate_app"];
+const REPLAY_SAFE_ACTION_TYPES = ["tap_element", ACTION_TYPES.typeIntoElement, ACTION_TYPES.waitForUi, ACTION_TYPES.launchApp, ACTION_TYPES.terminateApp];
 
 interface ReplayChainDeps {
   getSessionStateWithMaestro: (input: {

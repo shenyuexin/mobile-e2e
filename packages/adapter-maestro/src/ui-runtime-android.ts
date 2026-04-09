@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { CLI_COMMANDS } from "./constants/cli-commands.js";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import type { UiRuntimePlatformHooks } from "./ui-runtime-platform.js";
@@ -8,7 +9,7 @@ export function createAndroidUiRuntimeHooks(): UiRuntimePlatformHooks {
     platform: "android",
     requiresProbe: false,
     probeFailureReasonCode: REASON_CODES.configurationError,
-    buildTapCommand: (deviceId, x, y) => [CLI_COMMANDS.adb, "-s", deviceId, "shell", "input", "tap", String(x), String(y)],
+    buildTapCommand: (deviceId, x, y) => [CLI_COMMANDS.adb, "-s", deviceId, "shell", "input", ACTION_TYPES.tap, String(x), String(y)],
     buildTypeTextCommand: (deviceId, text) => [CLI_COMMANDS.adb, "-s", deviceId, "shell", "input", "text", text.replaceAll(" ", "%s")],
     buildSwipeCommand: (deviceId, swipe) => [
       CLI_COMMANDS.adb,
@@ -16,7 +17,7 @@ export function createAndroidUiRuntimeHooks(): UiRuntimePlatformHooks {
       deviceId,
       "shell",
       "input",
-      "swipe",
+      ACTION_TYPES.swipe,
       String(swipe.start.x),
       String(swipe.start.y),
       String(swipe.end.x),

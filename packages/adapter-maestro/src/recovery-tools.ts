@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import {
   type ActionIntent,
   type ActionOutcomeSummary,
@@ -117,7 +118,8 @@ function canReplayPersistedAction(record: PersistedActionRecord): boolean {
     return true;
   }
 
-  return ["wait_for_ui", "launch_app", "terminate_app"].includes(record.outcome.actionType);
+  const recoveryActionTypes = new Set<string>([ACTION_TYPES.waitForUi, ACTION_TYPES.launchApp, ACTION_TYPES.terminateApp]);
+  return recoveryActionTypes.has(record.outcome.actionType);
 }
 
 function buildCheckpointDecision(record: PersistedActionRecord | undefined): CheckpointDecisionTrace {

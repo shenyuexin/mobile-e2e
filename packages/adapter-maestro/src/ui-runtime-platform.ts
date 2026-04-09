@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import type { InspectUiNode, Platform, QueryUiSelector, ReasonCode, UiPoint } from "@mobile-e2e-mcp/contracts";
 import type { CommandExecution } from "./runtime-shared.js";
 import { createAndroidUiRuntimeHooks } from "./ui-runtime-android.js";
