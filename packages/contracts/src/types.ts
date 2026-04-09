@@ -22,9 +22,10 @@ export type TimelineEventLayer = "session" | "ui" | "state" | "action" | "log" |
 export type EvidenceCompletenessLevel = "complete" | "partial" | "minimal" | "missing";
 export type ActionResolutionStrategy = "deterministic" | "semantic" | "ocr" | "cv";
 export type ActionOutcomeStatus = "success" | "failed" | "partial" | "unknown";
-// SupportedActionType is defined in constants/action-types.ts and re-exported from index.ts.
-// This local alias avoids a circular dependency within the contracts package
-// (types.ts → constants/action-types.ts → types.ts).
+// SupportedActionType: canonical definition is in constants/action-types.ts.
+// This inline alias mirrors that definition to avoid circular imports
+// (types.ts → action-types.ts → types.ts).
+// ⚠️ If you change action type values, update constants/action-types.ts AND this alias.
 export type SupportedActionType = "tap_element" | "type_into_element" | "wait_for_ui" | "launch_app" | "terminate_app" | "swipe";
 export type AffectedLayer = "ui_locator" | "ui_state" | "interruption" | "network" | "backend" | "runtime" | "crash" | "performance" | "environment" | "test_logic" | "unknown";
 export type RecoveryStrategy = "none" | "wait_until_ready" | "relaunch_app" | "replay_last_successful_action";
