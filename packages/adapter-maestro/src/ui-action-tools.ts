@@ -17,6 +17,10 @@ import type {
   TypeTextData,
   TypeTextInput,
   UiOrchestrationStepResult,
+  NavigateBackData,
+  NavigateBackInput,
+  BackTarget,
+  BackExecutionPath,
 } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import {
@@ -1175,6 +1179,261 @@ export async function scrollAndTapElementWithMaestroTool(
       resolveResult: resolveResult.data,
       tapResult: tapResult.data,
       supportLevel: tapResult.data.supportLevel,
+    },
+    nextSuggestions: tapResult.nextSuggestions,
+  };
+}
+
+// ─── Navigate Back ────────────────────────────────────────────────────────
+
+export async function navigateBackWithMaestroTool(
+  input: NavigateBackInput,
+): Promise<ToolResult<NavigateBackData>> {
+  const startTime = Date.now();
+  const platform = input.platform;
+  const target: BackTarget = input.target ?? "app";
+  const dryRun = Boolean(input.dryRun);
+
+  if (!platform) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun,
+        target,
+        executedStrategy: "unsupported",
+        supportLevel: "unsupported",
+        fallbackUsed: false,
+        capabilityNote: "Platform is required. Specify 'android' or 'ios'.",
+      },
+      nextSuggestions: ["Specify the platform (android or ios) when calling navigate_back."],
+    };
+  }
+
+  // iOS system back is not supported
+  if (platform === "ios" && target === "system") {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun,
+        target,
+        executedStrategy: "unsupported",
+        supportLevel: "unsupported",
+        fallbackUsed: false,
+        capabilityNote: "iOS does not have a universal system-level back primitive. Use app-level back or perform the gesture manually.",
+      },
+      nextSuggestions: [
+        "Use target: 'app' for in-app back navigation.",
+        "For iOS app back, provide a selector for the back button or use iosStrategy: 'edge_swipe' for a bounded left-edge swipe.",
+      ],
+    };
+  }
+
+  const repoRoot = resolveRepoPath();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const selection = await loadHarnessSelection(
+    repoRoot,
+    platform,
+    runnerProfile,
+    input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH,
+  );
+  const deviceId = input.deviceId ?? selection.deviceId;
+
+  if (!deviceId) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.deviceUnavailable,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun,
+        target,
+        executedStrategy: "unsupported",
+        supportLevel: "unsupported",
+        fallbackUsed: false,
+        capabilityNote: "No device ID resolved. Provide deviceId or configure harness config.",
+      },
+      nextSuggestions: ["Provide a deviceId or update the harness configuration."],
+    };
+  }
+
+  // ─── Android: deterministic keyevent 4 ─────────────────────────────
+  if (platform === "android") {
+    const runtimeHooks = resolveUiRuntimePlatformHooks("android");
+    const command = runtimeHooks.buildBackPressedCommand(deviceId);
+    const executedStrategy: BackExecutionPath = "android_keyevent";
+
+    if (dryRun) {
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: true,
+          target,
+          executedStrategy,
+          supportLevel: "full",
+          fallbackUsed: false,
+          command: command.join(" "),
+          capabilityNote: "Android back uses 'adb shell input keyevent 4'. May navigate page-back or exit the current app depending on app state.",
+        },
+        nextSuggestions: ["Run navigate_back without dryRun to dispatch KEYEVENT_BACK on the Android device."],
+      };
+    }
+
+    const execution = await executeUiActionCommand({
+      repoRoot,
+      command,
+      requiresProbe: false,
+    });
+
+    const exitCode = execution.execution?.exitCode ?? null;
+    const isSuccess = exitCode === 0;
+
+    return {
+      status: isSuccess ? "success" : "failed",
+      reasonCode: isSuccess ? REASON_CODES.ok : REASON_CODES.adapterError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        target,
+        executedStrategy,
+        supportLevel: "full",
+        fallbackUsed: false,
+        command: command.join(" "),
+        exitCode,
+        stateChanged: "unknown",
+        capabilityNote: "KEYEVENT_BACK dispatched. Verify screen transition separately.",
+      },
+      nextSuggestions: isSuccess
+        ? ["Verify the expected screen transition using get_session_state or inspect_ui."]
+        : [buildFailureReason(execution.execution?.stderr ?? "", execution.execution?.exitCode ?? null)],
+    };
+  }
+
+  // ─── iOS app back ────────────────────────────────────────────────────
+  // With selector: tap the back button deterministically
+  if (input.selector) {
+    return navigateBackIosWithSelector({
+      sessionId: input.sessionId,
+      deviceId,
+      runnerProfile,
+      startTime,
+      selector: input.selector,
+      dryRun,
+    });
+  }
+
+  // Without selector: strategy-dependent behavior
+  const iosStrategy = input.iosStrategy ?? "selector_tap";
+
+  if (iosStrategy === "edge_swipe") {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.unsupportedOperation,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun,
+        target,
+        executedStrategy: "unsupported",
+        supportLevel: "conditional",
+        fallbackUsed: false,
+        capabilityNote: "iOS edge_swipe back requires screen dimensions to calculate swipe coordinates. Provide a selector instead for deterministic back.",
+      },
+      nextSuggestions: [
+        "Provide a selector pointing to the back button for deterministic iOS app back.",
+        "Alternatively, use a dedicated swipe tool with explicit coordinates.",
+      ],
+    };
+  }
+
+  // Default: selector_tap without selector → can't proceed
+  return {
+    status: "failed",
+    reasonCode: REASON_CODES.noMatch,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      dryRun,
+      target,
+      executedStrategy: "unsupported",
+      supportLevel: "conditional",
+      fallbackUsed: false,
+      capabilityNote: "iOS app back via selector_tap requires a selector to identify the back button.",
+    },
+    nextSuggestions: [
+      "Provide a selector for the iOS back button (e.g., contentDesc containing 'Back' or a known resourceId).",
+      "Use inspect_ui to discover available back button selectors.",
+    ],
+  };
+}
+
+interface IosBackTapContext {
+  sessionId: string;
+  deviceId: string;
+  runnerProfile: string;
+  selector: NonNullable<NavigateBackInput["selector"]>;
+  startTime: number;
+  dryRun?: boolean;
+}
+
+async function navigateBackIosWithSelector(
+  ctx: IosBackTapContext,
+): Promise<ToolResult<NavigateBackData>> {
+  const tapResult = await tapElementWithMaestroTool({
+    sessionId: ctx.sessionId,
+    platform: "ios",
+    deviceId: ctx.deviceId,
+    runnerProfile: ctx.runnerProfile as any,
+    dryRun: ctx.dryRun ?? false,
+    ...ctx.selector,
+  });
+
+  const executedStrategy: BackExecutionPath = "ios_selector_tap";
+
+  return {
+    status: tapResult.status,
+    reasonCode: tapResult.reasonCode,
+    sessionId: ctx.sessionId,
+    durationMs: Date.now() - ctx.startTime,
+    attempts: tapResult.attempts,
+    artifacts: tapResult.artifacts,
+    data: {
+      dryRun: ctx.dryRun ?? false,
+      target: "app",
+      executedStrategy,
+      supportLevel: tapResult.data?.supportLevel ?? "conditional",
+      fallbackUsed: false,
+      command: typeof tapResult.data?.command === "string"
+        ? tapResult.data.command
+        : undefined,
+      exitCode: typeof tapResult.data?.exitCode === "number"
+        ? tapResult.data.exitCode
+        : null,
+      stateChanged: "unknown",
+      capabilityNote: "iOS app back via selector-based back button tap.",
     },
     nextSuggestions: tapResult.nextSuggestions,
   };

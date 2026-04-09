@@ -31,6 +31,7 @@ export interface UiRuntimePlatformHooks {
   requiresProbe: boolean;
   probeFailureReasonCode: ReasonCode;
   buildTapCommand: (deviceId: string, x: number, y: number) => string[];
+  buildBackPressedCommand: (deviceId: string) => string[];
   buildDescribePointCommand?: (deviceId: string, x: number, y: number) => string[];
   verifyResolvedPoint?: (params: UiResolvedPointVerificationParams) => Promise<UiResolvedPointVerificationResult>;
   verifyTypedPostcondition?: (params: UiTypedPostconditionVerificationParams) => Promise<UiResolvedPointVerificationResult>;

@@ -22,6 +22,7 @@ export const IOS_CONDITIONAL_TOOL_FRONTIER = [
   TOOL_NAMES.recordScreen,
   TOOL_NAMES.tap,
   TOOL_NAMES.tapElement,
+  TOOL_NAMES.navigateBack,
   TOOL_NAMES.typeText,
   TOOL_NAMES.typeIntoElement,
 ] as const;
@@ -78,6 +79,7 @@ function buildAndroidToolCapabilities(): ToolCapability[] {
     buildToolCapability(TOOL_NAMES.recordScreen, FULL, "Android screen recording is supported through adb shell screenrecord."),
     buildToolCapability(TOOL_NAMES.tap, FULL, "Android coordinate tap is supported."),
     buildToolCapability(TOOL_NAMES.tapElement, FULL, "Android element tap is supported after resolution."),
+    buildToolCapability(TOOL_NAMES.navigateBack, FULL, "Android back navigation uses deterministic adb keyevent 4 dispatch. May navigate page-back or exit the current app depending on app state; verify screen transition separately."),
     buildToolCapability(TOOL_NAMES.terminateApp, FULL, "Android app termination is supported."),
     buildToolCapability(TOOL_NAMES.typeText, FULL, "Android text input is supported."),
     buildToolCapability(TOOL_NAMES.typeIntoElement, FULL, "Android element text input is supported after resolution."),
@@ -117,6 +119,7 @@ function buildIosToolCapabilities(): ToolCapability[] {
     buildToolCapability(TOOL_NAMES.recordScreen, CONDITIONAL, `iOS simulator screen recording is supported through simctl io recordVideo. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
   buildToolCapability(TOOL_NAMES.tap, CONDITIONAL, `Direct iOS coordinate tap uses axe (simulators) or WDA HTTP API (physical devices). Physical-device execution remains signing-dependent and platform-dependent. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
   buildToolCapability(TOOL_NAMES.tapElement, CONDITIONAL, `iOS element tap resolves targets through axe-backed hierarchy (simulators) or WDA HTTP API (physical devices), then executes tap. Physical-device execution remains platform-dependent. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
+  buildToolCapability(TOOL_NAMES.navigateBack, CONDITIONAL, `iOS app-level back via selector-based back button tap is supported. iOS system back is unsupported (no universal OS back primitive). Provide a selector for deterministic back, or use inspect_ui to discover back button selectors. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
     buildToolCapability(TOOL_NAMES.terminateApp, FULL, "iOS simulator app termination is supported."),
   buildToolCapability(TOOL_NAMES.typeText, CONDITIONAL, `Direct iOS text input uses axe (simulators) or WDA HTTP API (physical devices). Physical-device execution remains signing-dependent and platform-dependent. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
   buildToolCapability(TOOL_NAMES.typeIntoElement, CONDITIONAL, `iOS element text input resolves targets through axe-backed hierarchy (simulators) or WDA HTTP API (physical devices), then executes text input. Physical-device execution remains platform-dependent. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
@@ -179,7 +182,7 @@ export function buildCapabilityProfile(platform: Platform, runnerProfile: Runner
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.appLifecycle, [TOOL_NAMES.installApp, TOOL_NAMES.launchApp, TOOL_NAMES.terminateApp, TOOL_NAMES.resetAppState], "Install, launch, terminate, and reset application workflows."),
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.artifactsAndDiagnostics, [TOOL_NAMES.takeScreenshot, TOOL_NAMES.recordScreen, TOOL_NAMES.getLogs, TOOL_NAMES.getCrashSignals, TOOL_NAMES.collectDebugEvidence, TOOL_NAMES.collectDiagnostics, TOOL_NAMES.measureAndroidPerformance, TOOL_NAMES.measureIosPerformance], "Evidence capture, diagnostics collection, and lightweight performance analysis tools."),
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.uiInspection, [TOOL_NAMES.inspectUi, TOOL_NAMES.queryUi, TOOL_NAMES.resolveUiTarget, TOOL_NAMES.waitForUi, TOOL_NAMES.scrollAndResolveUiTarget], "Hierarchy capture, querying, target resolution, and wait logic."),
-      summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.uiActions, [TOOL_NAMES.tap, TOOL_NAMES.tapElement, TOOL_NAMES.typeText, TOOL_NAMES.typeIntoElement], "Coordinate and element-level UI action tooling."),
+      summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.uiActions, [TOOL_NAMES.tap, TOOL_NAMES.tapElement, TOOL_NAMES.typeText, TOOL_NAMES.typeIntoElement, TOOL_NAMES.navigateBack], "Coordinate and element-level UI action tooling including back navigation."),
     ],
   };
 }

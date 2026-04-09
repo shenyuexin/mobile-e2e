@@ -181,7 +181,7 @@
 
 ## 完整 MCP 工具目录（当前）
 
-当前服务共暴露 **61 个工具**。对于 AI Agent，这是最快建立"可做什么"的入口。
+当前服务共暴露 **62 个工具**。对于 AI Agent，这是最快建立"可做什么"的入口。
 
 ### 1）会话与生命周期
 
@@ -197,7 +197,7 @@
 
 ### 4）UI 感知、定位与交互
 
-`inspect_ui`、`query_ui`、`resolve_ui_target`、`scroll_and_resolve_ui_target`、`wait_for_ui`、`tap`、`tap_element`、`scroll_and_tap_element`、`type_text`、`type_into_element`
+`inspect_ui`、`query_ui`、`resolve_ui_target`、`scroll_and_resolve_ui_target`、`wait_for_ui`、`tap`、`tap_element`、`scroll_and_tap_element`、`type_text`、`type_into_element`、`navigate_back`
 
 ### 5）证据、可观测与诊断
 

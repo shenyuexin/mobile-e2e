@@ -60,6 +60,7 @@ import { listDevices } from "./tools/list-devices.js";
 import { listJsDebugTargets } from "./tools/list-js-debug-targets.js";
 import { measureAndroidPerformance } from "./tools/measure-android-performance.js";
 import { measureIosPerformance } from "./tools/measure-ios-performance.js";
+import { navigateBack } from "./tools/navigate-back.js";
 import { performActionWithAutoRemediation } from "./tools/perform-action-with-auto-remediation.js";
 import { performActionWithEvidence } from "./tools/perform-action-with-evidence.js";
 import { persistSessionEvidenceCapture } from "./tools/persist-session-evidence.js";
@@ -775,6 +776,14 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     handler: measureIosPerformance,
     policy: { enforced: true, requiredScopes: ["diagnostics"] },
     session: { required: true },
+    audit: { captureResultEvidence: true },
+  }),
+  defineToolDescriptor({
+    name: TOOL_NAMES.navigateBack,
+    description: "Navigate back using platform-specific mechanisms: Android KEYEVENT_BACK or iOS app back button tap.",
+    handler: navigateBack,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({

@@ -11,6 +11,7 @@ export {
   typeIntoElementWithMaestroTool,
   scrollAndResolveUiTargetWithMaestroTool,
   scrollAndTapElementWithMaestroTool,
+  navigateBackWithMaestroTool,
 } from "./ui-action-tools.js";
 export {
   buildResolutionNextSuggestions,

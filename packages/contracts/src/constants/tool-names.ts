@@ -62,6 +62,7 @@ export const TOOL_NAMES = {
   typeIntoElement: "type_into_element",
   scrollAndResolveUiTarget: "scroll_and_resolve_ui_target",
   scrollAndTapElement: "scroll_and_tap_element",
+  navigateBack: "navigate_back",
 
   // App lifecycle
   installApp: "install_app",

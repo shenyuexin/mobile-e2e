@@ -1962,3 +1962,56 @@ export interface NetworkProbeData {
   recoveryStrategy?: NetworkRecoveryStrategy;
   durationMs: number;
 }
+
+// ─── Navigate Back ────────────────────────────────────────────────────────
+
+/** Target scope for back navigation. */
+export type BackTarget = "app" | "system";
+
+/** iOS app-back strategy when no explicit selector is provided. */
+export type IosBackStrategy = "selector_tap" | "edge_swipe";
+
+/** Concrete execution path taken for a back navigation attempt. */
+export type BackExecutionPath =
+  | "android_keyevent"
+  | "ios_selector_tap"
+  | "ios_edge_swipe"
+  | "unsupported";
+
+/** Input for the navigate_back MCP tool. */
+export interface NavigateBackInput {
+  sessionId: string;
+  platform?: Platform;
+  deviceId?: string;
+  runnerProfile?: RunnerProfile;
+  harnessConfigPath?: string;
+  dryRun?: boolean;
+  /** Whether to target app-level or system-level back. Default: "app". */
+  target?: BackTarget;
+  /** iOS-only: which strategy to use for app back. Default: "selector_tap". */
+  iosStrategy?: IosBackStrategy;
+  /** Optional selector to target a specific back button (iOS app back). */
+  selector?: InspectUiQuery;
+}
+
+/** Output data for the navigate_back MCP tool. */
+export interface NavigateBackData {
+  dryRun: boolean;
+  target: BackTarget;
+  /** Which concrete execution path was taken. */
+  executedStrategy: BackExecutionPath;
+  /** Support level for the attempted operation. */
+  supportLevel: CapabilitySupportLevel;
+  /** Whether a fallback path was used (e.g., edge_swipe after selector_tap). */
+  fallbackUsed: boolean;
+  /** The raw command that was executed (if applicable). */
+  command?: string;
+  /** Exit code from the underlying process (if applicable). */
+  exitCode?: number | null;
+  /** Summary of screen state before navigation (if captured). */
+  preStateSummary?: string;
+  /** Summary of screen state after navigation (if captured). */
+  stateChanged?: boolean | "unknown";
+  /** Note about support boundaries (e.g., iOS system back is unsupported). */
+  capabilityNote?: string;
+}
