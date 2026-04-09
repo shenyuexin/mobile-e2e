@@ -81,6 +81,7 @@ test("suggestKnownRemediationWithMaestro detects permission interruption from bl
       "# Tap execution evidence",
       "",
       "- stateSummary: permission_prompt visible, owner_package=com.android.permissioncontroller",
+      "- blockingSignals: permission_prompt, dialog_actions",
       "",
     ].join("\n"),
     "utf8",
@@ -98,6 +99,13 @@ test("suggestKnownRemediationWithMaestro detects permission interruption from bl
       fallbackUsed: false,
       retryCount: 1,
       outcome: "failed",
+      // postState with blockingSignals triggers the interruption attribution path
+      postState: {
+        appPhase: "unknown",
+        readiness: "interrupted",
+        blockingSignals: ["permission_prompt", "dialog_actions"],
+        topVisibleTexts: ["Allow", "Deny"],
+      },
     },
     evidenceDelta: {},
     evidence: [
@@ -116,9 +124,16 @@ test("suggestKnownRemediationWithMaestro detects permission interruption from bl
   const remediation = await suggestKnownRemediationWithMaestro({ sessionId });
 
   assert.equal(remediation.status, "success");
-  // Remediation content depends on the indexed remediation database.
-  // At minimum, verify the remediation array is present.
-  assert.ok(Array.isArray(remediation.data.remediation));
+  assert.ok(
+    remediation.data.remediation.length > 0,
+    "Expected remediation array to be populated when blocking signals trigger attribution",
+  );
+  // The attribution engine should detect blockingSignals=permission_prompt and produce
+  // a recommendedRecovery that references interruption resolution.
+  assert.ok(
+    remediation.data.remediation.some((item) => /interrupt|permission|blocking|dialog|dismiss|resolution/i.test(item)),
+    `Expected permission/interruption remediation, got: ${JSON.stringify(remediation.data.remediation)}`,
+  );
 });
 
 test("suggestKnownRemediationWithMaestro detects network layer issues from offline readiness", async () => {
@@ -134,6 +149,7 @@ test("suggestKnownRemediationWithMaestro detects network layer issues from offli
       "",
       "- readiness: offline_terminal",
       "- network probe: dns resolution failed",
+      "- blockingSignals: network_instability",
       "",
     ].join("\n"),
     "utf8",
@@ -151,6 +167,12 @@ test("suggestKnownRemediationWithMaestro detects network layer issues from offli
       fallbackUsed: false,
       retryCount: 2,
       outcome: "failed",
+      // postState with network readiness triggers network attribution path
+      postState: {
+        appPhase: "unknown",
+        readiness: "offline_terminal",
+        blockingSignals: ["network_instability"],
+      },
     },
     evidenceDelta: {},
     evidence: [
@@ -169,24 +191,37 @@ test("suggestKnownRemediationWithMaestro detects network layer issues from offli
   const remediation = await suggestKnownRemediationWithMaestro({ sessionId });
 
   assert.equal(remediation.status, "success");
-  // The remediation engine may or may not produce network-specific text depending
-  // on the indexed remediation database. At minimum, verify that remediation array exists.
-  assert.ok(Array.isArray(remediation.data.remediation));
+  assert.ok(
+    remediation.data.remediation.length > 0,
+    "Expected remediation array to be populated when network signals trigger attribution",
+  );
+  // The attribution engine should detect readiness=offline_terminal and produce
+  // a recommendedRecovery that references network recovery.
+  assert.ok(
+    remediation.data.remediation.some((item) => /network|offline|connectivity|dns|http/i.test(item)),
+    `Expected network remediation, got: ${JSON.stringify(remediation.data.remediation)}`,
+  );
 });
 
 test("suggestKnownRemediationWithMaestro populates skillGuidance when attribution signals present", async () => {
   const sessionId = `remediation-skill-${Date.now()}`;
   const actionId = `skill-action-${Date.now()}`;
-  const artifactsDir = path.join(repoRoot, "artifacts", "maestro-actions", sessionId);
-  await mkdir(artifactsDir, { recursive: true });
+  const startupDir = path.join(repoRoot, "artifacts", "maestro-actions", sessionId);
+  await mkdir(startupDir, { recursive: true });
 
+  // Write evidence that triggers the "environment" affectedLayer (startupPhase=preflight)
+  // This will produce skill guidance with firstFix about entry/hook ownership.
   await writeFile(
-    path.join(artifactsDir, "tap.execution.md"),
+    path.join(startupDir, "launch.execution.md"),
     [
-      "# Tap execution evidence",
+      "# Launch execution evidence",
       "",
-      "- platform: android",
-      "- attribution: screen changed, element not found",
+      "- startupPhase: preflight",
+      "- primaryFailurePhase: preflight",
+      "- reasonCode: CONFIGURATION_ERROR",
+      "",
+      "## Summary",
+      "App failed to launch during preflight check. Tooling environment not properly configured.",
       "",
     ].join("\n"),
     "utf8",
@@ -195,11 +230,17 @@ test("suggestKnownRemediationWithMaestro populates skillGuidance when attributio
   await persistActionRecord(repoRoot, {
     actionId,
     sessionId,
-    intent: { actionType: "tap_element", text: "Submit", value: "" },
+    intent: { actionType: "launch_app", appId: "com.example.demo" },
     outcome: {
       actionId,
-      actionType: "tap_element",
+      actionType: "launch_app",
       resolutionStrategy: "deterministic",
+      preState: { appPhase: "launching", readiness: "waiting_ui", blockingSignals: [] },
+      postState: {
+        appPhase: "unknown",
+        readiness: "backend_failed_terminal",
+        blockingSignals: [],
+      },
       stateChanged: false,
       fallbackUsed: false,
       retryCount: 0,
@@ -209,19 +250,28 @@ test("suggestKnownRemediationWithMaestro populates skillGuidance when attributio
     evidence: [
       {
         kind: "log",
-        path: path.posix.join("artifacts", "maestro-actions", sessionId, "tap.execution.md"),
+        path: path.posix.join("artifacts", "maestro-actions", sessionId, "launch.execution.md"),
         supportLevel: "partial",
-        description: "Skill-guided remediation evidence",
+        description: "Preflight failure evidence",
       },
     ],
     lowLevelStatus: "failed",
-    lowLevelReasonCode: REASON_CODES.adapterError,
+    lowLevelReasonCode: REASON_CODES.configurationError,
     updatedAt: new Date().toISOString(),
   });
 
   const remediation = await suggestKnownRemediationWithMaestro({ sessionId, platform: "android" });
 
   assert.equal(remediation.status, "success");
-  // skillGuidance may or may not be populated depending on remediation engine state
-  assert.ok("remediation" in remediation.data, `Expected remediation field, got keys: ${Object.keys(remediation.data)}`);
+  // skillGuidance should be populated because attribution detected an affectedLayer
+  // and platform=android was provided.
+  assert.ok(
+    remediation.data.skillGuidance !== undefined && remediation.data.skillGuidance.firstFix,
+    `Expected skillGuidance.firstFix to be populated, got: ${JSON.stringify(remediation.data.skillGuidance)}`,
+  );
+  // The remediation array should include the skill guidance's firstFix
+  assert.ok(
+    remediation.data.remediation.includes(remediation.data.skillGuidance!.firstFix),
+    `Expected remediation to include skill guidance firstFix: ${remediation.data.skillGuidance!.firstFix}`,
+  );
 });
