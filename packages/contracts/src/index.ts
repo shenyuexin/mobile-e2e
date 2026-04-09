@@ -1,4 +1,6 @@
 export { REASON_CODES, type ReasonCode } from "./reason-codes.js";
+export { TOOL_NAMES } from "./constants/tool-names.js";
+export { ACTION_TYPES, type ActionType, type SupportedActionType } from "./constants/action-types.js";
 export type {
   ActionIntent,
   DiagnosisEscalationThreshold,
@@ -222,7 +224,6 @@ export type {
   StartRecordSessionInput,
   StartSessionInput,
   StateChangeCategory,
-  SupportedActionType,
   TapElementData,
   TapElementInput,
   TapInput,

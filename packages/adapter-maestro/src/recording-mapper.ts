@@ -1,3 +1,4 @@
+import { ACTION_TYPES, type ActionType } from "@mobile-e2e-mcp/contracts";
 import type { ActionIntent, RawRecordedEvent, RecordedStep, RecordedStepConfidence } from "@mobile-e2e-mcp/contracts";
 
 export interface RecordingMappingOptions {
@@ -94,9 +95,9 @@ function isLikelySystemKeyboardDescriptor(value: string): boolean {
     && normalized.includes("standardtype:");
 }
 
-function shouldAutoInsertWaitStep(actionType: RecordedStep["actionType"]): boolean {
+function shouldAutoInsertWaitStep(actionType: ActionType): boolean {
   const typeName = actionType as string;
-  return typeName === "tap_element" || typeName === "type_into_element";
+  return typeName === ACTION_TYPES.tapElement || typeName === ACTION_TYPES.typeIntoElement;
 }
 
 function isWeakTapIntent(intent: ActionIntent): boolean {
@@ -218,21 +219,21 @@ export function mapRawEventsToRecordedSteps(
 
       stepNumber += 1;
       if (event.x === undefined || event.y === undefined) {
-        mappedStep = toStep(stepNumber, event, "tap", "low", "Tap recorded without stable coordinates; degraded to coordinate tap fallback.");
+        mappedStep = toStep(stepNumber, event, ACTION_TYPES.tap, "low", "Tap recorded without stable coordinates; degraded to coordinate tap fallback.");
       } else {
-        const tapIntent = buildIntentFromEventSelector(event, "tap_element");
+        const tapIntent = buildIntentFromEventSelector(event, ACTION_TYPES.tapElement);
         if (tapIntent && !isWeakTapIntent(tapIntent)) {
         mappedStep = toStep(
           stepNumber,
           event,
-          "tap_element",
+          ACTION_TYPES.tapElement,
           (tapIntent as ExtendedActionIntent).identifier || tapIntent.resourceId ? "high" : "medium",
           "Tap mapped to tap_element from resolved selector context.",
           tapIntent,
         );
           lastInputIntent = isInputLikeIntent(tapIntent) ? tapIntent : undefined;
         } else {
-        mappedStep = toStep(stepNumber, event, "tap", "medium", "Tap mapped as coordinate fallback due to weak or missing selector context.");
+        mappedStep = toStep(stepNumber, event, ACTION_TYPES.tap, "medium", "Tap mapped as coordinate fallback due to weak or missing selector context.");
           lastInputIntent = undefined;
         }
       }
@@ -263,17 +264,17 @@ export function mapRawEventsToRecordedSteps(
         warnings.push(`Type event '${event.eventId}' resolved to delimiter-only chunk and was skipped.`);
         continue;
       }
-      const typeIntent = buildIntentFromEventSelector(event, "type_into_element") ?? lastInputIntent;
+      const typeIntent = buildIntentFromEventSelector(event, ACTION_TYPES.typeIntoElement) ?? lastInputIntent;
       stepNumber += 1;
       mappedStep = toStep(
         stepNumber,
         event,
-        "type_into_element",
+        ACTION_TYPES.typeIntoElement,
         ((typeIntent as ExtendedActionIntent | undefined)?.identifier || typeIntent?.resourceId) ? "high" : typeIntent ? "medium" : "low",
         "Input event mapped to type_into_element from aggregated text chunks.",
         {
-          ...(typeIntent ?? { actionType: "type_into_element" }),
-          actionType: "type_into_element",
+          ...(typeIntent ?? { actionType: ACTION_TYPES.typeIntoElement }),
+          actionType: ACTION_TYPES.typeIntoElement,
           value,
         },
       );
@@ -292,11 +293,11 @@ export function mapRawEventsToRecordedSteps(
       mappedStep = toStep(
         stepNumber,
         event,
-        "swipe" as RecordedStep["actionType"],
+        ACTION_TYPES.swipe as RecordedStep["actionType"],
         "medium",
         "Swipe mapped from touch trajectory.",
         ({
-          actionType: "swipe" as ActionIntent["actionType"],
+          actionType: ACTION_TYPES.swipe as ActionIntent["actionType"],
           startX,
           startY,
           endX,
@@ -311,27 +312,27 @@ export function mapRawEventsToRecordedSteps(
       mappedStep = toStep(
         stepNumber,
         event,
-        "launch_app",
+        ACTION_TYPES.launchApp,
         appId ? "medium" : "low",
         "Foreground app transition mapped to launch_app.",
         {
-          actionType: "launch_app",
+          actionType: ACTION_TYPES.launchApp,
           appId,
         },
       );
     } else if (event.eventType === "back") {
       lastInputIntent = undefined;
       stepNumber += 1;
-      const waitIntent = buildIntentFromEventSelector(event, "wait_for_ui");
+      const waitIntent = buildIntentFromEventSelector(event, ACTION_TYPES.waitForUi);
       mappedStep = toStep(
         stepNumber,
         event,
-        "wait_for_ui",
+        ACTION_TYPES.waitForUi,
         waitIntent ? "medium" : "low",
         "Back key event mapped to wait_for_ui stabilization step.",
         waitIntent
-          ? { ...waitIntent, actionType: "wait_for_ui", timeoutMs: 3000 }
-          : { actionType: "wait_for_ui", timeoutMs: 3000 },
+          ? { ...waitIntent, actionType: ACTION_TYPES.waitForUi, timeoutMs: 3000 }
+          : { actionType: ACTION_TYPES.waitForUi, timeoutMs: 3000 },
       );
     } else {
       warnings.push(`Event '${event.eventId}' with type '${event.eventType}' is not mapped in MVP.`);
@@ -346,9 +347,9 @@ export function mapRawEventsToRecordedSteps(
         stepNumber,
         eventId: `${recordSessionId}-auto-wait-${stepNumber}`,
         timestamp: mappedStep.timestamp,
-        actionType: "wait_for_ui",
+        actionType: ACTION_TYPES.waitForUi,
         actionIntent: {
-          actionType: "wait_for_ui",
+          actionType: ACTION_TYPES.waitForUi,
           timeoutMs: 3000,
           ...(autoWaitTarget.identifier ? { identifier: autoWaitTarget.identifier } : {}),
           text: autoWaitTarget.text,
@@ -381,7 +382,7 @@ export function renderRecordedStepsAsFlow(params: {
 
   for (const step of params.steps) {
     confidenceSummary[step.confidence] += 1;
-    if (step.actionType === "launch_app") {
+    if (step.actionType === ACTION_TYPES.launchApp) {
       const appId = step.actionIntent?.appId ?? params.appId;
       lines.push("- launchApp:");
       lines.push(`    appId: "${escapeYaml(appId)}"`);
@@ -389,7 +390,7 @@ export function renderRecordedStepsAsFlow(params: {
       continue;
     }
 
-    if (step.actionType === "tap_element") {
+    if (step.actionType === ACTION_TYPES.tapElement) {
       const target = resolveTargetFromIntent(step.actionIntent);
       if (target?.identifier || target?.id || target?.text) {
         lines.push("- tapOn:");
@@ -408,7 +409,7 @@ export function renderRecordedStepsAsFlow(params: {
       continue;
     }
 
-    if (step.actionType === "tap") {
+    if (step.actionType === ACTION_TYPES.tap) {
       if (step.x === undefined || step.y === undefined) {
         warnings.push(`Step ${String(step.stepNumber)} tap skipped due to missing coordinates.`);
         continue;
@@ -418,7 +419,7 @@ export function renderRecordedStepsAsFlow(params: {
       continue;
     }
 
-    if (step.actionType === "type_into_element") {
+    if (step.actionType === ACTION_TYPES.typeIntoElement) {
       const value = step.actionIntent?.value ?? "";
       const target = resolveTargetFromIntent(step.actionIntent);
       if (target?.identifier || target?.id || target?.text) {
@@ -435,7 +436,7 @@ export function renderRecordedStepsAsFlow(params: {
       continue;
     }
 
-    if ((step.actionType as string) === "swipe") {
+    if ((step.actionType as string) === ACTION_TYPES.swipe) {
       const swipeIntent = step.actionIntent as (ActionIntent & {
         startX?: number;
         startY?: number;
@@ -459,7 +460,7 @@ export function renderRecordedStepsAsFlow(params: {
       continue;
     }
 
-    if (step.actionType === "wait_for_ui") {
+    if (step.actionType === ACTION_TYPES.waitForUi) {
       const target = resolveTargetFromIntent(step.actionIntent);
       if (!target?.identifier && !target?.id && !target?.text) {
         warnings.push(`Step ${String(step.stepNumber)} wait_for_ui has no target and was skipped.`);

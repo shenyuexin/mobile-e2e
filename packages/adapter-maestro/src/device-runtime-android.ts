@@ -1,3 +1,4 @@
+import { CLI_COMMANDS } from "./constants/cli-commands.js";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DeviceRuntimePlatformHooks } from "./device-runtime-platform.js";
@@ -59,7 +60,7 @@ function sanitizeArtifactSegment(value: string): string {
 }
 
 async function resolveAndroidAppPid(repoRoot: string, deviceId: string, appId: string): Promise<string | undefined> {
-  const execution = await executeRunner(["adb", "-s", deviceId, "shell", "pidof", appId], repoRoot, process.env, { timeoutMs: 5000 });
+  const execution = await executeRunner([CLI_COMMANDS.adb, "-s", deviceId, "shell", "pidof", appId], repoRoot, process.env, { timeoutMs: 5000 });
   if (execution.exitCode !== 0) return undefined;
   const candidate = execution.stdout.trim().split(/\s+/)[0];
   return candidate && /^\d+$/.test(candidate) ? candidate : undefined;
@@ -70,22 +71,22 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
     platform: "android",
     buildLaunchCommand: ({ runnerProfile, deviceId, appId, launchUrl }) => (
       runnerProfile === "phase1"
-        ? ["adb", "-s", deviceId, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", launchUrl ?? "", appId]
-        : ["adb", "-s", deviceId, "shell", "monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1"]
+        ? [CLI_COMMANDS.adb, "-s", deviceId, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", launchUrl ?? "", appId]
+        : [CLI_COMMANDS.adb, "-s", deviceId, "shell", "monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1"]
     ),
-    buildInstallCommand: ({ deviceId, artifactPath }) => ["adb", "-s", deviceId, "install", "-r", artifactPath],
+    buildInstallCommand: ({ deviceId, artifactPath }) => [CLI_COMMANDS.adb, "-s", deviceId, "install", "-r", artifactPath],
     buildResetPlan: ({ strategy, deviceId, appId, artifactPath }) => {
       if (strategy === "clear_data") {
         return {
           commandLabels: ["clear_data"],
-          commands: [["adb", "-s", deviceId, "shell", "pm", "clear", appId]],
+          commands: [[CLI_COMMANDS.adb, "-s", deviceId, "shell", "pm", "clear", appId]],
           supportLevel: "full" as const,
         };
       }
       if (strategy === "uninstall_reinstall") {
         return {
           commandLabels: ["uninstall", "install"],
-          commands: [["adb", "-s", deviceId, "uninstall", appId], ["adb", "-s", deviceId, "install", "-r", artifactPath ?? ""]],
+          commands: [[CLI_COMMANDS.adb, "-s", deviceId, "uninstall", appId], [CLI_COMMANDS.adb, "-s", deviceId, "install", "-r", artifactPath ?? ""]],
           supportLevel: "full" as const,
         };
       }
@@ -96,8 +97,8 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
         unsupportedReason: "keychain_reset is only available for iOS simulators in this baseline implementation.",
       };
     },
-    buildTerminateCommand: (deviceId, appId) => ["adb", "-s", deviceId, "shell", "am", "force-stop", appId],
-    buildScreenshotCommand: (deviceId) => ["adb", "-s", deviceId, "exec-out", "screencap", "-p"],
+    buildTerminateCommand: (deviceId, appId) => [CLI_COMMANDS.adb, "-s", deviceId, "shell", "am", "force-stop", appId],
+    buildScreenshotCommand: (deviceId) => [CLI_COMMANDS.adb, "-s", deviceId, "exec-out", "screencap", "-p"],
     screenshotUsesStdoutCapture: true,
     screenshotSupportLevel: "full",
     screenshotDryRunSuggestion: "Run take_screenshot without dryRun to capture an actual screenshot.",
@@ -111,8 +112,8 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
         ...(bitrateMbps ? ["--bit-rate", String(Math.floor(bitrateMbps * 1_000_000))] : []),
         remoteOutputPath,
       ];
-      const pullCommand = ["adb", "-s", deviceId, "pull", remoteOutputPath, absoluteOutputPath];
-      const cleanupCommand = ["adb", "-s", deviceId, "shell", "rm", "-f", remoteOutputPath];
+      const pullCommand = [CLI_COMMANDS.adb, "-s", deviceId, "pull", remoteOutputPath, absoluteOutputPath];
+      const cleanupCommand = [CLI_COMMANDS.adb, "-s", deviceId, "shell", "rm", "-f", remoteOutputPath];
       return {
         commandLabels: ["record", "pull", "cleanup"],
         commands: [recordCommand, pullCommand, cleanupCommand],
@@ -127,7 +128,7 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
       return {
         relativeOutputPath,
         absoluteOutputPath: path.resolve(repoRoot, relativeOutputPath),
-        command: ["adb", "-s", deviceId, "logcat", "-d", "-t", String(linesRequested ?? DEFAULT_GET_LOGS_LINES), ...(levelFilter ? [levelFilter] : [])],
+        command: [CLI_COMMANDS.adb, "-s", deviceId, "logcat", "-d", "-t", String(linesRequested ?? DEFAULT_GET_LOGS_LINES), ...(levelFilter ? [levelFilter] : [])],
         supportLevel: "full",
         linesRequested,
         sinceSeconds,
@@ -160,7 +161,7 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
       return {
         relativeOutputPath,
         absoluteOutputPath: path.resolve(repoRoot, relativeOutputPath),
-        commands: [["adb", "-s", deviceId, "logcat", "-d", "-b", "crash", "-t", String(linesRequested)], ["adb", "-s", deviceId, "shell", "ls", "-1t", "/data/anr"]],
+        commands: [[CLI_COMMANDS.adb, "-s", deviceId, "logcat", "-d", "-b", "crash", "-t", String(linesRequested)], [CLI_COMMANDS.adb, "-s", deviceId, "shell", "ls", "-1t", "/data/anr"]],
         supportLevel: "full",
         linesRequested,
       };
@@ -169,7 +170,7 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
       const pid = appId ? await resolveAndroidAppPid(repoRoot, deviceId, appId) : undefined;
       const [baseCrashCommand, anrCommand] = capture.commands;
       const crashCommand = pid
-        ? ["adb", "-s", deviceId, "logcat", "--pid", pid, "-d", "-b", "crash", "-t", String(capture.linesRequested)]
+        ? [CLI_COMMANDS.adb, "-s", deviceId, "logcat", "--pid", pid, "-d", "-b", "crash", "-t", String(capture.linesRequested)]
         : baseCrashCommand;
       const crashExecution = await executeRunner(crashCommand, repoRoot, process.env, { timeoutMs: 5000 });
       const anrExecution = await executeRunner(anrCommand, repoRoot, process.env, { timeoutMs: 5000 });
@@ -234,7 +235,7 @@ export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
         relativeOutputPath,
         absoluteOutputPath,
         commandOutputPath,
-        commands: [["adb", "-s", deviceId, "bugreport", commandOutputPath]],
+        commands: [[CLI_COMMANDS.adb, "-s", deviceId, "bugreport", commandOutputPath]],
         supportLevel: "full",
       };
     },

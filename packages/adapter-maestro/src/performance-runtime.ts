@@ -1,3 +1,4 @@
+import { CLI_COMMANDS } from "./constants/cli-commands.js";
 import type {
   AndroidPerformancePreset,
   IosPerformanceTemplate,
@@ -186,10 +187,10 @@ export function buildAndroidPerformancePlan(input: MeasureAndroidPerformanceInpu
   const remoteTracePath = `${ANDROID_PERFETTO_TRACE_DIR}/${input.sessionId}-${runnerProfile}.perfetto-trace`;
   const configContent = buildAndroidPerfettoConfig(durationMs, preset, input.appId);
   const recordTraceCommand = strategy.configTransport === "remote_file"
-    ? ["adb", "-s", deviceId, "shell", "perfetto", "--txt", "-c", remoteConfigPath, "-o", remoteTracePath]
+    ? [CLI_COMMANDS.adb, "-s", deviceId, "shell", "perfetto", "--txt", "-c", remoteConfigPath, "-o", remoteTracePath]
     : buildAndroidPerfettoRecordViaStdinCommand(deviceId, artifacts.configPath ?? outputRoot, remoteTracePath);
   const pullTraceCommand = strategy.tracePullMode === "adb_pull"
-    ? ["adb", "-s", deviceId, "pull", remoteTracePath, artifacts.tracePath ?? outputRoot]
+    ? [CLI_COMMANDS.adb, "-s", deviceId, "pull", remoteTracePath, artifacts.tracePath ?? outputRoot]
     : buildAndroidExecOutPullCommand(deviceId, remoteTracePath, artifacts.tracePath ?? outputRoot);
   return {
     durationMs,
@@ -214,11 +215,11 @@ export function buildAndroidPerformancePlan(input: MeasureAndroidPerformanceInpu
     steps: [
       {
         label: "check_perfetto",
-        command: ["adb", "-s", deviceId, "shell", "perfetto", "--version"],
+        command: [CLI_COMMANDS.adb, "-s", deviceId, "shell", "perfetto", "--version"],
       },
       {
         label: "push_config",
-        command: ["adb", "-s", deviceId, "push", artifacts.configPath ?? outputRoot, remoteConfigPath],
+        command: [CLI_COMMANDS.adb, "-s", deviceId, "push", artifacts.configPath ?? outputRoot, remoteConfigPath],
       },
       {
         label: "record_trace",
@@ -271,11 +272,11 @@ export function buildIosPerformancePlan(input: MeasureIosPerformanceInput, runne
       },
       {
         label: "export_toc",
-        command: ["xcrun", "xctrace", "export", "--input", artifacts.traceBundlePath ?? outputRoot, "--toc", "--output", artifacts.tocPath ?? outputRoot],
+        command: [CLI_COMMANDS.xcrun, "xctrace", "export", "--input", artifacts.traceBundlePath ?? outputRoot, "--toc", "--output", artifacts.tocPath ?? outputRoot],
       },
       {
         label: "export_data",
-        command: ["xcrun", "xctrace", "export", "--input", artifacts.traceBundlePath ?? outputRoot, "--xpath", exportXPath, "--output", artifacts.exportPath ?? outputRoot],
+        command: [CLI_COMMANDS.xcrun, "xctrace", "export", "--input", artifacts.traceBundlePath ?? outputRoot, "--xpath", exportXPath, "--output", artifacts.exportPath ?? outputRoot],
       },
     ],
   };

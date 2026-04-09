@@ -1,4 +1,5 @@
 import { parseAllDocuments } from "yaml";
+import { ACTION_TYPES, type ActionType } from "@mobile-e2e-mcp/contracts";
 import type { ActionIntent, RecordedStep, RecordedStepConfidence, ReplayProgressSummary } from "@mobile-e2e-mcp/contracts";
 
 export interface ReplayStep {
@@ -6,17 +7,7 @@ export interface ReplayStep {
   stepNumber: number;
   source: "recorded_step" | "flow_import";
   sourceRef?: string;
-  actionType:
-    | ActionIntent["actionType"]
-    | "tap"
-    | "swipe"
-    | "back"
-    | "home"
-    | "hide_keyboard"
-    | "stop_app"
-    | "clear_state"
-    | "assert_not_visible"
-    | "run_sub_flow";
+  actionType: ActionType;
   actionIntent?: ActionIntent;
   confidence: RecordedStepConfidence;
   warnings: string[];
@@ -52,13 +43,13 @@ export function buildReplayStepsFromRecordedSteps(steps: RecordedStep[]): Replay
     replayStepId: `replay-step-${step.stepNumber}`,
     stepNumber: step.stepNumber,
     source: "recorded_step",
-    actionType: step.actionType,
+    actionType: step.actionType as ActionType,
     actionIntent: step.actionIntent,
     confidence: step.confidence,
     warnings: step.warnings ?? [],
     dependency: {
       previousStepRequired: true,
-      checkpointEligible: step.actionType !== "wait_for_ui",
+      checkpointEligible: step.actionType !== ACTION_TYPES.waitForUi,
     },
   }));
 }
@@ -103,9 +94,9 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "launch_app",
+        actionType: ACTION_TYPES.launchApp,
         actionIntent: {
-          actionType: "launch_app",
+          actionType: ACTION_TYPES.launchApp,
           appId: asString(item.launchApp.appId),
         },
         confidence: "high",
@@ -122,9 +113,9 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
           replayStepId: `replay-step-${stepNumber}`,
           stepNumber,
           source: "flow_import",
-          actionType: "tap" as const,
+          actionType: ACTION_TYPES.tap,
           actionIntent: {
-            actionType: "tap" as const,
+            actionType: ACTION_TYPES.tap,
             point,
           } as unknown as ActionIntent,
           confidence: "high" as const,
@@ -137,9 +128,9 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "tap_element",
+        actionType: ACTION_TYPES.tapElement,
         actionIntent: {
-          actionType: "tap_element",
+          actionType: ACTION_TYPES.tapElement,
           identifier: asString(item.tapOn.identifier),
           resourceId: asString(item.tapOn.id),
           text: asString(item.tapOn.text),
@@ -156,9 +147,9 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "type_into_element",
+        actionType: ACTION_TYPES.typeIntoElement,
         actionIntent: {
-          actionType: "type_into_element",
+          actionType: ACTION_TYPES.typeIntoElement,
           value: item.inputText,
         },
         confidence: "medium",
@@ -173,9 +164,9 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "wait_for_ui",
+        actionType: ACTION_TYPES.waitForUi,
         actionIntent: {
-          actionType: "wait_for_ui",
+          actionType: ACTION_TYPES.waitForUi,
           identifier: asString(item.assertVisible.identifier),
           resourceId: asString(item.assertVisible.id),
           text: asString(item.assertVisible.text),
@@ -192,9 +183,9 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "assert_not_visible" as const,
+        actionType: ACTION_TYPES.assertNotVisible,
         actionIntent: {
-          actionType: "assert_not_visible" as const,
+          actionType: ACTION_TYPES.assertNotVisible,
           identifier: asString(item.assertNotVisible.identifier),
           resourceId: asString(item.assertNotVisible.id),
           text: asString(item.assertNotVisible.text),
@@ -211,8 +202,8 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "run_sub_flow" as const,
-        actionIntent: { actionType: "run_sub_flow" as const, flowPath: asString(item.runFlow.file) } as unknown as ActionIntent,
+        actionType: ACTION_TYPES.runSubFlow,
+        actionIntent: { actionType: ACTION_TYPES.runSubFlow, flowPath: asString(item.runFlow.file) } as unknown as ActionIntent,
         confidence: "medium" as const,
         warnings: ["runFlow requires loading and inlining a sub-flow file."],
         dependency: { previousStepRequired: true, checkpointEligible: true },
@@ -228,9 +219,9 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
           replayStepId: `replay-step-${stepNumber}`,
           stepNumber,
           source: "flow_import",
-          actionType: "swipe" as const,
+          actionType: ACTION_TYPES.swipe,
           actionIntent: {
-            actionType: "swipe" as const,
+            actionType: ACTION_TYPES.swipe,
             point: start,
             endPoint: end,
             durationMs: Number(item.swipe.duration) || 300,
@@ -248,8 +239,8 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "back" as const,
-        actionIntent: { actionType: "back" as const } as unknown as ActionIntent,
+        actionType: ACTION_TYPES.back,
+        actionIntent: { actionType: ACTION_TYPES.back } as unknown as ActionIntent,
         confidence: "high" as const,
         warnings: [],
         dependency: { previousStepRequired: true, checkpointEligible: true },
@@ -262,8 +253,8 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "home" as const,
-        actionIntent: { actionType: "home" as const } as unknown as ActionIntent,
+        actionType: ACTION_TYPES.home,
+        actionIntent: { actionType: ACTION_TYPES.home } as unknown as ActionIntent,
         confidence: "high" as const,
         warnings: [],
         dependency: { previousStepRequired: true, checkpointEligible: true },
@@ -276,8 +267,8 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "hide_keyboard" as const,
-        actionIntent: { actionType: "hide_keyboard" as const } as unknown as ActionIntent,
+        actionType: ACTION_TYPES.hideKeyboard,
+        actionIntent: { actionType: ACTION_TYPES.hideKeyboard } as unknown as ActionIntent,
         confidence: "medium" as const,
         warnings: ["hideKeyboard maps to KEYCODE_BACK; may not dismiss all keyboard types."],
         dependency: { previousStepRequired: true, checkpointEligible: true },
@@ -290,8 +281,8 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "stop_app" as const,
-        actionIntent: { actionType: "stop_app" as const, appId: asString(item.stopApp.appId) } as unknown as ActionIntent,
+        actionType: ACTION_TYPES.stopApp,
+        actionIntent: { actionType: ACTION_TYPES.stopApp, appId: asString(item.stopApp.appId) } as unknown as ActionIntent,
         confidence: "high" as const,
         warnings: [],
         dependency: { previousStepRequired: true, checkpointEligible: true },
@@ -304,8 +295,8 @@ export function buildReplayPlanFromFlowYaml(flowContent: string): ReplayFlowImpo
         replayStepId: `replay-step-${stepNumber}`,
         stepNumber,
         source: "flow_import",
-        actionType: "clear_state" as const,
-        actionIntent: { actionType: "clear_state" as const, appId: asString(item.clearState.appId) } as unknown as ActionIntent,
+        actionType: ACTION_TYPES.clearState,
+        actionIntent: { actionType: ACTION_TYPES.clearState, appId: asString(item.clearState.appId) } as unknown as ActionIntent,
         confidence: "high" as const,
         warnings: ["clearState clears all app data, including login state."],
         dependency: { previousStepRequired: true, checkpointEligible: true },

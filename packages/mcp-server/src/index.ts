@@ -11,7 +11,7 @@ import type {
   ResumeInterruptedActionInput,
   ToolResult,
 } from "@mobile-e2e-mcp/contracts";
-import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
+import { REASON_CODES, TOOL_NAMES } from "@mobile-e2e-mcp/contracts";
 import {
   appendSessionTimelineEvent,
   loadSessionRecord,
@@ -19,6 +19,7 @@ import {
   runExclusive,
 } from "@mobile-e2e-mcp/core";
 import { enforcePolicyForTool } from "./policy-guard.js";
+import { POLICY_SCOPES, type ToolPolicyRequirement } from "./constants/policy-scopes.js";
 import {
   MobileE2EMcpServer,
   type MobileE2EMcpToolContractMap,
@@ -102,13 +103,7 @@ type ToolOutput<TName extends ToolName> = ToolResult<ToolOutputData<TName>>;
 type ToolHandler<TName extends ToolName> = (input: ToolInput<TName>) => Promise<ToolOutput<TName>>;
 type AnyToolHandler = { bivarianceHack(input: unknown): Promise<ToolResult<unknown>> }["bivarianceHack"];
 
-type ToolPolicyRequirement =
-  | "none"
-  | "read"
-  | "write"
-  | "diagnostics"
-  | "interrupt"
-  | "interrupt-high-risk";
+// ToolPolicyRequirement is imported from ./constants/policy-scopes.js
 
 interface ToolDescriptor {
   name: ToolName;
@@ -479,7 +474,7 @@ function composeToolHandler(
 
 const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
   defineToolDescriptor({
-    name: "capture_js_console_logs",
+    name: TOOL_NAMES.captureJsConsoleLogs,
     description: "Capture one-shot React Native or Expo JS console events through the Metro inspector WebSocket.",
     handler: captureJsConsoleLogs,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -487,7 +482,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "capture_js_network_events",
+    name: TOOL_NAMES.captureJsNetworkEvents,
     description: "Capture one-shot React Native or Expo JS network events through the Metro inspector WebSocket.",
     handler: captureJsNetworkEvents,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -495,7 +490,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "capture_element_screenshot",
+    name: TOOL_NAMES.captureElementScreenshot,
     description: "Capture a screenshot cropped to a specific UI element's bounds for visual regression testing.",
     handler: captureElementScreenshot,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -503,7 +498,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "compare_against_baseline",
+    name: TOOL_NAMES.compareAgainstBaseline,
     description: "Compare the current action outcome against a previously successful local baseline.",
     handler: compareAgainstBaseline,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -511,7 +506,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "compare_visual_baseline",
+    name: TOOL_NAMES.compareVisualBaseline,
     description: "Compare a current screenshot against a visual baseline image, returning pixel-diff percentage and pass/fail status.",
     handler: compareVisualBaselineTool,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -519,7 +514,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "collect_debug_evidence",
+    name: TOOL_NAMES.collectDebugEvidence,
     description: "Capture AI-friendly summarized debug evidence from logs and crash signals, with optional diagnostics escalation.",
     handler: collectDebugEvidence,
     policy: { enforced: true, requiredScopes: ["diagnostics"] },
@@ -527,7 +522,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "collect_diagnostics",
+    name: TOOL_NAMES.collectDiagnostics,
     description: "Capture an Android bugreport bundle or an iOS simulator diagnostics bundle.",
     handler: collectDiagnostics,
     policy: { enforced: true, requiredScopes: ["diagnostics"] },
@@ -535,7 +530,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "detect_interruption",
+    name: TOOL_NAMES.detectInterruption,
     description: "Detect interruption signals from current state summary and UI evidence.",
     handler: (input: DetectInterruptionInput) => detectInterruption(input),
     policy: { enforced: true, requiredScopes: ["interrupt"] },
@@ -543,7 +538,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "classify_interruption",
+    name: TOOL_NAMES.classifyInterruption,
     description: "Classify interruption type and confidence from structured interruption signals.",
     handler: (input: ClassifyInterruptionInput) => classifyInterruption(input),
     policy: { enforced: true, requiredScopes: ["interrupt"] },
@@ -551,7 +546,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "describe_capabilities",
+    name: TOOL_NAMES.describeCapabilities,
     description: "Return the current platform capability profile before invoking platform-specific tools.",
     handler: describeCapabilities,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -559,7 +554,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "doctor",
+    name: TOOL_NAMES.doctor,
     description: "Check command availability and device readiness.",
     handler: doctor,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -567,7 +562,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "execute_intent",
+    name: TOOL_NAMES.executeIntent,
     description: "Execute a high-level intent by planning a bounded mobile action with evidence.",
     handler: executeIntent,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -575,7 +570,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "complete_task",
+    name: TOOL_NAMES.completeTask,
     description: "Execute a bounded multi-step task plan and return per-step outcomes.",
     handler: completeTask,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -583,7 +578,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "start_record_session",
+    name: TOOL_NAMES.startRecordSession,
     description: "Start passive recording for manual interactions on Android or iOS targets.",
     handler: startRecordSession,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -591,7 +586,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "get_record_session_status",
+    name: TOOL_NAMES.getRecordSessionStatus,
     description: "Get passive recording session status, counts, and warnings.",
     handler: getRecordSessionStatus,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -599,7 +594,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "end_record_session",
+    name: TOOL_NAMES.endRecordSession,
     description: "Stop passive recording, map captured events, and export replayable flow.",
     handler: endRecordSession,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -607,7 +602,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "cancel_record_session",
+    name: TOOL_NAMES.cancelRecordSession,
     description: "Cancel an active passive recording session.",
     handler: cancelRecordSession,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -615,7 +610,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "export_session_flow",
+    name: TOOL_NAMES.exportSessionFlow,
     description: "Export persisted session action records to a replayable Maestro flow YAML.",
     handler: exportSessionFlow,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -623,7 +618,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "record_task_flow",
+    name: TOOL_NAMES.recordTaskFlow,
     description: "Export a task-oriented flow snapshot from persisted session actions.",
     handler: recordTaskFlow,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -631,7 +626,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "request_manual_handoff",
+    name: TOOL_NAMES.requestManualHandoff,
     description: "Record an explicit operator handoff checkpoint for OTP, consent, captcha, or protected-page workflows.",
     handler: (input: RequestManualHandoffInput) => requestManualHandoff(input),
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -639,7 +634,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "explain_last_failure",
+    name: TOOL_NAMES.explainLastFailure,
     description: "Explain the most recent action failure using deterministic attribution heuristics.",
     handler: explainLastFailure,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -647,7 +642,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "find_similar_failures",
+    name: TOOL_NAMES.findSimilarFailures,
     description: "Find locally indexed failures that resemble the current failure signature.",
     handler: findSimilarFailures,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -655,7 +650,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "get_action_outcome",
+    name: TOOL_NAMES.getActionOutcome,
     description: "Load a previously recorded action outcome by actionId.",
     handler: getActionOutcome,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -663,7 +658,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "get_crash_signals",
+    name: TOOL_NAMES.getCrashSignals,
     description: "Capture recent Android crash or ANR evidence and inspect the iOS simulator crash reporter tree.",
     handler: getCrashSignals,
     policy: { enforced: true, requiredScopes: ["diagnostics"] },
@@ -671,7 +666,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "get_logs",
+    name: TOOL_NAMES.getLogs,
     description: "Capture recent Android logcat output or recent iOS simulator logs.",
     handler: getLogs,
     policy: { enforced: true, requiredScopes: ["diagnostics"] },
@@ -679,7 +674,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "get_screen_summary",
+    name: TOOL_NAMES.getScreenSummary,
     description: "Capture a compact current-screen summary with actionable targets and blocking signals.",
     handler: getScreenSummary,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -687,7 +682,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "get_session_state",
+    name: TOOL_NAMES.getSessionState,
     description: "Return compact AI-first session state with latest screen, readiness, and recent failure signals.",
     handler: getSessionState,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -695,7 +690,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "inspect_ui",
+    name: TOOL_NAMES.inspectUi,
     description: "Capture a device UI hierarchy dump; iOS still relies on idb-backed hierarchy artifacts.",
     handler: inspectUi,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -703,7 +698,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "query_ui",
+    name: TOOL_NAMES.queryUi,
     description: "Query Android or iOS hierarchy dumps by selector fields and return structured matches.",
     handler: queryUi,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -711,7 +706,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "resolve_ui_target",
+    name: TOOL_NAMES.resolveUiTarget,
     description: "Resolve a UI selector to a single actionable Android or iOS target or report ambiguity.",
     handler: resolveUiTarget,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -719,7 +714,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "scroll_and_resolve_ui_target",
+    name: TOOL_NAMES.scrollAndResolveUiTarget,
     description: "Scroll Android or iOS UI containers while trying to resolve a selector to a single actionable target.",
     handler: scrollAndResolveUiTarget,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -727,7 +722,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "scroll_and_tap_element",
+    name: TOOL_NAMES.scrollAndTapElement,
     description: "Scroll Android or iOS UI containers until a target resolves, then tap the resolved element.",
     handler: scrollAndTapElement,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -735,7 +730,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "install_app",
+    name: TOOL_NAMES.installApp,
     description: "Install a native or flutter artifact onto a target device/simulator.",
     handler: installApp,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -743,7 +738,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "list_js_debug_targets",
+    name: TOOL_NAMES.listJsDebugTargets,
     description: "Discover React Native or Expo JS debug targets from the Metro inspector endpoint.",
     handler: listJsDebugTargets,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -751,7 +746,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "launch_app",
+    name: TOOL_NAMES.launchApp,
     description: "Launch the selected app or Expo URL on a target device/simulator.",
     handler: launchApp,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -759,7 +754,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "list_devices",
+    name: TOOL_NAMES.listDevices,
     description: "List Android devices and iOS simulators/physical devices.",
     handler: listDevices,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -767,7 +762,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "measure_android_performance",
+    name: TOOL_NAMES.measureAndroidPerformance,
     description: "Capture an Android Perfetto time window and return a lightweight AI-friendly performance summary.",
     handler: measureAndroidPerformance,
     policy: { enforced: true, requiredScopes: ["diagnostics"] },
@@ -775,7 +770,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "measure_ios_performance",
+    name: TOOL_NAMES.measureIosPerformance,
     description: "Capture an iOS xctrace time window and return a lightweight AI-friendly performance summary.",
     handler: measureIosPerformance,
     policy: { enforced: true, requiredScopes: ["diagnostics"] },
@@ -783,33 +778,33 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "perform_action_with_evidence",
+    name: TOOL_NAMES.performActionWithEvidence,
     description: "Execute one bounded action and automatically capture pre/post state plus outcome evidence.",
     createHandler: (registry) => {
       const explainLastFailureHandler =
         registry.explain_last_failure
-        ?? withPolicy("explain_last_failure", explainLastFailure);
+        ?? withPolicy(TOOL_NAMES.explainLastFailure, explainLastFailure);
       const compareAgainstBaselineHandler =
         registry.compare_against_baseline
-        ?? withPolicy("compare_against_baseline", compareAgainstBaseline);
+        ?? withPolicy(TOOL_NAMES.compareAgainstBaseline, compareAgainstBaseline);
       const rankFailureCandidatesHandler =
         registry.rank_failure_candidates
-        ?? withPolicy("rank_failure_candidates", rankFailureCandidates);
+        ?? withPolicy(TOOL_NAMES.rankFailureCandidates, rankFailureCandidates);
       const suggestKnownRemediationHandler =
         registry.suggest_known_remediation
-        ?? withPolicy("suggest_known_remediation", suggestKnownRemediation);
+        ?? withPolicy(TOOL_NAMES.suggestKnownRemediation, suggestKnownRemediation);
       const recoverToKnownStateHandler =
         registry.recover_to_known_state
         ?? withSessionExecution(
-          "recover_to_known_state",
-          withPolicy("recover_to_known_state", recoverToKnownState),
+          TOOL_NAMES.recoverToKnownState,
+          withPolicy(TOOL_NAMES.recoverToKnownState, recoverToKnownState),
           { requireResolvedSessionContext: true },
         );
       const replayLastStablePathHandler =
         registry.replay_last_stable_path
         ?? withSessionExecution(
-          "replay_last_stable_path",
-          withPolicy("replay_last_stable_path", replayLastStablePath),
+          TOOL_NAMES.replayLastStablePath,
+          withPolicy(TOOL_NAMES.replayLastStablePath, replayLastStablePath),
           { requireResolvedSessionContext: true },
         );
       return async (input: PerformActionWithEvidenceInput) =>
@@ -828,7 +823,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "rank_failure_candidates",
+    name: TOOL_NAMES.rankFailureCandidates,
     description: "Rank likely failure layers for the latest attributed action window.",
     handler: rankFailureCandidates,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -836,7 +831,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "record_screen",
+    name: TOOL_NAMES.recordScreen,
     description: "Record screen output on Android (adb) or iOS simulator (simctl) for a bounded duration.",
     handler: recordScreen,
     policy: { enforced: true, requiredScopes: ["diagnostics"] },
@@ -844,7 +839,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: true },
   }),
   defineToolDescriptor({
-    name: "recover_to_known_state",
+    name: TOOL_NAMES.recoverToKnownState,
     description: "Attempt a bounded deterministic recovery such as wait-ready or app relaunch.",
     handler: recoverToKnownState,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -852,7 +847,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "resolve_interruption",
+    name: TOOL_NAMES.resolveInterruption,
     description: "Resolve interruption with policy-aware signature matching and bounded actions.",
     handler: (input: ResolveInterruptionInput) => resolveInterruption(input),
     policy: { enforced: true, requiredScopes: ["interrupt", "interrupt-high-risk"] },
@@ -860,7 +855,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "resume_interrupted_action",
+    name: TOOL_NAMES.resumeInterruptedAction,
     description: "Replay interrupted action from checkpoint with drift detection.",
     handler: (input: ResumeInterruptedActionInput) => resumeInterruptedAction(input),
     policy: { enforced: true, requiredScopes: ["interrupt"] },
@@ -868,7 +863,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "replay_last_stable_path",
+    name: TOOL_NAMES.replayLastStablePath,
     description: "Replay the latest successful bounded action recorded for this session.",
     handler: replayLastStablePath,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -876,7 +871,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "replay_checkpoint_chain",
+    name: TOOL_NAMES.replayCheckpointChain,
     description: "Replay a chain of low-risk actions from the last stable checkpoint in a session, with divergence detection.",
     handler: replayCheckpointChainTool,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -884,7 +879,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "reset_app_state",
+    name: TOOL_NAMES.resetAppState,
     description: "Reset app state using clear_data, uninstall_reinstall, or keychain_reset strategy.",
     handler: resetAppState,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -892,7 +887,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "take_screenshot",
+    name: TOOL_NAMES.takeScreenshot,
     description: "Capture a screenshot from a target device or simulator.",
     handler: takeScreenshot,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -900,7 +895,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "tap",
+    name: TOOL_NAMES.tap,
     description: "Perform a coordinate tap on Android, iOS simulators through idb, or iOS physical devices through a generated Maestro action flow.",
     handler: tap,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -908,7 +903,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "tap_element",
+    name: TOOL_NAMES.tapElement,
     description: "Resolve a UI selector to a single Android or iOS target and tap only when the match is unambiguous.",
     handler: tapElement,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -916,7 +911,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "terminate_app",
+    name: TOOL_NAMES.terminateApp,
     description: "Terminate the selected app on a target device or simulator.",
     handler: terminateApp,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -924,7 +919,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "type_text",
+    name: TOOL_NAMES.typeText,
     description: "Perform direct text input on Android, iOS simulators through idb, or iOS physical devices through a generated Maestro action flow.",
     handler: typeText,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -932,7 +927,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "type_into_element",
+    name: TOOL_NAMES.typeIntoElement,
     description: "Resolve a UI selector, focus the matched Android or iOS element, and type text.",
     handler: typeIntoElement,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -940,7 +935,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "validate_flow",
+    name: TOOL_NAMES.validateFlow,
     description: "Validate a Maestro flow or recorded session against the current app state without executing actions.",
     handler: validateFlowTool,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -948,7 +943,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "wait_for_ui",
+    name: TOOL_NAMES.waitForUi,
     description: "Poll the Android or iOS hierarchy until a selector matches or timeout is reached.",
     handler: waitForUi,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -956,7 +951,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "probe_network_readiness",
+    name: TOOL_NAMES.probeNetworkReadiness,
     description: "Probe network readiness on Android or iOS device, returning connectivity status, latency, DNS health, backend reachability, and a recovery strategy recommendation.",
     handler: probeNetworkReadinessTool,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -964,7 +959,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "start_session",
+    name: TOOL_NAMES.startSession,
     description: "Create a typed mobile execution session.",
     handler: startSession,
     policy: { enforced: true, requiredScopes: ["none"] },
@@ -972,7 +967,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "run_flow",
+    name: TOOL_NAMES.runFlow,
     description: "Run the selected flow through the Maestro adapter.",
     handler: runFlow,
     policy: { enforced: true, requiredScopes: ["write"] },
@@ -980,7 +975,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "suggest_known_remediation",
+    name: TOOL_NAMES.suggestKnownRemediation,
     description: "Suggest remediation based on similar failures, local baselines, and built-in readiness skill routing.",
     handler: suggestKnownRemediation,
     policy: { enforced: true, requiredScopes: ["read"] },
@@ -988,7 +983,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     audit: { captureResultEvidence: false },
   }),
   defineToolDescriptor({
-    name: "end_session",
+    name: TOOL_NAMES.endSession,
     description: "Close a session and return final metadata.",
     handler: endSession,
     policy: { enforced: false, requiredScopes: ["none"] },

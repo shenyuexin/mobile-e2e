@@ -1,3 +1,4 @@
+import { CLI_COMMANDS } from "./constants/cli-commands.js";
 import type { IosExecutionBackend, BackendProbeResult } from "./ios-backend-types.js";
 import { executeRunner } from "./runtime-shared.js";
 
@@ -25,7 +26,7 @@ export class DevicectlPhysicalBackend implements IosExecutionBackend {
 
   async probeAvailability(repoRoot: string): Promise<BackendProbeResult> {
     try {
-      const result = await executeRunner(["xcrun", "devicectl", "help"], repoRoot, process.env);
+      const result = await executeRunner([CLI_COMMANDS.xcrun, "devicectl", "help"], repoRoot, process.env);
       if (result.exitCode !== 0) {
         return { available: false, error: `xcrun devicectl help failed: ${result.stderr.trim()}` };
       }
@@ -53,7 +54,7 @@ export class DevicectlPhysicalBackend implements IosExecutionBackend {
 
   buildHierarchyCaptureCommand(deviceId: string): string[] {
     // devicectl has no accessibility dump equivalent - indicate Maestro fallback
-    return ["maestro", "test", "--platform", "ios", "--udid", deviceId, "<HIERARCHY_FLOW_YAML>"];
+    return [CLI_COMMANDS.maestro, "test", "--platform", "ios", "--udid", deviceId, "<HIERARCHY_FLOW_YAML>"];
   }
 
   buildScreenshotCommand(deviceId: string, _outputPath: string): string[] {
