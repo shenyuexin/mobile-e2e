@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import type {
   ActionIntent,
   ClassifyInterruptionData,
@@ -124,7 +125,7 @@ export function buildInterruptionCheckpoint(
     actionId,
     sessionId,
     platform,
-    actionType: action?.actionType ?? "tap_element",
+    actionType: action?.actionType ?? ACTION_TYPES.tapElement,
     selector: selector && Object.values(selector).some((value) => value !== undefined) ? selector : undefined,
     args: {
       resourceId: action?.resourceId,
@@ -394,7 +395,7 @@ export async function resolveInterruptionWithMaestro(
     && decision.decision.status === "resolved"
     && accessProfile
     && interruptionResolutionRequiresTapScope(matchedRule.action.strategy)
-    && !isToolAllowedByProfile(accessProfile, "tap_element")
+    && !isToolAllowedByProfile(accessProfile, ACTION_TYPES.tapElement)
   ) {
     const deniedEvent: InterruptionEvent = buildInterruptionEvent({
       actionId: input.actionId,

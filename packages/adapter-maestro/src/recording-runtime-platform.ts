@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import type { Platform } from "@mobile-e2e-mcp/contracts";
 import { createAndroidRecordingHooks } from "./recording-runtime-android.js";
 import { createIosRecordingHooks } from "./recording-runtime-ios.js";

@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import { buildIosNativeLocatorCandidate, extractIosEditableNodeValue, isIosEditableNode, parseIosInspectNodes } from "./ui-model.js";
 import type { UiResolvedPointVerificationParams, UiResolvedPointVerificationResult, UiRuntimePlatformHooks, UiRuntimeProbeAction, UiTypedPostconditionVerificationParams } from "./ui-runtime-platform.js";
@@ -86,7 +87,7 @@ function buildProbeSuggestion(action: UiRuntimeProbeAction): string {
   if (action === "inspect_ui") {
     return "iOS inspect_ui uses xcrun simctl (simulators) or devicectl+Maestro (physical devices). Run 'mobile-e2e-mcp doctor' to verify backend availability.";
   }
-  if (action === "tap") {
+  if (action === ACTION_TYPES.tap) {
     return "iOS tap uses xcrun simctl io tap (simulators) or Maestro flow YAML (physical devices). Set IOS_EXECUTION_BACKEND to force a specific backend.";
   }
   return "iOS type_text uses xcrun simctl keyboard type (simulators) or Maestro flow YAML (physical devices). Set IOS_EXECUTION_BACKEND to force a specific backend.";

@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { parseAllDocuments } from "yaml";
 import { readFile } from "node:fs/promises";
 import { resolveRepoPath } from "./harness-config.js";
@@ -75,7 +76,7 @@ function parseFlowStepsFromYaml(yamlContent: string): FlowValidationStep[] {
     const stepIndex = index + 1;
 
     if (isRecord(item.launchApp)) {
-      steps.push({ stepIndex, stepType: "launch_app", isNonInteractive: true });
+      steps.push({ stepIndex, stepType: ACTION_TYPES.launchApp, isNonInteractive: true });
       continue;
     }
 
@@ -83,7 +84,7 @@ function parseFlowStepsFromYaml(yamlContent: string): FlowValidationStep[] {
       const selector = extractSelector(item);
       steps.push({
         stepIndex,
-        stepType: "tap_element",
+        stepType: ACTION_TYPES.tapElement,
         selector,
         resourceId: selector?.resourceId,
         isNonInteractive: false,
@@ -92,7 +93,7 @@ function parseFlowStepsFromYaml(yamlContent: string): FlowValidationStep[] {
     }
 
     if (typeof item.inputText === "string") {
-      steps.push({ stepIndex, stepType: "type_into_element", isNonInteractive: true });
+      steps.push({ stepIndex, stepType: ACTION_TYPES.typeIntoElement, isNonInteractive: true });
       continue;
     }
 
@@ -100,7 +101,7 @@ function parseFlowStepsFromYaml(yamlContent: string): FlowValidationStep[] {
       const selector = extractSelector(item);
       steps.push({
         stepIndex,
-        stepType: "wait_for_ui",
+        stepType: ACTION_TYPES.waitForUi,
         selector,
         resourceId: selector?.resourceId,
         isNonInteractive: false,
@@ -112,7 +113,7 @@ function parseFlowStepsFromYaml(yamlContent: string): FlowValidationStep[] {
       const selector = extractSelector(item);
       steps.push({
         stepIndex,
-        stepType: "assert_not_visible",
+        stepType: ACTION_TYPES.assertNotVisible,
         selector,
         resourceId: selector?.resourceId,
         isNonInteractive: false,
@@ -142,19 +143,19 @@ async function buildStepsFromSessionRecords(
     const stepIndex = index + 1;
     const actionType = intent.actionType;
 
-    if (actionType === "launch_app") {
-      steps.push({ stepIndex, stepType: "launch_app", isNonInteractive: true });
+    if (actionType === ACTION_TYPES.launchApp) {
+      steps.push({ stepIndex, stepType: ACTION_TYPES.launchApp, isNonInteractive: true });
       continue;
     }
 
-    if (actionType === "tap_element") {
+    if (actionType === ACTION_TYPES.tapElement) {
       const selector: InspectUiQuery = {};
       if (intent.resourceId) selector.resourceId = intent.resourceId;
       if (intent.text) selector.text = intent.text;
       if (intent.contentDesc) selector.contentDesc = intent.contentDesc;
       steps.push({
         stepIndex,
-        stepType: "tap_element",
+        stepType: ACTION_TYPES.tapElement,
         selector: Object.keys(selector).length > 0 ? selector : undefined,
         resourceId: intent.resourceId,
         isNonInteractive: false,
@@ -162,19 +163,19 @@ async function buildStepsFromSessionRecords(
       continue;
     }
 
-    if (actionType === "type_into_element") {
-      steps.push({ stepIndex, stepType: "type_into_element", isNonInteractive: true });
+    if (actionType === ACTION_TYPES.typeIntoElement) {
+      steps.push({ stepIndex, stepType: ACTION_TYPES.typeIntoElement, isNonInteractive: true });
       continue;
     }
 
-    if (actionType === "wait_for_ui") {
+    if (actionType === ACTION_TYPES.waitForUi) {
       const selector: InspectUiQuery = {};
       if (intent.resourceId) selector.resourceId = intent.resourceId;
       if (intent.text) selector.text = intent.text;
       if (intent.contentDesc) selector.contentDesc = intent.contentDesc;
       steps.push({
         stepIndex,
-        stepType: "wait_for_ui",
+        stepType: ACTION_TYPES.waitForUi,
         selector: Object.keys(selector).length > 0 ? selector : undefined,
         resourceId: intent.resourceId,
         isNonInteractive: false,

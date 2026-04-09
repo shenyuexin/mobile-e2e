@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import type { RawRecordedEvent } from "@mobile-e2e-mcp/contracts";

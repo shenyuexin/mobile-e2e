@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import {
   type ActionIntent,
   type CompleteTaskData,
@@ -65,7 +66,7 @@ export async function executeIntentWithMaestro(
   action: ActionIntent,
   deps: Pick<TaskPlannerDeps, "tapElementWithMaestro" | "typeIntoElementWithMaestro" | "waitForUiWithMaestro" | "launchAppWithMaestro" | "terminateAppWithMaestro">,
 ): Promise<ToolResult<TapElementData | TypeIntoElementData | WaitForUiData | LaunchAppData | TerminateAppData>> {
-  if (action.actionType === "tap_element") {
+  if (action.actionType === ACTION_TYPES.tapElement) {
     return deps.tapElementWithMaestro({
       sessionId: params.sessionId,
       platform: params.platform,
@@ -81,7 +82,7 @@ export async function executeIntentWithMaestro(
       dryRun: params.dryRun,
     });
   }
-  if (action.actionType === "type_into_element") {
+  if (action.actionType === ACTION_TYPES.typeIntoElement) {
     return deps.typeIntoElementWithMaestro({
       sessionId: params.sessionId,
       platform: params.platform,
@@ -98,7 +99,7 @@ export async function executeIntentWithMaestro(
       dryRun: params.dryRun,
     });
   }
-  if (action.actionType === "wait_for_ui") {
+  if (action.actionType === ACTION_TYPES.waitForUi) {
     return deps.waitForUiWithMaestro({
       sessionId: params.sessionId,
       platform: params.platform,
@@ -117,7 +118,7 @@ export async function executeIntentWithMaestro(
       dryRun: params.dryRun,
     });
   }
-  if (action.actionType === "launch_app") {
+  if (action.actionType === ACTION_TYPES.launchApp) {
     return deps.launchAppWithMaestro({
       sessionId: params.sessionId,
       platform: params.platform,
@@ -144,19 +145,19 @@ function inferCandidateActionTypes(intent: string): SupportedActionType[] {
   const lower = intent.toLowerCase();
   const candidates: SupportedActionType[] = [];
   if (lower.includes("launch") || lower.includes("open") || lower.includes("启动") || lower.includes("打开")) {
-    candidates.push("launch_app");
+    candidates.push(ACTION_TYPES.launchApp);
   }
   if (lower.includes("type") || lower.includes("input") || lower.includes("输入")) {
-    candidates.push("type_into_element");
+    candidates.push(ACTION_TYPES.typeIntoElement);
   }
   if (lower.includes("wait") || lower.includes("等待") || lower.includes("visible") || lower.includes("出现")) {
-    candidates.push("wait_for_ui");
+    candidates.push(ACTION_TYPES.waitForUi);
   }
   if (lower.includes("terminate") || lower.includes("close") || lower.includes("kill") || lower.includes("关闭") || lower.includes("退出")) {
-    candidates.push("terminate_app");
+    candidates.push(ACTION_TYPES.terminateApp);
   }
   if (candidates.length === 0) {
-    candidates.push("tap_element");
+    candidates.push(ACTION_TYPES.tapElement);
   }
   return candidates;
 }

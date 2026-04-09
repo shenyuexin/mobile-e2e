@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -244,7 +245,7 @@ export async function tapWithMaestroTool(
         command: [],
         exitCode: null,
       },
-      nextSuggestions: [buildMissingPlatformSuggestion("tap")],
+      nextSuggestions: [buildMissingPlatformSuggestion(ACTION_TYPES.tap)],
     };
   }
   const repoRoot = resolveRepoPath();
@@ -262,7 +263,7 @@ export async function tapWithMaestroTool(
   const command = runtimeHooks.buildTapCommand(deviceId, input.x, input.y);
   const isIosPhysicalTarget = input.platform === "ios" && isIosPhysicalDeviceId(deviceId);
   const iosPhysicalFlowPaths = isIosPhysicalTarget
-    ? buildIosPhysicalActionFlowPaths(repoRoot, input.sessionId, "tap")
+    ? buildIosPhysicalActionFlowPaths(repoRoot, input.sessionId, ACTION_TYPES.tap)
     : undefined;
   const iosPhysicalCommand = isIosPhysicalTarget && iosPhysicalFlowPaths
     ? buildIosPhysicalActionExecutionPlan(deviceId, iosPhysicalFlowPaths.relativePath).command
@@ -296,7 +297,7 @@ export async function tapWithMaestroTool(
       repoRoot,
       deviceId,
       sessionId: input.sessionId,
-      actionType: "tap",
+      actionType: ACTION_TYPES.tap,
       flowContent: buildIosPhysicalTapFlowYaml(input.x, input.y),
       targetAppId: selection.appId,
     });
@@ -343,7 +344,7 @@ export async function tapWithMaestroTool(
           command,
           exitCode: actionResult.probeExecution?.exitCode ?? null,
         },
-        nextSuggestions: [runtimeHooks.probeUnavailableSuggestion("tap")],
+        nextSuggestions: [runtimeHooks.probeUnavailableSuggestion(ACTION_TYPES.tap)],
       };
   }
 
@@ -564,7 +565,7 @@ export async function tapElementWithMaestroTool(
         exitCode: null,
         supportLevel: "partial",
       },
-      nextSuggestions: [buildMissingPlatformSuggestion("tap_element")],
+      nextSuggestions: [buildMissingPlatformSuggestion(ACTION_TYPES.tapElement)],
     };
   }
   const platform = input.platform;
@@ -675,7 +676,7 @@ export async function tapElementWithMaestroTool(
       },
       nextSuggestions: buildResolutionNextSuggestions(
         resolution.status,
-        "tap_element",
+        ACTION_TYPES.tapElement,
         resolution,
       ),
     };
@@ -786,7 +787,7 @@ export async function typeIntoElementWithMaestroTool(
         exitCode: null,
         supportLevel: "partial",
       },
-      nextSuggestions: [buildMissingPlatformSuggestion("type_into_element")],
+      nextSuggestions: [buildMissingPlatformSuggestion(ACTION_TYPES.typeIntoElement)],
     };
   }
   const platform = input.platform;
@@ -887,7 +888,7 @@ export async function typeIntoElementWithMaestroTool(
       },
       nextSuggestions: buildResolutionNextSuggestions(
         resolution.status,
-        "type_into_element",
+        ACTION_TYPES.typeIntoElement,
         resolution,
       ),
     };
@@ -1151,7 +1152,7 @@ export async function scrollAndTapElementWithMaestroTool(
 
   const tapResult = await tapResolvedTarget(input, resolveResult);
   stepResults.push({
-    step: "tap",
+    step: ACTION_TYPES.tap,
     status: tapResult.status,
     reasonCode: tapResult.reasonCode,
     note: tapResult.nextSuggestions[0],

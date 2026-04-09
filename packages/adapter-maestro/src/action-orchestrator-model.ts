@@ -1,3 +1,4 @@
+import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import type {
   ActionOutcomeSummary,
   ActionProgressMarker,
@@ -79,7 +80,7 @@ export function classifyPostconditionStatus(params: {
   if (params.finalStatus === "success" && params.stateChanged) {
     return "met";
   }
-  if (params.actionType === "wait_for_ui" && params.finalStatus === "success" && params.postState.readiness === "ready") {
+  if (params.actionType === ACTION_TYPES.waitForUi && params.finalStatus === "success" && params.postState.readiness === "ready") {
     return "met";
   }
   if (params.finalStatus === "partial" && params.stateChanged) {
