@@ -11,7 +11,7 @@ export function createAndroidUiRuntimeHooks(): UiRuntimePlatformHooks {
     buildTapCommand: (deviceId, x, y) => [CLI_COMMANDS.adb, "-s", deviceId, "shell", "input", "tap", String(x), String(y)],
     buildTypeTextCommand: (deviceId, text) => [CLI_COMMANDS.adb, "-s", deviceId, "shell", "input", "text", text.replaceAll(" ", "%s")],
     buildSwipeCommand: (deviceId, swipe) => [
-      "adb",
+      CLI_COMMANDS.adb,
       "-s",
       deviceId,
       "shell",
