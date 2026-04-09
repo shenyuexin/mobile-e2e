@@ -38,25 +38,147 @@
 | terminate_app | ✅ success | |
 | reset_app_state | ✅ 正确行为 | 系统 app clear_data 失败=预期 |
 
-## 待持续探针验证（UI/前置依赖敏感）
+## Core Probe Scope（默认跑）
 
-1. wait_for_ui
-2. resolve_ui_target
-3. scroll_and_resolve_ui_target
-4. type_into_element
-5. execute_intent (真实 UI)
-6. perform_action_with_evidence
-7. complete_task
-8. recover_to_known_state
-9. replay_last_stable_path
-10. run_flow
-11. explain_last_failure
-12. find_similar_failures
-13. rank_failure_candidates
-14. compare_against_baseline
-15. resume_interrupted_action
-16. capture_js_console_logs (需 Metro)
-17. capture_js_network_events (需 Metro)
+这些工具构成 Android probe 的默认集合，目标是覆盖真机工具面主路径，而不是穷举所有 60+ 工具。
+
+### Session / lifecycle
+
+- start_session
+- launch_app
+- end_session
+
+### UI inspect / action / orchestration
+
+- wait_for_ui
+- resolve_ui_target
+- scroll_and_resolve_ui_target
+- tap_element
+- type_into_element
+- execute_intent
+- perform_action_with_evidence
+- complete_task
+
+### Recovery / diagnosis
+
+- recover_to_known_state
+- replay_last_stable_path
+- explain_last_failure
+- find_similar_failures
+- rank_failure_candidates
+- compare_against_baseline
+- resume_interrupted_action
+
+### Flow / integration
+
+- run_flow
+
+### 最新 Vivo 真机结果（run: `android-tool-probe-1775700510315`）
+
+证据：
+
+- `artifacts/android-tool-probe/android-tool-probe-1775700510315/report.json`
+- `artifacts/android-tool-probe/android-tool-probe-1775700510315/summary.md`
+- `reports/android-tool-probe.json`
+
+汇总：`success=7 / partial=4 / failed=11`
+
+| Tool | Result | Reason | Notes |
+|---|---|---|---|
+| start_session | ✅ success | OK | 通过 |
+| launch_app | ❌ failed | ADAPTER_ERROR | Settings 启动链路仍不稳 |
+| wait_for_ui | ⚠️ partial | TIMEOUT | Wi-Fi 文案等待超时 |
+| resolve_ui_target | ⚠️ partial | NO_MATCH | 蓝牙文本未命中 |
+| scroll_and_resolve_ui_target | ❌ failed | ADAPTER_ERROR | 滚动 + UI dump 失败 |
+| tap_element | ❌ failed | ADAPTER_ERROR | 搜索入口解析失败 |
+| type_into_element | ❌ failed | ADAPTER_ERROR | 输入框解析失败 |
+| execute_intent | ❌ failed | OCR_NO_MATCH | OCR fallback 未命中 |
+| perform_action_with_evidence | ❌ failed | OCR_AMBIGUOUS_TARGET | OCR 命中不唯一 |
+| complete_task | ❌ failed | OCR_NO_MATCH | 多步任务失败 |
+| recover_to_known_state | ✅ success | OK | 通过 |
+| replay_last_stable_path | ❌ failed | CHECKPOINT_UNAVAILABLE | 无可重放 checkpoint |
+| explain_last_failure | ✅ success | OK | 通过 |
+| find_similar_failures | ✅ success | OK | 通过 |
+| rank_failure_candidates | ✅ success | OK | 通过 |
+| compare_against_baseline | ✅ success | OK | 本轮已通过 |
+| resume_interrupted_action | ⚠️ partial | TIMEOUT | 恢复后未稳定 |
+| run_flow | ⚠️ partial | UNSUPPORTED_OPERATION | `phase1` profile 仍受限 |
+
+### 当前核心阻塞归类
+
+1. **OEM / Settings UI 不稳定**
+   - `wait_for_ui`, `resolve_ui_target`, `tap_element`, `type_into_element`
+2. **UI dump / adapter 侧不稳定**
+   - `launch_app`, `scroll_and_resolve_ui_target`
+3. **OCR fallback 不足以支撑真实 UI intent 链**
+   - `execute_intent`, `perform_action_with_evidence`, `complete_task`
+4. **历史依赖未满足**
+   - `replay_last_stable_path`
+5. **runnerProfile 约束**
+   - `run_flow`
+
+## Conditional Probe Scope（按前置条件启用）
+
+### 需要 Metro / JS debug target
+
+- list_js_debug_targets
+- capture_js_console_logs
+- capture_js_network_events
+
+### 需要录制上下文或有效流数据
+
+- start_record_session
+- get_record_session_status
+- end_record_session
+- cancel_record_session
+- export_session_flow
+- record_task_flow
+
+### 需要明确 failure / action history / baseline 前置
+
+- get_action_outcome
+- suggest_known_remediation
+
+### 需要特定环境或设备能力
+
+- doctor
+- detect_interruption
+- classify_interruption
+- resolve_interruption
+- measure_android_performance
+- collect_diagnostics
+- collect_debug_evidence
+- get_logs
+- get_crash_signals
+- record_screen
+- take_screenshot
+- probe_network_readiness
+
+## Out-of-scope for Android Probe（不纳入 Android probe 默认验收）
+
+### 非 Android 平台或平台不适用
+
+- measure_ios_performance
+
+### 更适合 sample acceptance lane 的能力
+
+- inspect_ui
+- query_ui
+- scroll_and_tap_element
+- tap
+- type_text
+- install_app
+- terminate_app
+- reset_app_state
+- validate_flow
+- request_manual_handoff
+- replay_checkpoint_chain
+- describe_capabilities
+- list_devices
+- get_screen_summary
+- get_session_state
+- capture_element_screenshot
+- compare_visual_baseline
 
 ## 脚本入口
 

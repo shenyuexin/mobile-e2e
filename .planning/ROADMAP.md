@@ -27,6 +27,8 @@ This roadmap is an internal planning artifact. It is intended to coordinate exec
 - [ ] **Phase 13: iOS Native Backend Router** - Replace iOS idb dependency with xcrun simctl/devicectl native backend router, introduce IosExecutionBackend abstraction, and establish deterministic backend selection (env var > auto-detect > fallback chain).
 - [x] **Phase 18: Workflow Optimization P0** — Implement 4 P0 developer workflow gaps: network-aware orchestration, multi-step checkpoint chain, flow validation before export, element screenshot/visual baseline.
 - [ ] **Phase 19: Guardrail Automation and Output Contract Hardening** - Turn architecture guardrails into executable validation gates and tighten tool-specific output payload contracts without breaking the shared ToolResult envelope.
+- [ ] **Phase 20: Hardcoded String Extraction and Constant Centralization** - Extract all 55 tool names, policy scope strings, and recurring enum literals into shared constant modules, eliminating drift between descriptors, presets, and tests.
+- [ ] **Phase 21: Test Quality Hardening** — Fill empty test files, eliminate trivial assertions, strengthen medium-scored files with error-path coverage, add coverage tooling, and harden output contract validation with real JSON Schema enforcement.
 
 ## Phase Details
 
@@ -96,6 +98,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
 | 13. iOS Native Backend Router | 0/1 | Planned | - |
 | 18. Workflow Optimization P0 | 4/4 | Completed | 2026-04-08 |
 | 19. Guardrail Automation and Output Contract Hardening | 0/1 | Planned | - |
+| 20. Hardcoded String Extraction and Constant Centralization | 0/1 | Planned | - |
+| 21. Test Quality Hardening | 0/3 | Planned | - |
 
 ## Maintenance Rules
 
@@ -267,3 +271,39 @@ Plans:
 
 Plans:
 - [ ] 19-01: Automate architecture guardrails and harden tool output contracts
+
+### Phase 20: Hardcoded String Extraction and Constant Centralization
+
+**Goal:** Eliminate all hardcoded string literals that are duplicated across descriptor definitions, preset configurations, and test fixtures by extracting them into shared constant modules, ensuring compile-time typo protection and single-source-of-truth consistency.
+**Requirements**: [TOOL-01, POLICY-01]
+**Depends on:** Phase 3 (capability truth guardrails — constant modules are a form of guardrail)
+**Success Criteria** (what must be TRUE):
+  1. All 55 tool names in `TOOL_DESCRIPTORS` reference a single `TOOL_NAMES` constant from `@mobile-e2e-mcp/contracts`.
+  2. All preset steps in `preset-runner.ts` reference `TOOL_NAMES` constants instead of raw strings.
+  3. All `withPolicy` / `withSessionExecution` calls in `index.ts` reference `TOOL_NAMES` constants for sub-handler lookup.
+  4. Policy scope strings (`read`, `write`, `diagnostics`, `interrupt`, `interrupt-high-risk`, `none`) use a `POLICY_SCOPES` constant.
+  5. `pnpm build`, `pnpm test`, and `pnpm lint` pass with zero regressions.
+**Plans:** 1 plan
+
+Plans:
+- [ ] 20-01: Extract tool names and policy scopes into shared constant modules
+
+### Phase 21: Test Quality Hardening
+
+**Goal:** Eliminate all zero-coverage and trivial-assertion test files, strengthen medium-scored files with error-path and edge-case coverage, introduce coverage tooling for drift detection, and replace the minimal custom JSON Schema validator with ajv-backed enforcement using real tool output snapshots.
+**Depends on:** Phase 3 (capability truth guardrails — test quality is a form of guardrail)
+**Success Criteria** (what must be TRUE):
+  1. Zero empty test files remain (device-runtime-ios.test.ts has behavioral tests).
+  2. Zero trivial type-check assertions remain (no `typeof === "boolean"` as primary assertion).
+  3. All 7 LOW-scored files score ≥ MEDIUM.
+  4. All 9 MEDIUM-scored target files score ≥ HIGH.
+  5. All 5 previously untested MCP tools have at least dryRun behavioral tests.
+  6. Coverage infrastructure (`c8`) is in place with a baseline report.
+  7. `tool-output-contracts.test.ts` uses ajv and real tool output snapshots.
+  8. `pnpm test:unit` and `pnpm build` pass with zero regressions.
+**Plans:** 3 plans
+
+Plans:
+- [ ] 21-01: Fill empty test files and strengthen thin assertions (7 critical files)
+- [ ] 21-02: Strengthen medium-scored files with error paths and edge cases (9 files)
+- [ ] 21-03: Add coverage tooling, missing tool tests, and output contract hardening
