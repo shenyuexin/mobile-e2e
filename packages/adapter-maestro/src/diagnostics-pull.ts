@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { executeRunner, shellEscape } from "./runtime-shared.js";
+import { executeRunnerWithTestHooks as executeRunner, shellEscape } from "./runtime-shared.js";
 
 const DEFAULT_MAX_LINES = 20_000;
 const DEFAULT_MAX_FILE_SIZE_BYTES = 80 * 1024 * 1024; // 80MB

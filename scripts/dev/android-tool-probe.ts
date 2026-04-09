@@ -276,16 +276,51 @@ export async function runAndroidToolProbe(): Promise<void> {
     }),
   );
 
-  await tryTextSelector(
+  push("execute_intent", await invoke("execute_intent", {
+    sessionId,
+    platform,
+    runnerProfile,
+    deviceId,
+    appId,
+    intent: "navigate back to Settings home",
+    actionType: "press_back",
+  }), "press back to return to Settings home");
+
+  const tryTextOrContentDescSelector = async (
+    toolName: string,
+    notesPrefix: string,
+    textCandidates: string[],
+    contentDescCandidates: string[],
+    buildInput: (params: { text?: string; contentDesc?: string }) => Record<string, unknown>,
+  ): Promise<ToolResultLike> => {
+    // Try text first
+    for (const text of textCandidates) {
+      const result = await invoke(toolName, buildInput({ text }));
+      if (result.status === "success" || result.status === "partial") {
+        return push(toolName, result, `${notesPrefix} text=${text}`);
+      }
+    }
+    // Fallback to content-desc
+    for (const contentDesc of contentDescCandidates) {
+      const result = await invoke(toolName, buildInput({ contentDesc }));
+      if (result.status === "success" || result.status === "partial") {
+        return push(toolName, result, `${notesPrefix} content-desc=${contentDesc}`);
+      }
+    }
+    return push(toolName, { status: "failed" }, `${notesPrefix} text=${textCandidates[textCandidates.length - 1]}`);
+  };
+
+  await tryTextOrContentDescSelector(
     "resolve_ui_target",
     "resolve",
-    ["Bluetooth", "蓝牙", "Wi-Fi", "WLAN"],
-    (text) => ({
+    ["Bluetooth", "蓝牙"],
+    ["Bluetooth", "Bluetooth, On", "蓝牙"],
+    (params) => ({
       sessionId,
       platform,
       runnerProfile,
       deviceId,
-      text,
+      ...params,
       limit: 1,
     }),
   );
@@ -293,7 +328,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   await tryTextSelector(
     "scroll_and_resolve_ui_target",
     "scroll resolve",
-    ["About phone", "关于手机", "System", "系统"],
+    ["About phone", "关于手机"],
     (text) => ({
       sessionId,
       platform,
@@ -307,16 +342,17 @@ export async function runAndroidToolProbe(): Promise<void> {
     }),
   );
 
-  await tryTextSelector(
+  await tryTextOrContentDescSelector(
     "tap_element",
-    "open search",
-    ["Search settings", "搜索设置", "Search", "搜索"],
-    (text) => ({
+    "tap",
+    ["Search settings", "Search"],
+    ["Search settings", "搜索设置"],
+    (params) => ({
       sessionId,
       platform,
       runnerProfile,
       deviceId,
-      text,
+      ...params,
       limit: 1,
     }),
   );

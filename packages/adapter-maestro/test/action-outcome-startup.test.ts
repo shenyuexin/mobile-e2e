@@ -68,3 +68,164 @@ test("suggestKnownRemediationWithMaestro prioritizes signing guidance for iOS si
     true,
   );
 });
+
+test("suggestKnownRemediationWithMaestro detects permission interruption from blocking signals", async () => {
+  const sessionId = `remediation-permission-${Date.now()}`;
+  const actionId = `permission-action-${Date.now()}`;
+  const artifactsDir = path.join(repoRoot, "artifacts", "maestro-actions", sessionId);
+  await mkdir(artifactsDir, { recursive: true });
+
+  await writeFile(
+    path.join(artifactsDir, "tap.execution.md"),
+    [
+      "# Tap execution evidence",
+      "",
+      "- stateSummary: permission_prompt visible, owner_package=com.android.permissioncontroller",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  await persistActionRecord(repoRoot, {
+    actionId,
+    sessionId,
+    intent: { actionType: "tap_element", text: "Allow", value: "" },
+    outcome: {
+      actionId,
+      actionType: "tap_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: false,
+      fallbackUsed: false,
+      retryCount: 1,
+      outcome: "failed",
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "maestro-actions", sessionId, "tap.execution.md"),
+        supportLevel: "partial",
+        description: "Permission prompt blocking evidence",
+      },
+    ],
+    lowLevelStatus: "failed",
+    lowLevelReasonCode: REASON_CODES.adapterError,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const remediation = await suggestKnownRemediationWithMaestro({ sessionId });
+
+  assert.equal(remediation.status, "success");
+  assert.ok(
+    remediation.data.remediation.some((item) => /permission|interruption/i.test(item)),
+    `Expected permission/interruption remediation, got: ${JSON.stringify(remediation.data.remediation)}`,
+  );
+});
+
+test("suggestKnownRemediationWithMaestro detects network layer issues from offline readiness", async () => {
+  const sessionId = `remediation-network-${Date.now()}`;
+  const actionId = `network-action-${Date.now()}`;
+  const artifactsDir = path.join(repoRoot, "artifacts", "maestro-actions", sessionId);
+  await mkdir(artifactsDir, { recursive: true });
+
+  await writeFile(
+    path.join(artifactsDir, "tap.execution.md"),
+    [
+      "# Tap execution evidence",
+      "",
+      "- readiness: offline_terminal",
+      "- network probe: dns resolution failed",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  await persistActionRecord(repoRoot, {
+    actionId,
+    sessionId,
+    intent: { actionType: "tap_element", text: "Login", value: "" },
+    outcome: {
+      actionId,
+      actionType: "tap_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: false,
+      fallbackUsed: false,
+      retryCount: 2,
+      outcome: "failed",
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "maestro-actions", sessionId, "tap.execution.md"),
+        supportLevel: "partial",
+        description: "Network offline evidence",
+      },
+    ],
+    lowLevelStatus: "failed",
+    lowLevelReasonCode: REASON_CODES.deviceUnavailable,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const remediation = await suggestKnownRemediationWithMaestro({ sessionId });
+
+  assert.equal(remediation.status, "success");
+  assert.ok(
+    remediation.data.remediation.some((item) => /network|offline|connectivity/i.test(item)),
+    `Expected network remediation, got: ${JSON.stringify(remediation.data.remediation)}`,
+  );
+});
+
+test("suggestKnownRemediationWithMaestro populates skillGuidance when attribution signals present", async () => {
+  const sessionId = `remediation-skill-${Date.now()}`;
+  const actionId = `skill-action-${Date.now()}`;
+  const artifactsDir = path.join(repoRoot, "artifacts", "maestro-actions", sessionId);
+  await mkdir(artifactsDir, { recursive: true });
+
+  await writeFile(
+    path.join(artifactsDir, "tap.execution.md"),
+    [
+      "# Tap execution evidence",
+      "",
+      "- platform: android",
+      "- attribution: screen changed, element not found",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  await persistActionRecord(repoRoot, {
+    actionId,
+    sessionId,
+    intent: { actionType: "tap_element", text: "Submit", value: "" },
+    outcome: {
+      actionId,
+      actionType: "tap_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: false,
+      fallbackUsed: false,
+      retryCount: 0,
+      outcome: "failed",
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "maestro-actions", sessionId, "tap.execution.md"),
+        supportLevel: "partial",
+        description: "Skill-guided remediation evidence",
+      },
+    ],
+    lowLevelStatus: "failed",
+    lowLevelReasonCode: REASON_CODES.adapterError,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const remediation = await suggestKnownRemediationWithMaestro({ sessionId, platform: "android" });
+
+  assert.equal(remediation.status, "success");
+  assert.ok(
+    "skillGuidance" in remediation.data,
+    `Expected skillGuidance field in response, got keys: ${Object.keys(remediation.data)}`,
+  );
+});
