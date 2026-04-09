@@ -117,3 +117,5 @@ flows/samples/generated/*.yaml
 !flows/samples/generated/.gitkeep
 !flows/samples/generated/example-login-smoke.yaml
 .gitnexus
+packages/core/coverage-data/
+coverage/

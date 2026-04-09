@@ -42,6 +42,7 @@
     "build": "pnpm --filter @mobile-e2e-mcp/contracts build && pnpm --filter @mobile-e2e-mcp/core build && pnpm --filter @mobile-e2e-mcp/adapter-vision build && pnpm --filter @mobile-e2e-mcp/adapter-maestro build && tsc -p tsconfig.json",
     "bundle": "pnpm run build && tsup --config tsup.config.ts",
     "test": "pnpm build && tsx --test test/*.test.ts",
+    "test:coverage": "pnpm build && bash ../../scripts/coverage.sh src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/dev-cli.ts",
     "stdio": "tsx src/mcp-stdio-server.ts",

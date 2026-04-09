@@ -1,0 +1,11 @@
+{
+  "exclude": [
+    "**/*.test.ts",
+    "**/node_modules/**",
+    "**/test/**",
+    "**/*.d.ts",
+    "**/dev-cli.ts"
+  ],
+  "reporter": ["text", "html"],
+  "all": true
+}
