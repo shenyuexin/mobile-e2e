@@ -223,3 +223,32 @@ test("OcrService fails safely on ambiguous screenshot fixtures", async (t) => {
   assert.equal(result.allowed, false);
   assert.equal(result.resolution?.rejectionReason, "ambiguous");
 });
+
+test("resolveTextTarget returns invalid_input for empty query", () => {
+  // Empty query should not throw -- should return invalid_input status
+  const result = resolveTextTarget({
+    targetText: "",
+    blocks: [
+      { text: "Hello World", confidence: 0.9, bounds: { left: 100, top: 100, right: 300, bottom: 150, width: 200, height: 50, center: { x: 200, y: 125 } } },
+    ],
+  });
+  assert.equal(result.matched, false);
+  assert.equal(result.status, "invalid_input");
+  assert.equal(result.rejectionReason, "empty_target");
+});
+
+test("resolveTextTarget returns ambiguous for identical text with same bounds", () => {
+  // Two text items with identical text and overlapping bounds -- triggers ambiguity detection
+  const result = resolveTextTarget({
+    targetText: "Submit",
+    blocks: [
+      { text: "Submit", confidence: 0.7, bounds: { left: 100, top: 100, right: 200, bottom: 140, width: 100, height: 40, center: { x: 150, y: 120 } } },
+      { text: "Submit", confidence: 0.9, bounds: { left: 100, top: 100, right: 200, bottom: 140, width: 100, height: 40, center: { x: 150, y: 120 } } },
+    ],
+  });
+  // Both blocks have identical normalized text and match type, so duplicateTopText triggers ambiguity
+  assert.equal(result.matched, false);
+  assert.equal(result.status, "ambiguous");
+  assert.equal(result.rejectionReason, "ambiguous");
+  assert.ok(result.candidates.length >= 2, "Should have multiple candidates");
+});
