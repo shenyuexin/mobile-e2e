@@ -121,6 +121,8 @@ import type {
   ListDevicesData,
   NetworkProbeInput,
   NetworkProbeData,
+  NavigateBackInput,
+  NavigateBackData,
 } from "@mobile-e2e-mcp/contracts";
 
 interface ToolContract<TInput, TOutputData> {
@@ -172,6 +174,7 @@ export interface MobileE2EMcpToolContractMap {
   list_devices: ToolContract<ListDevicesInput, ListDevicesData>;
   measure_android_performance: ToolContract<MeasureAndroidPerformanceInput, MeasureAndroidPerformanceData>;
   measure_ios_performance: ToolContract<MeasureIosPerformanceInput, MeasureIosPerformanceData>;
+  navigate_back: ToolContract<NavigateBackInput, NavigateBackData>;
   perform_action_with_evidence: ToolContract<PerformActionWithEvidenceInput, PerformActionWithEvidenceData>;
   rank_failure_candidates: ToolContract<RankFailureCandidatesInput, RankFailureCandidatesData>;
   record_screen: ToolContract<RecordScreenInput, RecordScreenData>;

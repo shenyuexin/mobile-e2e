@@ -30,7 +30,7 @@ import {
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
 import { buildResolutionNextSuggestions } from "../src/ui-tools.ts";
-import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, explainLastFailureWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, performActionWithEvidenceWithMaestro, rankFailureCandidatesWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetInterruptionGuardTestHooksForTesting, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setInterruptionGuardTestHooksForTesting, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, explainLastFailureWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, navigateBackWithMaestro, performActionWithEvidenceWithMaestro, rankFailureCandidatesWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetInterruptionGuardTestHooksForTesting, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setInterruptionGuardTestHooksForTesting, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const ocrFixtureRoot = path.join(repoRoot, "tests", "fixtures", "ocr");
@@ -2321,4 +2321,75 @@ test("suggestKnownRemediationWithMaestro prioritizes iOS startup handshake remed
     remediation.data.remediation.some((item) => /code74|dtxproxy|handshake/i.test(item)),
     true,
   );
+});
+
+// ─── Navigate Back Tests ──────────────────────────────────────────────────
+
+test("navigateBackWithMaestro fails without platform", async () => {
+  const result = await navigateBackWithMaestro({
+    sessionId: "navigate-back-test",
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, REASON_CODES.configurationError);
+  assert.equal(result.data.executedStrategy, "unsupported");
+  assert.equal(result.data.supportLevel, "unsupported");
+});
+
+test("navigateBackWithMaestro rejects iOS system back", async () => {
+  const result = await navigateBackWithMaestro({
+    sessionId: "navigate-back-test",
+    platform: "ios",
+    target: "system",
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, REASON_CODES.unsupportedOperation);
+  assert.equal(result.data.executedStrategy, "unsupported");
+  assert.equal(result.data.supportLevel, "unsupported");
+  assert.match(result.data.capabilityNote ?? "", /system-level back/i);
+});
+
+test("navigateBackWithMaestro Android dry-run returns deterministic metadata", async () => {
+  const result = await navigateBackWithMaestro({
+    sessionId: "navigate-back-test",
+    platform: "android",
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, REASON_CODES.ok);
+  assert.equal(result.data.dryRun, true);
+  assert.equal(result.data.target, "app");
+  assert.equal(result.data.executedStrategy, "android_keyevent");
+  assert.equal(result.data.supportLevel, "full");
+  assert.match(result.data.command ?? "", /keyevent.*4/);
+});
+
+test("navigateBackWithMaestro iOS without selector fails with helpful suggestion", async () => {
+  const result = await navigateBackWithMaestro({
+    sessionId: "navigate-back-test",
+    platform: "ios",
+    target: "app",
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, REASON_CODES.noMatch);
+  assert.equal(result.data.executedStrategy, "unsupported");
+  assert.equal(result.data.supportLevel, "conditional");
+  assert.match(result.data.capabilityNote ?? "", /selector.*back button/i);
+});
+
+test("navigateBackWithMaestro iOS edge_swipe without dimensions returns conditional unsupported", async () => {
+  const result = await navigateBackWithMaestro({
+    sessionId: "navigate-back-test",
+    platform: "ios",
+    target: "app",
+    iosStrategy: "edge_swipe",
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, REASON_CODES.unsupportedOperation);
+  assert.equal(result.data.supportLevel, "conditional");
+  assert.match(result.data.capabilityNote ?? "", /edge_swipe/i);
 });

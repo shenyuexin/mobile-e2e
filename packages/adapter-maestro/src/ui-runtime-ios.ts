@@ -241,6 +241,9 @@ export function createIosUiRuntimeHooks(): UiRuntimePlatformHooks {
       const backend = router.selectBackend(deviceId);
       return backend.buildSwipeCommand(deviceId, swipe);
     },
+    buildBackPressedCommand: () => {
+      throw new Error("iOS does not support deterministic system-level back navigation. Use navigate_back with target: 'app' and a selector for app-level back.");
+    },
     buildHierarchyCapturePreviewCommand: (deviceId) => {
       const backend = router.selectBackend(deviceId);
       return backend.buildHierarchyCaptureCommand(deviceId);

@@ -266,4 +266,9 @@ export type {
   NetworkRecoveryStrategy,
   NetworkProbeInput,
   NetworkProbeData,
+  BackTarget,
+  IosBackStrategy,
+  BackExecutionPath,
+  NavigateBackInput,
+  NavigateBackData,
 } from "./types.js";

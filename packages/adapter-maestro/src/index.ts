@@ -108,6 +108,8 @@ import {
   type TapElementInput,
   type TapData,
   type TapInput,
+  type NavigateBackData,
+  type NavigateBackInput,
   type TerminateAppInput,
   type TerminateAppData,
   type ToolResult,
@@ -253,6 +255,7 @@ import {
   typeIntoElementWithMaestroTool,
   typeTextWithMaestroTool,
   waitForUiWithMaestroTool,
+  navigateBackWithMaestroTool,
 } from "./ui-tools.js";
 import { classifyInterruptionFromSignals } from "./interruption-classifier.js";
 import { detectInterruptionFromSummary } from "./interruption-detector.js";
@@ -704,6 +707,10 @@ export async function scrollAndResolveUiTargetWithMaestro(input: ScrollAndResolv
 
 export async function tapWithMaestro(input: TapInput): Promise<ToolResult<TapData>> {
   return tapWithMaestroTool(input);
+}
+
+export async function navigateBackWithMaestro(input: NavigateBackInput): Promise<ToolResult<NavigateBackData>> {
+  return navigateBackWithMaestroTool(input);
 }
 
 export async function inspectUiWithMaestro(input: InspectUiInput): Promise<ToolResult<InspectUiData>> {
