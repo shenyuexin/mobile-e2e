@@ -18,6 +18,8 @@ interface ProbeRecord {
   note?: string;
   next?: string;
   actionId?: string;
+  observedEffect?: "observed" | "possible" | "not_observed" | "unknown";
+  observedEvidence?: string;
 }
 
 interface ProbeSummary {
@@ -25,6 +27,10 @@ interface ProbeSummary {
   success: number;
   partial: number;
   failed: number;
+  observed: number;
+  possible: number;
+  notObserved: number;
+  unknown: number;
 }
 
 function pickActionId(data: unknown): string | undefined {
@@ -45,7 +51,101 @@ function summarize(records: ProbeRecord[]): ProbeSummary {
     success: records.filter((record) => record.status === "success").length,
     partial: records.filter((record) => record.status === "partial").length,
     failed: records.filter((record) => record.status === "failed").length,
+    observed: records.filter((record) => record.observedEffect === "observed").length,
+    possible: records.filter((record) => record.observedEffect === "possible").length,
+    notObserved: records.filter((record) => record.observedEffect === "not_observed").length,
+    unknown: records.filter((record) => record.observedEffect === "unknown").length,
   };
+}
+
+function inferObservedEffect(tool: string, result: ToolResultLike, records: ProbeRecord[]): Pick<ProbeRecord, "observedEffect" | "observedEvidence"> {
+  const laterUiVisibilityEvidence = records.some((record) => {
+    return ["wait_for_ui", "resolve_ui_target", "tap_element", "type_into_element"].includes(record.tool)
+      && ["success", "partial"].includes(record.status);
+  });
+
+  if (result.status === "success") {
+    return {
+      observedEffect: "observed",
+      observedEvidence: "tool contract passed in this run",
+    };
+  }
+
+  if (tool === "launch_app" && laterUiVisibilityEvidence) {
+    return {
+      observedEffect: "observed",
+      observedEvidence: "later UI probe steps reached Settings hierarchy, so foreground launch effect was observed even though launch_app returned a contract failure",
+    };
+  }
+
+  if (tool === "wait_for_ui" && result.status === "partial") {
+    return {
+      observedEffect: "observed",
+      observedEvidence: "UI polling ran against a live hierarchy; target wait did not close but the app state was observable",
+    };
+  }
+
+  if (tool === "resolve_ui_target" && result.status === "partial") {
+    return {
+      observedEffect: "observed",
+      observedEvidence: "target resolution saw live UI state but did not find the requested selector",
+    };
+  }
+
+  if (["execute_intent", "perform_action_with_evidence", "complete_task", "resume_interrupted_action"].includes(tool)
+    && ["OCR_NO_MATCH", "OCR_AMBIGUOUS_TARGET", "TIMEOUT", "INTERRUPTION_RESOLUTION_FAILED"].includes(result.reasonCode ?? "")) {
+    return {
+      observedEffect: "possible",
+      observedEvidence: "action chain likely dispatched some device interaction, but post-action verification did not close the loop",
+    };
+  }
+
+  if (["scroll_and_resolve_ui_target", "tap_element", "type_into_element"].includes(tool)
+    && result.reasonCode === "ADAPTER_ERROR") {
+    return {
+      observedEffect: "unknown",
+      observedEvidence: "adapter-level failure prevents proving whether the device interaction happened",
+    };
+  }
+
+  if (result.status === "partial") {
+    return {
+      observedEffect: "possible",
+      observedEvidence: "partial result indicates some runtime progress but not a closed contract",
+    };
+  }
+
+  if (result.status === "failed") {
+    return {
+      observedEffect: "not_observed",
+      observedEvidence: "no reliable evidence of the intended device effect from this tool result alone",
+    };
+  }
+
+  return {
+    observedEffect: "unknown",
+    observedEvidence: "no inference rule matched this result",
+  };
+}
+
+function reclassifyObservedEffects(records: ProbeRecord[]): ProbeRecord[] {
+  return records.map((record, index) => {
+    const priorAndLaterRecords = records.filter((_, candidateIndex) => candidateIndex !== index);
+    const observed = inferObservedEffect(
+      record.tool,
+      {
+        status: record.status,
+        reasonCode: record.reasonCode,
+        nextSuggestions: record.next ? [record.next] : undefined,
+      },
+      priorAndLaterRecords,
+    );
+    return {
+      ...record,
+      observedEffect: observed.observedEffect,
+      observedEvidence: observed.observedEvidence,
+    };
+  });
 }
 
 function toMarkdown(params: {
@@ -74,10 +174,14 @@ function toMarkdown(params: {
     `- Success: ${params.summary.success}`,
     `- Partial: ${params.summary.partial}`,
     `- Failed: ${params.summary.failed}`,
+    `- Observed effect: ${params.summary.observed}`,
+    `- Possible effect: ${params.summary.possible}`,
+    `- Not observed: ${params.summary.notObserved}`,
+    `- Unknown: ${params.summary.unknown}`,
     "",
-    "| Tool | Status | Reason | Note |",
-    "|---|---|---|---|",
-    ...params.records.map((record) => `| ${record.tool} | ${record.status} | ${record.reasonCode ?? ""} | ${record.note ?? ""} |`),
+    "| Tool | Verdict | Observed effect | Reason | Note |",
+    "|---|---|---|---|---|",
+    ...params.records.map((record) => `| ${record.tool} | ${record.status} | ${record.observedEffect ?? "unknown"} | ${record.reasonCode ?? ""} | ${record.note ?? ""} |`),
     "",
   ];
   return lines.join("\n");
@@ -108,6 +212,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   };
 
   const push = (tool: string, result: ToolResultLike, note?: string): ToolResultLike => {
+    const observed = inferObservedEffect(tool, result, records);
     records.push({
       tool,
       status: result.status,
@@ -115,6 +220,8 @@ export async function runAndroidToolProbe(): Promise<void> {
       note,
       next: result.nextSuggestions?.[0],
       actionId: pickActionId(result.data),
+      observedEffect: observed.observedEffect,
+      observedEvidence: observed.observedEvidence,
     });
     return result;
   };
@@ -354,7 +461,8 @@ export async function runAndroidToolProbe(): Promise<void> {
 
   push("end_session", await invoke("end_session", { sessionId }), "close session");
 
-  const summary = summarize(records);
+  const classifiedRecords = reclassifyObservedEffects(records);
+  const summary = summarize(classifiedRecords);
   const report = {
     runId,
     checklistSource,
@@ -365,7 +473,7 @@ export async function runAndroidToolProbe(): Promise<void> {
     appId,
     flowPath,
     summary,
-    records,
+    records: classifiedRecords,
   };
 
   const artifactJsonPath = join(artifactsDir, "report.json");
@@ -374,9 +482,9 @@ export async function runAndroidToolProbe(): Promise<void> {
   const latestMdPath = join(reportsDir, "android-tool-probe.md");
 
   await writeFile(artifactJsonPath, JSON.stringify(report, null, 2), "utf8");
-  await writeFile(artifactMdPath, toMarkdown({ runId, sessionId, deviceId, platform, runnerProfile, appId, flowPath, summary, records }), "utf8");
+  await writeFile(artifactMdPath, toMarkdown({ runId, sessionId, deviceId, platform, runnerProfile, appId, flowPath, summary, records: classifiedRecords }), "utf8");
   await writeFile(latestJsonPath, JSON.stringify(report, null, 2), "utf8");
-  await writeFile(latestMdPath, toMarkdown({ runId, sessionId, deviceId, platform, runnerProfile, appId, flowPath, summary, records }), "utf8");
+  await writeFile(latestMdPath, toMarkdown({ runId, sessionId, deviceId, platform, runnerProfile, appId, flowPath, summary, records: classifiedRecords }), "utf8");
 
   console.log(JSON.stringify({
     runId,
