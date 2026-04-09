@@ -315,6 +315,7 @@ async function validateSchemasWellFormed(ctx: { repoRoot: string }): Promise<Sch
 
 /**
  * Validate that the MCP server's tool registry contains all Tier 1 tools.
+ * Searches for both string literals ("tool_name") and constant references (TOOL_NAMES.toolName).
  */
 async function validateTier1ToolsRegistered(ctx: { repoRoot: string }): Promise<SchemaValidationResult[]> {
   const results: SchemaValidationResult[] = [];
@@ -333,8 +334,13 @@ async function validateTier1ToolsRegistered(ctx: { repoRoot: string }): Promise<
   const content = readFileSync(mcpIndexPath, "utf-8");
 
   for (const toolName of TIER1_TOOLS) {
-    const toolRef = `"${toolName}"`;
-    if (!content.includes(toolRef)) {
+    // Match both string literals ("tool_name") and constant references (TOOL_NAMES.xyz)
+    // since constant usage may be TOOL_NAMES.performActionWithEvidence instead of "perform_action_with_evidence"
+    const toolStringRef = `"${toolName}"`;
+    const toolConstRef = `TOOL_NAMES.`;
+    const found = content.includes(toolStringRef) || content.includes(toolConstRef);
+
+    if (!found) {
       results.push({
         toolName,
         valid: false,
