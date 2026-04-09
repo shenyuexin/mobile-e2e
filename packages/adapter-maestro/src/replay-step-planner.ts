@@ -38,12 +38,21 @@ export function buildInitialReplayProgress(totalSteps: number): ReplayProgressSu
   };
 }
 
+/**
+ * Runtime guard: verify RecordedStep actionType is a valid ActionType value
+ * before blindly casting. Prevents silent drift if RecordedStep picks up
+ * new action types not yet in the ActionType union.
+ */
+function isValidActionType(value: string): value is ActionType {
+  return (Object.values(ACTION_TYPES) as string[]).includes(value);
+}
+
 export function buildReplayStepsFromRecordedSteps(steps: RecordedStep[]): ReplayStep[] {
   return steps.map((step) => ({
     replayStepId: `replay-step-${step.stepNumber}`,
     stepNumber: step.stepNumber,
     source: "recorded_step",
-    actionType: step.actionType as ActionType,
+    actionType: isValidActionType(step.actionType) ? step.actionType : ACTION_TYPES.waitForUi,
     actionIntent: step.actionIntent,
     confidence: step.confidence,
     warnings: step.warnings ?? [],

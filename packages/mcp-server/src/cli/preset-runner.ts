@@ -122,7 +122,7 @@ async function invokePresetStep(
 ): Promise<ToolResult<unknown>> {
   const selector = defaultSelector(cliOptions);
   if (tool === TOOL_NAMES.startSession) {
-    return server.invoke("start_session", {
+    return server.invoke(TOOL_NAMES.startSession, {
       platform: cliOptions.platform,
       profile: cliOptions.runnerProfile ?? null,
       policyProfile: cliOptions.policyProfile,
@@ -133,7 +133,7 @@ async function invokePresetStep(
     } satisfies StartSessionInput);
   }
   if (tool === TOOL_NAMES.getScreenSummary) {
-    return server.invoke("get_screen_summary", {
+    return server.invoke(TOOL_NAMES.getScreenSummary, {
       sessionId,
       platform: cliOptions.platform,
       runnerProfile: cliOptions.runnerProfile,
@@ -145,7 +145,7 @@ async function invokePresetStep(
     } satisfies GetScreenSummaryInput);
   }
   if (tool === TOOL_NAMES.getLogs) {
-    return server.invoke("get_logs", {
+    return server.invoke(TOOL_NAMES.getLogs, {
       sessionId,
       platform: cliOptions.platform,
       runnerProfile: cliOptions.runnerProfile,
@@ -160,7 +160,7 @@ async function invokePresetStep(
     } satisfies GetLogsInput);
   }
   if (tool === TOOL_NAMES.getCrashSignals) {
-    return server.invoke("get_crash_signals", {
+    return server.invoke(TOOL_NAMES.getCrashSignals, {
       sessionId,
       platform: cliOptions.platform,
       runnerProfile: cliOptions.runnerProfile,
@@ -173,7 +173,7 @@ async function invokePresetStep(
     } satisfies GetCrashSignalsInput);
   }
   if (tool === TOOL_NAMES.collectDebugEvidence) {
-    return server.invoke("collect_debug_evidence", {
+    return server.invoke(TOOL_NAMES.collectDebugEvidence, {
       sessionId,
       platform: cliOptions.platform,
       runnerProfile: cliOptions.runnerProfile,
@@ -194,7 +194,7 @@ async function invokePresetStep(
     } satisfies CollectDebugEvidenceInput);
   }
   if (tool === TOOL_NAMES.launchApp) {
-    return server.invoke("launch_app", {
+    return server.invoke(TOOL_NAMES.launchApp, {
       sessionId,
       platform: cliOptions.platform,
       runnerProfile: cliOptions.runnerProfile,
@@ -206,7 +206,7 @@ async function invokePresetStep(
     } satisfies LaunchAppInput);
   }
   if (tool === TOOL_NAMES.queryUi) {
-    return server.invoke("query_ui", {
+    return server.invoke(TOOL_NAMES.queryUi, {
       sessionId,
       platform: cliOptions.platform,
       runnerProfile: cliOptions.runnerProfile,
@@ -218,7 +218,7 @@ async function invokePresetStep(
     } satisfies QueryUiInput);
   }
   if (tool === TOOL_NAMES.tapElement) {
-    return server.invoke("tap_element", {
+    return server.invoke(TOOL_NAMES.tapElement, {
       sessionId,
       platform: cliOptions.platform,
       runnerProfile: cliOptions.runnerProfile,
@@ -229,7 +229,7 @@ async function invokePresetStep(
     } satisfies TapElementInput);
   }
   if (tool === TOOL_NAMES.waitForUi) {
-    return server.invoke("wait_for_ui", {
+    return server.invoke(TOOL_NAMES.waitForUi, {
       sessionId,
       platform: cliOptions.platform,
       runnerProfile: cliOptions.runnerProfile,
@@ -244,7 +244,7 @@ async function invokePresetStep(
     } satisfies WaitForUiInput);
   }
   if (tool === TOOL_NAMES.takeScreenshot) {
-    return server.invoke("take_screenshot", {
+    return server.invoke(TOOL_NAMES.takeScreenshot, {
       sessionId,
       platform: cliOptions.platform,
       runnerProfile: cliOptions.runnerProfile,
@@ -255,12 +255,12 @@ async function invokePresetStep(
     } satisfies ScreenshotInput);
   }
   if (tool === TOOL_NAMES.explainLastFailure) {
-    return server.invoke("explain_last_failure", { sessionId } satisfies ExplainLastFailureInput);
+    return server.invoke(TOOL_NAMES.explainLastFailure, { sessionId } satisfies ExplainLastFailureInput);
   }
   if (tool === TOOL_NAMES.rankFailureCandidates) {
-    return server.invoke("rank_failure_candidates", { sessionId } satisfies RankFailureCandidatesInput);
+    return server.invoke(TOOL_NAMES.rankFailureCandidates, { sessionId } satisfies RankFailureCandidatesInput);
   }
-  return server.invoke("suggest_known_remediation", { sessionId, actionId: cliOptions.actionId } satisfies SuggestKnownRemediationInput);
+  return server.invoke(TOOL_NAMES.suggestKnownRemediation, { sessionId, actionId: cliOptions.actionId } satisfies SuggestKnownRemediationInput);
 }
 
 export async function executePreset(

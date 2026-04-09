@@ -96,8 +96,7 @@ function isLikelySystemKeyboardDescriptor(value: string): boolean {
 }
 
 function shouldAutoInsertWaitStep(actionType: ActionType): boolean {
-  const typeName = actionType as string;
-  return typeName === ACTION_TYPES.tapElement || typeName === ACTION_TYPES.typeIntoElement;
+  return actionType === ACTION_TYPES.tapElement || actionType === ACTION_TYPES.typeIntoElement;
 }
 
 function isWeakTapIntent(intent: ActionIntent): boolean {
