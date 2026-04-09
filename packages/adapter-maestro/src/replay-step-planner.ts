@@ -48,19 +48,26 @@ function isValidActionType(value: string): value is ActionType {
 }
 
 export function buildReplayStepsFromRecordedSteps(steps: RecordedStep[]): ReplayStep[] {
-  return steps.map((step) => ({
-    replayStepId: `replay-step-${step.stepNumber}`,
-    stepNumber: step.stepNumber,
-    source: "recorded_step",
-    actionType: isValidActionType(step.actionType) ? step.actionType : ACTION_TYPES.waitForUi,
-    actionIntent: step.actionIntent,
-    confidence: step.confidence,
-    warnings: step.warnings ?? [],
-    dependency: {
-      previousStepRequired: true,
-      checkpointEligible: step.actionType !== ACTION_TYPES.waitForUi,
-    },
-  }));
+  return steps.map((step) => {
+    const validType = isValidActionType(step.actionType);
+    const warnings = step.warnings ?? [];
+    if (!validType) {
+      warnings.push(`Unknown actionType "${step.actionType}" demoted to waitForUi for replay safety.`);
+    }
+    return {
+      replayStepId: `replay-step-${step.stepNumber}`,
+      stepNumber: step.stepNumber,
+      source: "recorded_step",
+      actionType: validType ? step.actionType : ACTION_TYPES.waitForUi,
+      actionIntent: step.actionIntent,
+      confidence: step.confidence,
+      warnings,
+      dependency: {
+        previousStepRequired: true,
+        checkpointEligible: validType && step.actionType !== ACTION_TYPES.waitForUi,
+      },
+    };
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
