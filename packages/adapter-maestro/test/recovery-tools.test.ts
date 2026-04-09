@@ -254,3 +254,128 @@ test("recoverToKnownStateWithMaestro stops early for backend-terminal readiness"
   assert.equal(result.status, "failed");
   assert.equal(result.reasonCode, REASON_CODES.networkBackendTerminal);
 });
+
+test("replayLastStablePathWithMaestro returns structured dryRun response on safe replay", async () => {
+  const sessionId = `recovery-replay-success-${Date.now()}`;
+  const actionId = `recovery-replay-action-${Date.now()}`;
+  try {
+    await persistActionRecord(repoRoot, {
+      actionId,
+      sessionId,
+      intent: { actionType: "tap_element", resourceId: "com.example:id/nav_button" },
+      outcome: {
+        actionId,
+        actionType: "tap_element",
+        resolutionStrategy: "deterministic",
+        stateChanged: true,
+        fallbackUsed: false,
+        retryCount: 0,
+        outcome: "success",
+      },
+      evidenceDelta: {},
+      evidence: [],
+      lowLevelStatus: "success",
+      lowLevelReasonCode: REASON_CODES.ok,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const result = await replayLastStablePathWithMaestro(
+      { sessionId, platform: "android", runnerProfile: "phase1", dryRun: true },
+      buildReplayDeps({
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId,
+        durationMs: 1,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          sessionRecordFound: true,
+          outcome: {
+            actionId: "replayed",
+            actionType: "tap_element",
+            resolutionStrategy: "deterministic",
+            stateChanged: true,
+            fallbackUsed: false,
+            retryCount: 0,
+            outcome: "success",
+          },
+          evidenceDelta: {},
+          lowLevelStatus: "success",
+          lowLevelReasonCode: REASON_CODES.ok,
+        },
+        nextSuggestions: [],
+      }),
+    );
+
+    assert.equal(result.status, "success");
+    assert.ok(result.data.summary.checkpointDecision?.replayRefused === false);
+    assert.ok(result.data.summary.replayedActionId !== undefined);
+  } finally {
+    await cleanupAction(actionId);
+  }
+});
+
+test("recoverToKnownStateWithMaestro returns structured dryRun response with recoveryPath", async () => {
+  const sessionId = `recovery-path-${Date.now()}`;
+  const result = await recoverToKnownStateWithMaestro(
+    { sessionId, platform: "android", runnerProfile: "phase1", dryRun: true },
+    {
+      getSessionStateWithMaestro: async () => ({
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId,
+        durationMs: 1,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: true,
+          platform: "android",
+          runnerProfile: "phase1",
+          sessionRecordFound: true,
+          state: { appPhase: "ready", readiness: "ready", blockingSignals: [] },
+          capabilities: { platform: "android", runnerProfile: "phase1", toolCapabilities: [], groups: [] },
+          screenSummary: { appPhase: "ready", readiness: "ready", blockingSignals: [] },
+        },
+        nextSuggestions: [],
+      }),
+      launchAppWithMaestro: async () => ({
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId,
+        durationMs: 1,
+        attempts: 1,
+        artifacts: [],
+        data: { dryRun: true, runnerProfile: "phase1", appId: "app", launchCommand: [], exitCode: 0 },
+        nextSuggestions: [],
+      }),
+      performActionWithEvidenceWithMaestro: async () => ({
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId,
+        durationMs: 1,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          sessionRecordFound: true,
+          outcome: {
+            actionId: "recovery-action",
+            actionType: "launch_app",
+            resolutionStrategy: "deterministic",
+            stateChanged: true,
+            fallbackUsed: false,
+            retryCount: 0,
+            outcome: "success",
+          },
+          evidenceDelta: {},
+          lowLevelStatus: "success",
+          lowLevelReasonCode: REASON_CODES.ok,
+        },
+        nextSuggestions: [],
+      }),
+    },
+  );
+
+  assert.equal(result.status, "success");
+  assert.ok(result.data.summary, "Should have summary in dryRun response");
+  assert.equal(result.data.summary.recovered, true);
+});

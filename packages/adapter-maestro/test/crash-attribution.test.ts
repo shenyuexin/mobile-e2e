@@ -74,3 +74,24 @@ test("buildCrashAttribution returns undefined when no crash signals", () => {
   const result = buildCrashAttribution(content, "android");
   assert.equal(result, undefined);
 });
+
+test("buildCrashAttribution extracts crashedThread from Android FATAL EXCEPTION", () => {
+  const content = `FATAL EXCEPTION: main
+Process: com.example.app, PID: 1234
+signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0
+Abort message: 'java.lang.NullPointerException: Attempt to invoke virtual method on a null object reference'
+  at com.example.app.MyClass.crashMethod(MyClass.java:42)
+  at com.example.app.MyClass.otherMethod(MyClass.java:56)
+  at android.app.ActivityThread.main(ActivityThread.java:1234)
+"main" prio=5 tid=1 Runnable
+  | group="main" sCount=0 dsCount=0 flags=0 obj=0x12345678 self=0x7f00000000
+  | sysTid=1234 nice=-10 cgrp=default sched=0/0 handle=0x7f00001000
+  | state=R schedstat=( 12345678 1234567 123 ) utm=123 stm=45 core=0 HZ=100`;
+  const result = buildCrashAttribution(content, "android");
+  assert.ok(result);
+  assert.equal(result?.primaryCrashType, "native_crash");
+  assert.ok(result?.crashedThread !== undefined, "crashedThread should be defined");
+  assert.equal(result?.crashedThread?.name, "main");
+  assert.ok(result?.crashedThread?.topFrames !== undefined, "crashedThread should have topFrames");
+  assert.ok(result?.crashedThread!.topFrames.length > 0, "crashedThread topFrames should not be empty");
+});

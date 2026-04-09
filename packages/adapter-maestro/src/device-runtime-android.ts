@@ -69,11 +69,18 @@ async function resolveAndroidAppPid(repoRoot: string, deviceId: string, appId: s
 export function createAndroidDeviceRuntimeHooks(): DeviceRuntimePlatformHooks {
   return {
     platform: "android",
-    buildLaunchCommand: ({ runnerProfile, deviceId, appId, launchUrl }) => (
-      runnerProfile === "phase1"
-        ? [CLI_COMMANDS.adb, "-s", deviceId, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", launchUrl ?? "", appId]
-        : [CLI_COMMANDS.adb, "-s", deviceId, "shell", "monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1"]
-    ),
+    buildLaunchCommand: ({ runnerProfile, deviceId, appId, launchUrl }) => {
+      if (runnerProfile === "phase1") {
+        // When launchUrl is an Android intent action (e.g. android.settings.SETTINGS),
+        // use `am start -a <action>` directly instead of treating it as a data URI.
+        const isAndroidIntentAction = launchUrl != null && launchUrl.startsWith("android.") && !launchUrl.includes("://");
+        if (isAndroidIntentAction) {
+          return [CLI_COMMANDS.adb, "-s", deviceId, "shell", "am", "start", "-a", launchUrl];
+        }
+        return [CLI_COMMANDS.adb, "-s", deviceId, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", launchUrl ?? "", appId];
+      }
+      return [CLI_COMMANDS.adb, "-s", deviceId, "shell", "monkey", "-p", appId, "-c", "android.intent.category.LAUNCHER", "1"];
+    },
     buildInstallCommand: ({ deviceId, artifactPath }) => [CLI_COMMANDS.adb, "-s", deviceId, "install", "-r", artifactPath],
     buildResetPlan: ({ strategy, deviceId, appId, artifactPath }) => {
       if (strategy === "clear_data") {
