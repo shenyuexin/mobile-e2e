@@ -75,6 +75,35 @@ test("createServer lists newly added UI tools", () => {
   assert.ok(tools.includes("scroll_and_tap_element"));
   assert.ok(tools.includes("tap_element"));
   assert.ok(tools.includes("type_into_element"));
+  assert.ok(tools.includes("navigate_back"));
+});
+
+test("server invoke supports navigate_back Android dry-run", async () => {
+  const server = createServer();
+  const sessionId = `server-navigate-back-${Date.now()}`;
+  try {
+    const started = await server.invoke("start_session", {
+      sessionId,
+      platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
+      appId: "com.example.app",
+      profile: "phase1",
+    });
+    assert.equal(started.status, "success");
+
+    const result = await server.invoke("navigate_back", {
+      sessionId,
+      platform: "android",
+      dryRun: true,
+    });
+
+    assert.equal(result.status, "success");
+    assert.equal(result.reasonCode, "OK");
+    assert.equal(result.data.executedStrategy, "android_keyevent");
+    assert.match(result.data.command ?? "", /input keyevent 4/);
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
 });
 
 test("server invoke returns capability discovery profiles", async () => {
