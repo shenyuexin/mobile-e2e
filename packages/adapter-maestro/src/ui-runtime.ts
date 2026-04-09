@@ -404,11 +404,17 @@ export async function captureAndroidUiSnapshot(repoRoot: string, deviceId: strin
 
   await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
   const dumpExecution = await executeRunner(dumpCommand, repoRoot, process.env);
-  if (dumpExecution.exitCode !== 0) {
+
+  // Some OEM devices (e.g., vivo) may kill the uiautomator dump process (exit 137 / SIGKILL)
+  // even though the dump file was written successfully. Attempt a read to verify the dump
+  // actually completed before declaring failure.
+  const readExecution = await executeRunner(readCommand, repoRoot, process.env);
+  const readProducedValidXml = readExecution.exitCode === 0 && readExecution.stdout.trim().startsWith("<?xml");
+
+  if (dumpExecution.exitCode !== 0 && !readProducedValidXml) {
     return { reasonCode: buildFailureReason(dumpExecution.stderr, dumpExecution.exitCode), exitCode: dumpExecution.exitCode, outputPath: relativeOutputPath, command, message: "Check Android device state and ensure uiautomator dump is permitted before retrying UI resolution." };
   }
 
-  const readExecution = await executeRunner(readCommand, repoRoot, process.env);
   if (readExecution.exitCode === 0) {
     await writeFile(absoluteOutputPath, readExecution.stdout, "utf8");
   }
