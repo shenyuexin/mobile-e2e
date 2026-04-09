@@ -14,6 +14,7 @@
     "test:ocr-smoke": "pnpm --filter @mobile-e2e-mcp/adapter-vision exec tsx --test test/ocr-smoke.test.ts",
     "test:mcp-server": "pnpm --filter @shenyuexin/mobile-e2e-mcp test",
     "test:unit": "pnpm --filter @mobile-e2e-mcp/core test && pnpm --filter @mobile-e2e-mcp/adapter-vision test && pnpm --filter @mobile-e2e-mcp/adapter-maestro test && pnpm --filter @shenyuexin/mobile-e2e-mcp test && pnpm test:release-scripts",
+    "test:coverage": "pnpm --filter @mobile-e2e-mcp/core test:coverage && pnpm --filter @mobile-e2e-mcp/adapter-vision test:coverage && pnpm --filter @mobile-e2e-mcp/adapter-maestro test:coverage && pnpm --filter @shenyuexin/mobile-e2e-mcp test:coverage",
     "test:smoke": "pnpm run validate:dry-run && pnpm run validate:phase2-rn-android && pnpm run validate:phase3-samples && pnpm run validate:concurrent-smoke",
     "test:ci": "pnpm build && pnpm typecheck && pnpm test:unit && pnpm test:smoke",
     "test": "pnpm test:unit && pnpm run test:smoke",
@@ -50,6 +51,8 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "ajv": "^8.18.0",
+    "c8": "10.1.3",
     "tsx": "^4.20.6",
     "typescript": "^5.9.2"
   }

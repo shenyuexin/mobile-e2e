@@ -131,13 +131,9 @@ function toMarkdown(params: {
   return lines.join("\n");
 }
 
-/** Wait ~1.5s for UI to stabilize after a state-changing action like press_back. */
-async function waitForStable(invoke: (toolName: string, input: Record<string, unknown>) => Promise<ToolResultLike>, sessionId: string, platform: string, runnerProfile: string, deviceId: string) {
-  await new Promise((r) => setTimeout(r, 1500));
-  await invoke("wait_for_ui", {
-    sessionId, platform, runnerProfile, deviceId,
-    text: "Wi-Fi", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
-  });
+/** Brief stabilization: just a short delay without additional UI dump. */
+async function stabilize(ms = 2000) {
+  await new Promise((r) => setTimeout(r, ms));
 }
 
 export async function runAndroidToolProbe(): Promise<void> {
@@ -221,6 +217,9 @@ export async function runAndroidToolProbe(): Promise<void> {
     launchUrl: "android.settings.SETTINGS",
   }), "open Android Settings");
 
+  // Wait for Settings UI to stabilize after launch
+  await stabilize();
+
   // ========== UI inspect / action / orchestration ==========
 
   // Step 1: Wait for Wi-Fi (always visible at top of Settings home)
@@ -229,7 +228,7 @@ export async function runAndroidToolProbe(): Promise<void> {
     ["Wi-Fi", "WLAN", "蓝牙", "Bluetooth"],
     (text) => ({
       sessionId, platform, runnerProfile, deviceId,
-      text, timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
+      text, timeoutMs: 8000, intervalMs: 500, waitUntil: "visible",
     }),
   );
 
@@ -239,15 +238,24 @@ export async function runAndroidToolProbe(): Promise<void> {
     intent: "navigate back to Settings home", actionType: "press_back",
   }), "press back to return to Settings home");
 
-  await waitForStable(invoke, sessionId, platform, runnerProfile, deviceId);
+  await stabilize();
 
-  // Step 3: resolve_ui_target - Bluetooth (content-desc="Bluetooth, On" on vivo)
-  await tryTextOrContentDescSelector(
-    "resolve_ui_target", "resolve",
-    ["Bluetooth", "蓝牙"],                          // text candidates
-    ["Bluetooth, On", "Bluetooth", "蓝牙"],         // content-desc candidates (vivo adds status suffix)
-    (params) => ({ sessionId, platform, runnerProfile, deviceId, ...params, limit: 1 }),
-  );
+  // Step 3: resolve_ui_target - Bluetooth (vivo uses content-desc, not text)
+  // Direct approach: try content-desc="Bluetooth, On" first since vivo Bluetooth item has text=""
+  const cdResult1 = await invoke("resolve_ui_target", {
+    sessionId, platform, runnerProfile, deviceId,
+    contentDesc: "Bluetooth, On", limit: 1,
+  });
+  if (cdResult1.status === "success") {
+    push("resolve_ui_target", cdResult1, "resolve content-desc=Bluetooth, On");
+  } else {
+    // Fallback: try text-based matching
+    await tryTextSelector(
+      "resolve_ui_target", "resolve",
+      ["Bluetooth", "蓝牙"],
+      (text) => ({ sessionId, platform, runnerProfile, deviceId, text, limit: 1 }),
+    );
+  }
 
   // Step 4: scroll_and_resolve_ui_target - "About phone" is at the bottom
   await tryTextSelector(
@@ -259,17 +267,25 @@ export async function runAndroidToolProbe(): Promise<void> {
     }),
   );
 
-  await waitForStable(invoke, sessionId, platform, runnerProfile, deviceId);
+  await stabilize();
 
-  // Step 5: tap_element - Search settings (text="Search settings" exists on Settings home)
-  await tryTextOrContentDescSelector(
-    "tap_element", "tap",
-    ["Search settings", "搜索设置", "Search"],
-    ["Search settings", "搜索设置"],
-    (params) => ({ sessionId, platform, runnerProfile, deviceId, ...params, limit: 1 }),
-  );
+  // Step 5: tap_element - Search settings (use content-desc for vivo compatibility)
+  const tapCdResult = await invoke("tap_element", {
+    sessionId, platform, runnerProfile, deviceId,
+    contentDesc: "Search settings", limit: 1,
+  });
+  if (tapCdResult.status === "success" || tapCdResult.status === "partial") {
+    push("tap_element", tapCdResult, "tap content-desc=Search settings");
+  } else {
+    await tryTextOrContentDescSelector(
+      "tap_element", "tap",
+      ["Search settings", "搜索设置", "Search"],
+      ["Search settings", "搜索设置"],
+      (params) => ({ sessionId, platform, runnerProfile, deviceId, ...params, limit: 1 }),
+    );
+  }
 
-  await waitForStable(invoke, sessionId, platform, runnerProfile, deviceId);
+  await stabilize();
 
   // Step 6: type_into_element - search box should be visible after tapping search
   push("type_into_element", await invoke("type_into_element", {
@@ -277,7 +293,7 @@ export async function runAndroidToolProbe(): Promise<void> {
     className: "android.widget.EditText", value: "wifi", limit: 1,
   }), "type into edit text");
 
-  await waitForStable(invoke, sessionId, platform, runnerProfile, deviceId);
+  await stabilize();
 
   // Step 7: execute_intent - tap Wi-Fi (back on Settings home, press_back first)
   push("execute_intent", await invoke("execute_intent", {
@@ -285,7 +301,7 @@ export async function runAndroidToolProbe(): Promise<void> {
     intent: "tap wifi settings entry", actionType: "tap_element", text: "Wi-Fi",
   }), "real UI intent on Settings");
 
-  await waitForStable(invoke, sessionId, platform, runnerProfile, deviceId);
+  await stabilize();
 
   // Step 8: perform_action_with_evidence - tap Bluetooth (use content-desc)
   const actionResult = push("perform_action_with_evidence", await invoke("perform_action_with_evidence", {
@@ -296,7 +312,7 @@ export async function runAndroidToolProbe(): Promise<void> {
     },
   }), "tap + evidence");
 
-  await waitForStable(invoke, sessionId, platform, runnerProfile, deviceId);
+  await stabilize();
 
   // Step 9: complete_task - multi-step task
   push("complete_task", await invoke("complete_task", {
@@ -318,9 +334,11 @@ export async function runAndroidToolProbe(): Promise<void> {
   }), "replay last success");
 
   // ========== Flow / integration ==========
+  // Use owned-adb backend (Maestro fails with system apps on vivo)
   push("run_flow", await invoke("run_flow", {
     sessionId, platform, runnerProfile, deviceId, flowPath, runCount: 1,
     runnerScript: "scripts/dev/run-phase1-android.sh",
+    env: { ANDROID_REPLAY_BACKEND: "owned-adb" },
   }), "run android-settings-smoke flow");
 
   // ========== Failure context tools ==========

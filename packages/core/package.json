@@ -18,6 +18,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "pnpm build && tsx --test test/*.test.ts"
+    "test": "pnpm build && tsx --test test/*.test.ts",
+    "test:coverage": "pnpm build && bash ../../scripts/coverage.sh src"
   }
 }
