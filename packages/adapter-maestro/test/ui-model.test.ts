@@ -2348,6 +2348,7 @@ test("navigateBackWithMaestro rejects iOS system back", async () => {
   assert.equal(result.data.executedStrategy, "unsupported");
   assert.equal(result.data.supportLevel, "unsupported");
   assert.match(result.data.capabilityNote ?? "", /system-level back/i);
+  assert.equal(result.nextSuggestions.some((item) => /edge_swipe/i.test(item)), false);
 });
 
 test("navigateBackWithMaestro Android dry-run returns deterministic metadata", async () => {
@@ -2392,4 +2393,21 @@ test("navigateBackWithMaestro iOS edge_swipe without dimensions returns conditio
   assert.equal(result.reasonCode, REASON_CODES.unsupportedOperation);
   assert.equal(result.data.supportLevel, "conditional");
   assert.match(result.data.capabilityNote ?? "", /edge_swipe/i);
+});
+
+test("navigateBackWithMaestro iOS selector tap preserves command evidence", async () => {
+  const result = await navigateBackWithMaestro({
+    sessionId: "navigate-back-test",
+    platform: "ios",
+    deviceId: "ios-sim-1",
+    target: "app",
+    dryRun: true,
+    selector: { resourceId: "login-back-button" },
+  });
+
+  assert.equal(result.status, "partial");
+  assert.equal(result.reasonCode, REASON_CODES.unsupportedOperation);
+  assert.equal(result.data.executedStrategy, "ios_selector_tap");
+  assert.equal(typeof result.data.command, "string");
+  assert.match(result.data.command ?? "", /__wda_http__|\/source/i);
 });

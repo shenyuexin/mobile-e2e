@@ -21,6 +21,7 @@ import type {
   NavigateBackInput,
   BackTarget,
   BackExecutionPath,
+  RunnerProfile,
 } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import {
@@ -1233,7 +1234,7 @@ export async function navigateBackWithMaestroTool(
       },
       nextSuggestions: [
         "Use target: 'app' for in-app back navigation.",
-        "For iOS app back, provide a selector for the back button or use iosStrategy: 'edge_swipe' for a bounded left-edge swipe.",
+        "For iOS app back, provide a selector for the back button.",
       ],
     };
   }
@@ -1393,7 +1394,7 @@ export async function navigateBackWithMaestroTool(
 interface IosBackTapContext {
   sessionId: string;
   deviceId: string;
-  runnerProfile: string;
+  runnerProfile: RunnerProfile;
   selector: NonNullable<NavigateBackInput["selector"]>;
   startTime: number;
   dryRun?: boolean;
@@ -1406,7 +1407,7 @@ async function navigateBackIosWithSelector(
     sessionId: ctx.sessionId,
     platform: "ios",
     deviceId: ctx.deviceId,
-    runnerProfile: ctx.runnerProfile as any,
+    runnerProfile: ctx.runnerProfile,
     dryRun: ctx.dryRun ?? false,
     ...ctx.selector,
   });
@@ -1426,8 +1427,8 @@ async function navigateBackIosWithSelector(
       executedStrategy,
       supportLevel: tapResult.data?.supportLevel ?? "conditional",
       fallbackUsed: false,
-      command: typeof tapResult.data?.command === "string"
-        ? tapResult.data.command
+      command: Array.isArray(tapResult.data?.command)
+        ? tapResult.data.command.join(" ")
         : undefined,
       exitCode: typeof tapResult.data?.exitCode === "number"
         ? tapResult.data.exitCode
