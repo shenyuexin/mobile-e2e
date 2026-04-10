@@ -122,6 +122,7 @@
 - [`docs/guides/ai-agent-invocation.zh-CN.md`](docs/guides/ai-agent-invocation.zh-CN.md) —— AI 调用真相源
 - [`docs/guides/golden-path.md`](docs/guides/golden-path.md) —— 首跑闭环前门
 - [`docs/guides/flow-generation.md`](docs/guides/flow-generation.md) —— 录制 / 导出 / 回放专题
+- [`docs/guides/ui-stabilization-timing.md`](docs/guides/ui-stabilization-timing.md) —— UI 稳定时序：为什么需要等待、各动作推荐时间、Flow 编写最佳实践
 
 原因：打包上下文可能遗漏部分文件（如二进制、忽略路径等），最终结论必须由真实仓库文件校验。
 
