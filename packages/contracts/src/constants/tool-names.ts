@@ -61,6 +61,7 @@ export const TOOL_NAMES = {
   typeText: "type_text",
   typeIntoElement: "type_into_element",
   scrollAndResolveUiTarget: "scroll_and_resolve_ui_target",
+  scrollOnly: "scroll_only",
   scrollAndTapElement: "scroll_and_tap_element",
   navigateBack: "navigate_back",
 

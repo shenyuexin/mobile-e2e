@@ -1061,7 +1061,7 @@ export async function typeIntoElementWithMaestroTool(
 
 // scrollAndResolveUiTargetWithMaestroTool extracted to ui-action-scroll.ts (Phase 19)
 // Re-exported for backward compatibility:
-export { scrollAndResolveUiTargetWithMaestroTool } from "./ui-action-scroll.js";
+export { scrollAndResolveUiTargetWithMaestroTool, scrollOnlyWithMaestroTool } from "./ui-action-scroll.js";
 export async function scrollAndTapElementWithMaestroTool(
   input: ScrollAndTapElementInput,
 ): Promise<ToolResult<ScrollAndTapElementData>> {

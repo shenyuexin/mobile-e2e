@@ -10,6 +10,7 @@ export {
   typeTextWithMaestroTool,
   typeIntoElementWithMaestroTool,
   scrollAndResolveUiTargetWithMaestroTool,
+  scrollOnlyWithMaestroTool,
   scrollAndTapElementWithMaestroTool,
   navigateBackWithMaestroTool,
 } from "./ui-action-tools.js";

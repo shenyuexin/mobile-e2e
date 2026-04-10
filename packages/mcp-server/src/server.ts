@@ -90,6 +90,8 @@ import type {
   RunFlowInput,
   ScrollAndResolveUiTargetData,
   ScrollAndResolveUiTargetInput,
+  ScrollOnlyData,
+  ScrollOnlyInput,
   ScrollAndTapElementData,
   ScrollAndTapElementInput,
   ScreenshotData,
@@ -167,6 +169,7 @@ export interface MobileE2EMcpToolContractMap {
   replay_last_stable_path: ToolContract<ReplayLastStablePathInput, ReplayLastStablePathData>;
   replay_checkpoint_chain: ToolContract<ReplayCheckpointChainInput, ReplayCheckpointChainData>;
   scroll_and_resolve_ui_target: ToolContract<ScrollAndResolveUiTargetInput, ScrollAndResolveUiTargetData>;
+  scroll_only: ToolContract<ScrollOnlyInput, ScrollOnlyData>;
   scroll_and_tap_element: ToolContract<ScrollAndTapElementInput, ScrollAndTapElementData>;
   install_app: ToolContract<InstallAppInput, InstallAppData>;
   list_js_debug_targets: ToolContract<ListJsDebugTargetsInput, ListJsDebugTargetsData>;

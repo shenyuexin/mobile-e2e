@@ -2,6 +2,18 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "../../packages/mcp-server/src/index.ts";
 
+// ═══════════════════════════════════════════════════════════════════
+// iOS Tool Probe — Step-by-step flow with expected page state
+// ═══════════════════════════════════════════════════════════════════
+//
+// 每个步骤前都标注了：
+//   【预期页面】  — 调用该工具前屏幕应该是什么状态
+//   【操作】     — 这一步要做什么
+//   【期望结果】 — 成功后的页面状态
+//
+// 如果工具失败，先核对"预期页面"与实际屏幕是否一致。页面不一致是绝大多数失败的根因。
+// ═══════════════════════════════════════════════════════════════════
+
 type ResultStatus = "success" | "failed" | "partial";
 
 interface ToolResultLike {
@@ -18,6 +30,8 @@ interface ProbeRecord {
   note?: string;
   next?: string;
   actionId?: string;
+  observedEffect?: "observed" | "possible" | "not_observed" | "unknown";
+  observedEvidence?: string;
 }
 
 interface ProbeSummary {
@@ -25,6 +39,10 @@ interface ProbeSummary {
   success: number;
   partial: number;
   failed: number;
+  observed: number;
+  possible: number;
+  notObserved: number;
+  unknown: number;
 }
 
 function pickActionId(data: unknown): string | undefined {
@@ -38,44 +56,69 @@ function pickActionId(data: unknown): string | undefined {
 function summarize(records: ProbeRecord[]): ProbeSummary {
   return {
     total: records.length,
-    success: records.filter((record) => record.status === "success").length,
-    partial: records.filter((record) => record.status === "partial").length,
-    failed: records.filter((record) => record.status === "failed").length,
+    success: records.filter((r) => r.status === "success").length,
+    partial: records.filter((r) => r.status === "partial").length,
+    failed: records.filter((r) => r.status === "failed").length,
+    observed: records.filter((r) => r.observedEffect === "observed").length,
+    possible: records.filter((r) => r.observedEffect === "possible").length,
+    notObserved: records.filter((r) => r.observedEffect === "not_observed").length,
+    unknown: records.filter((r) => r.observedEffect === "unknown").length,
   };
 }
 
+function inferObservedEffect(tool: string, result: ToolResultLike, records: ProbeRecord[]): Pick<ProbeRecord, "observedEffect" | "observedEvidence"> {
+  const laterUiVisibilityEvidence = records.some((r) =>
+    ["wait_for_ui", "resolve_ui_target", "tap_element", "type_into_element"].includes(r.tool)
+    && ["success", "partial"].includes(r.status),
+  );
+
+  if (result.status === "success") return { observedEffect: "observed", observedEvidence: "tool contract passed" };
+  if (tool === "launch_app" && laterUiVisibilityEvidence) return { observedEffect: "observed", observedEvidence: "later UI probe reached Settings hierarchy" };
+  if (tool === "wait_for_ui" && result.status === "partial") return { observedEffect: "observed", observedEvidence: "UI polling ran but target wait did not close" };
+  if (tool === "resolve_ui_target" && result.status === "partial") return { observedEffect: "observed", observedEvidence: "target resolution saw live UI but did not find selector" };
+  if (["execute_intent", "perform_action_with_evidence", "complete_task", "resume_interrupted_action"].includes(tool)
+    && ["OCR_NO_MATCH", "OCR_AMBIGUOUS_TARGET", "TIMEOUT", "INTERRUPTION_RESOLUTION_FAILED"].includes(result.reasonCode ?? "")) {
+    return { observedEffect: "possible", observedEvidence: "action likely dispatched but post-action verification did not close the loop" };
+  }
+  if (["scroll_and_resolve_ui_target", "tap_element", "type_into_element"].includes(tool) && result.reasonCode === "ADAPTER_ERROR") {
+    return { observedEffect: "unknown", observedEvidence: "adapter-level failure prevents proving device interaction" };
+  }
+  if (result.status === "partial") return { observedEffect: "possible", observedEvidence: "partial result — some runtime progress but not closed contract" };
+  if (result.status === "failed") return { observedEffect: "not_observed", observedEvidence: "no reliable evidence of intended device effect" };
+  return { observedEffect: "unknown", observedEvidence: "no inference rule matched" };
+}
+
+function reclassifyObservedEffects(records: ProbeRecord[]): ProbeRecord[] {
+  return records.map((record, index) => {
+    const priorAndLater = records.filter((_, i) => i !== index);
+    const observed = inferObservedEffect(record.tool, { status: record.status, reasonCode: record.reasonCode, nextSuggestions: record.next ? [record.next] : undefined }, priorAndLater);
+    return { ...record, observedEffect: observed.observedEffect, observedEvidence: observed.observedEvidence };
+  });
+}
+
 function toMarkdown(params: {
-  runId: string;
-  sessionId: string;
-  deviceId: string;
-  platform: string;
-  runnerProfile: string;
-  appId: string;
-  flowPath: string;
-  summary: ProbeSummary;
-  records: ProbeRecord[];
+  runId: string; sessionId: string; deviceId: string; platform: string;
+  runnerProfile: string; appId: string; flowPath: string;
+  summary: ProbeSummary; records: ProbeRecord[];
 }): string {
   return [
-    "# iOS Tool Probe Report",
-    "",
-    `- Run: ${params.runId}`,
-    `- Session: ${params.sessionId}`,
-    `- Device: ${params.deviceId}`,
-    `- Platform: ${params.platform}`,
-    `- Runner Profile: ${params.runnerProfile}`,
-    `- App: ${params.appId}`,
-    `- Flow: ${params.flowPath}`,
-    "",
-    `- Total: ${params.summary.total}`,
-    `- Success: ${params.summary.success}`,
-    `- Partial: ${params.summary.partial}`,
-    `- Failed: ${params.summary.failed}`,
-    "",
-    "| Tool | Status | Reason | Note |",
-    "|---|---|---|---|",
-    ...params.records.map((record) => `| ${record.tool} | ${record.status} | ${record.reasonCode ?? ""} | ${record.note ?? ""} |`),
+    "# iOS Tool Probe Report", "",
+    `- Run: ${params.runId}`, `- Session: ${params.sessionId}`, `- Device: ${params.deviceId}`,
+    `- Platform: ${params.platform}`, `- Runner Profile: ${params.runnerProfile}`,
+    `- App: ${params.appId}`, `- Flow: ${params.flowPath}`, "",
+    `- Total: ${params.summary.total}`, `- Success: ${params.summary.success}`,
+    `- Partial: ${params.summary.partial}`, `- Failed: ${params.summary.failed}`,
+    `- Observed: ${params.summary.observed}`, `- Possible: ${params.summary.possible}`,
+    `- Not observed: ${params.summary.notObserved}`, `- Unknown: ${params.summary.unknown}`, "",
+    "| Tool | Verdict | Observed effect | Reason | Note |",
+    "|---|---|---|---|---|",
+    ...params.records.map((r) => `| ${r.tool} | ${r.status} | ${r.observedEffect ?? "unknown"} | ${r.reasonCode ?? ""} | ${r.note ?? ""} |`),
     "",
   ].join("\n");
+}
+
+async function stabilize(ms = 2000) {
+  await new Promise((r) => setTimeout(r, ms));
 }
 
 export async function runIosToolProbe(): Promise<void> {
@@ -97,218 +140,301 @@ export async function runIosToolProbe(): Promise<void> {
 
   const records: ProbeRecord[] = [];
 
+  let stepNum = 0;
+  const log = (msg: string) => console.log(`[probe] ${msg}`);
+  const logStep = (label: string) => { stepNum++; log(`\n═══ Step ${stepNum}: ${label} ═══`); };
+
   const invoke = async (toolName: string, input: Record<string, unknown>): Promise<ToolResultLike> => {
+    log(`  → calling ${toolName}`);
     const raw = await server.invoke(toolName as never, input as never);
     return raw as ToolResultLike;
   };
 
   const push = (tool: string, result: ToolResultLike, note?: string): ToolResultLike => {
-    records.push({
-      tool,
-      status: result.status,
-      reasonCode: result.reasonCode,
-      note,
-      next: result.nextSuggestions?.[0],
-      actionId: pickActionId(result.data),
-    });
+    log(`    ← ${tool}: ${result.status}${result.reasonCode ? ` (${result.reasonCode})` : ""}`);
+    const observed = inferObservedEffect(tool, result, records);
+    records.push({ tool, status: result.status, reasonCode: result.reasonCode, note, next: result.nextSuggestions?.[0], actionId: pickActionId(result.data), observedEffect: observed.observedEffect, observedEvidence: observed.observedEvidence });
     return result;
   };
 
   const tryTextSelector = async (
-    toolName: string,
-    notesPrefix: string,
-    candidates: string[],
+    toolName: string, notesPrefix: string, candidates: string[],
     buildInput: (text: string) => Record<string, unknown>,
   ): Promise<ToolResultLike> => {
-    let lastResult: ToolResultLike | undefined;
+    let last: ToolResultLike | undefined;
     for (const text of candidates) {
       const result = await invoke(toolName, buildInput(text));
-      lastResult = result;
-      if (result.status === "success" || result.status === "partial") {
-        return push(toolName, result, `${notesPrefix} text=${text}`);
-      }
+      last = result;
+      if (result.status === "success" || result.status === "partial") return push(toolName, result, `${notesPrefix} text=${text}`);
     }
-    return push(toolName, lastResult ?? { status: "failed" }, `${notesPrefix} text=${candidates[candidates.length - 1]}`);
+    return push(toolName, last ?? { status: "failed" }, `${notesPrefix} text=${candidates[candidates.length - 1]}`);
   };
 
+  const tryTextOrContentDescSelector = async (
+    toolName: string, notesPrefix: string,
+    textCandidates: string[], contentDescCandidates: string[],
+    buildInput: (params: { text?: string; contentDesc?: string }) => Record<string, unknown>,
+  ): Promise<ToolResultLike> => {
+    for (const text of textCandidates) {
+      const result = await invoke(toolName, buildInput({ text }));
+      if (result.status === "success" || result.status === "partial") return push(toolName, result, `${notesPrefix} text=${text}`);
+    }
+    for (const contentDesc of contentDescCandidates) {
+      const result = await invoke(toolName, buildInput({ contentDesc }));
+      if (result.status === "success" || result.status === "partial") return push(toolName, result, `${notesPrefix} content-desc=${contentDesc}`);
+    }
+    return push(toolName, { status: "failed" }, `${notesPrefix} text=${textCandidates[textCandidates.length - 1]}`);
+  };
+
+  // ───────────────────────────────────────────────────────────────
+  // 回到 Settings 首页的三种方式，按场景选用：
+  // 1. scroll_to_top()  — 滚动后回到顶部（不离开 Settings 首页）
+  // 2. tap_cancel()     — 搜索页点 Cancel 按钮退出搜索
+  // 3. goback()         — app-level back（iOS 不支持 system back）
+  // ───────────────────────────────────────────────────────────────
+  const scroll_to_top = async () => {
+    await invoke("scroll_and_resolve_ui_target", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+      text: "General", maxSwipes: 5, swipeDirection: "down", limit: 1,
+    });
+    await stabilize(1000);
+  };
+
+  const tap_cancel = async () => {
+    await invoke("tap_element", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+      text: "Cancel", limit: 1,
+    });
+    await stabilize(2000);
+  };
+
+  const goback = async () => {
+    // iOS doesn't support system-level back, so use app-level back
+    await invoke("navigate_back", {
+      sessionId, platform, runnerProfile, deviceId,
+      target: "app",
+    });
+    await stabilize(1500);
+  };
+
+  // ═══════════════════════════════════════════════════════════════
+  // Phase 1: Session / lifecycle
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── Step 1 ─────────────────────────────────────────────────────
+  logStep("start_session — 创建探针会话");
   push("start_session", await invoke("start_session", {
-    sessionId,
-    platform,
-    profile: runnerProfile,
-    deviceId,
-    appId,
+    sessionId, platform, profile: runnerProfile, deviceId, appId,
   }), "session created");
 
+  // ── Step 2 ─────────────────────────────────────────────────────
+  logStep("launch_app — 打开 Settings 首页");
   push("launch_app", await invoke("launch_app", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    appId,
+    sessionId, platform, runnerProfile, deviceId, appId,
   }), "open iOS Settings");
 
+  await stabilize();
+
+  // ═══════════════════════════════════════════════════════════════
+  // Phase 2: UI inspect / action / orchestration
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── Step 3: wait_for_ui ───────────────────────────────────────
+  logStep("wait_for_ui — 等待 General 可见");
   await tryTextSelector(
-    "wait_for_ui",
-    "wait visible by",
-    ["Settings", "设置", "General", "通用"],
-    (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, timeoutMs: 5000, intervalMs: 500, waitUntil: "visible" }),
+    "wait_for_ui", "wait visible by",
+    ["General", "通用", "Wi-Fi", "Bluetooth"],
+    (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, timeoutMs: 8000, intervalMs: 500, waitUntil: "visible" }),
   );
 
+  // ── Step 4: resolve_ui_target ─────────────────────────────────
+  logStep("resolve_ui_target — 解析 General 位置");
   await tryTextSelector(
-    "resolve_ui_target",
-    "resolve",
+    "resolve_ui_target", "resolve",
     ["General", "通用", "Bluetooth", "蓝牙"],
     (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, limit: 1 }),
   );
 
+  // ── Step 5: scroll_and_resolve_ui_target ──────────────────────
+  logStep("scroll_and_resolve_ui_target — 滑动找 Developer");
   await tryTextSelector(
-    "scroll_and_resolve_ui_target",
-    "scroll resolve",
-    ["Developer", "开发者", "Privacy & Security", "隐私与安全性"],
-    (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, maxSwipes: 3, swipeDirection: "down", swipeDurationMs: 400, limit: 1 }),
+    "scroll_and_resolve_ui_target", "scroll resolve",
+    ["Developer", "开发者", "Privacy & Security", "隐私"],
+    (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, maxSwipes: 5, swipeDirection: "up", swipeDurationMs: 400, limit: 1 }),
   );
 
-  await tryTextSelector(
-    "tap_element",
-    "open search",
-    ["Search", "搜索", "General", "通用"],
-    (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, limit: 1 }),
+  // ── scroll_to_top ────────────────────────────────────────────
+  await scroll_to_top();
+
+  // ── Step 6: tap_element ───────────────────────────────────────
+  logStep("tap_element — 点击 Search");
+  await tryTextOrContentDescSelector(
+    "tap_element", "tap",
+    ["Search", "搜索"],
+    ["Search", "搜索"],
+    (params) => ({ sessionId, platform, runnerProfile, deviceId, appId, ...params, limit: 1 }),
   );
 
+  // ── tap_cancel ───────────────────────────────────────────────
+  await tap_cancel();
+
+  // 验证：确保回到 Settings 首页
+  await invoke("wait_for_ui", {
+    sessionId, platform, runnerProfile, deviceId, appId,
+    text: "General", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
+  });
+
+  // ── Step 7: type_into_element ─────────────────────────────────
+  logStep("type_into_element — 输入 bluetooth");
   push("type_into_element", await invoke("type_into_element", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    appId,
-    className: "XCUIElementTypeSearchField",
-    value: "bluetooth",
-    limit: 1,
+    sessionId, platform, runnerProfile, deviceId, appId,
+    className: "XCUIElementTypeSearchField", value: "bluetooth", limit: 1,
   }), "type into search field");
 
+  // ── tap_cancel ───────────────────────────────────────────────
+  await tap_cancel();
+
+  // 验证：确保回到 Settings 首页
+  await invoke("wait_for_ui", {
+    sessionId, platform, runnerProfile, deviceId, appId,
+    text: "General", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
+  });
+
+  // ── Step 8: execute_intent ────────────────────────────────────
+  logStep("execute_intent — 点击 General");
   push("execute_intent", await invoke("execute_intent", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    appId,
-    intent: "tap bluetooth settings entry",
-    actionType: "tap_element",
-    text: "Bluetooth",
+    sessionId, platform, runnerProfile, deviceId, appId,
+    intent: "tap general settings entry", actionType: "tap_element", text: "General",
   }), "real UI intent on iOS Settings");
 
+  // ── goback ───────────────────────────────────────────────────
+  await goback();
+
+  // ── Step 9: perform_action_with_evidence ──────────────────────
+  logStep("perform_action_with_evidence — 点击 Bluetooth");
   const actionResult = push("perform_action_with_evidence", await invoke("perform_action_with_evidence", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    appId,
-    includeDebugSignals: true,
-    action: {
-      actionType: "tap_element",
-      text: "General",
-      timeoutMs: 5000,
-      intervalMs: 500,
-      waitUntil: "visible",
-    },
+    sessionId, platform, runnerProfile, deviceId, appId, includeDebugSignals: true,
+    action: { actionType: "tap_element", text: "Bluetooth", timeoutMs: 8000, intervalMs: 500, waitUntil: "visible" },
   }), "tap + evidence");
 
+  // ── goback ───────────────────────────────────────────────────
+  await goback();
+
+  // ── Step 10: complete_task — 多步任务
+  logStep("complete_task — 多步任务");
   push("complete_task", await invoke("complete_task", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    appId,
+    sessionId, platform, runnerProfile, deviceId, appId,
     goal: "wait and tap in iOS Settings",
     steps: [
-      { intent: "wait for Settings", actionType: "wait_for_ui", text: "Settings", timeoutMs: 4000 },
-      { intent: "tap General", actionType: "tap_element", text: "General" },
+      { intent: "wait for General", actionType: "wait_for_ui", text: "General", timeoutMs: 4000 },
+      { intent: "tap Bluetooth", actionType: "tap_element", text: "Bluetooth" },
     ],
   }), "run multi-step task");
 
+  // ── goback ───────────────────────────────────────────────────
+  // complete_task 点击 Bluetooth 后会停留在 Bluetooth 子页面，必须先回退
+  // 否则 recover_to_known_state 会在错误的页面上下文中执行
+  await goback();
+
+  // ═══════════════════════════════════════════════════════════════
+  // Phase 3: Recovery / diagnosis
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── Step 11: recover_to_known_state ───────────────────────────
+  logStep("recover_to_known_state — 恢复已知状态");
   push("recover_to_known_state", await invoke("recover_to_known_state", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    appId,
+    sessionId, platform, runnerProfile, deviceId, appId,
   }), "recover current state");
 
+  // ── Step 12: replay_last_stable_path ──────────────────────────
+  logStep("replay_last_stable_path — 重放成功路径");
   push("replay_last_stable_path", await invoke("replay_last_stable_path", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    appId,
+    sessionId, platform, runnerProfile, deviceId, appId,
   }), "replay last success");
 
+  // ═══════════════════════════════════════════════════════════════
+  // Phase 4: Flow / integration
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── Step 13: run_flow ─────────────────────────────────────────
+  logStep("run_flow — 运行 flow");
   push("run_flow", await invoke("run_flow", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    flowPath,
-    runCount: 1,
+    sessionId, platform, runnerProfile, deviceId, flowPath, runCount: 1,
   }), "run ios-settings-smoke flow");
 
+  // ═══════════════════════════════════════════════════════════════
+  // Phase 5: Failure context tools
+  // ═══════════════════════════════════════════════════════════════
+
+  // ── Step 14: perform_action_with_evidence (failure probe) ─────
+  logStep("perform_action_with_evidence(failure) — 故意失败");
   const failingResult = push("perform_action_with_evidence(failure)", await invoke("perform_action_with_evidence", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    appId,
-    includeDebugSignals: true,
-    action: {
-      actionType: "tap_element",
-      text: "__NO_SUCH_IOS_ELEMENT__",
-      timeoutMs: 2000,
-      intervalMs: 400,
-      waitUntil: "visible",
-    },
+    sessionId, platform, runnerProfile, deviceId, appId, includeDebugSignals: true,
+    action: { actionType: "tap_element", text: "__NO_SUCH_IOS_ELEMENT__", timeoutMs: 2000, intervalMs: 400, waitUntil: "visible" },
   }), "create failure context");
 
   const failedActionId = pickActionId(failingResult.data);
   const successfulActionId = pickActionId(actionResult.data);
 
+  // ── Step 15: explain_last_failure ─────────────────────────────
+  logStep("explain_last_failure — 解释失败原因");
   push("explain_last_failure", await invoke("explain_last_failure", { sessionId }), "explain latest failed action");
+
+  // ── Step 16: find_similar_failures ────────────────────────────
+  logStep("find_similar_failures — 查找相似失败");
   push("find_similar_failures", await invoke("find_similar_failures", { sessionId, actionId: failedActionId }), "lookup similar failures");
+
+  // ── Step 17: rank_failure_candidates ──────────────────────────
+  logStep("rank_failure_candidates — 排序失败候选");
   push("rank_failure_candidates", await invoke("rank_failure_candidates", { sessionId }), "rank failure candidates");
+
+  // ── Step 18: compare_against_baseline ─────────────────────────
+  logStep("compare_against_baseline — 对比基线");
   push("compare_against_baseline", await invoke("compare_against_baseline", { sessionId, actionId: successfulActionId }), "compare with local baseline");
 
+  // ── Step 19: resume_interrupted_action ────────────────────────
+  logStep("resume_interrupted_action — 恢复中断操作");
   push("resume_interrupted_action", await invoke("resume_interrupted_action", {
-    sessionId,
-    platform,
-    runnerProfile,
-    deviceId,
-    appId,
+    sessionId, platform, runnerProfile, deviceId, appId,
     checkpoint: {
       actionId: failedActionId ?? `checkpoint-${Date.now()}`,
-      sessionId,
-      platform,
-      actionType: "wait_for_ui",
-      selector: { text: "Settings" },
-      params: { text: "Settings", waitUntil: "visible", timeoutMs: 1500, intervalMs: 300 },
+      sessionId, platform, actionType: "wait_for_ui",
+      selector: { text: "General" },
+      params: { text: "General", waitUntil: "visible", timeoutMs: 1500, intervalMs: 300 },
       createdAt: new Date().toISOString(),
     },
   }), "resume synthetic checkpoint");
 
+  // ═══════════════════════════════════════════════════════════════
+  // Phase 6: JS debug tools (out-of-scope without Metro)
+  // ═══════════════════════════════════════════════════════════════
+  // 预期失败：没有 Metro/JS debug target 时，这些工具返回 CONFIGURATION_ERROR
+
+  // ── Step 20: capture_js_console_logs ──────────────────────────
+  logStep("capture_js_console_logs — 捕获JS日志（预期失败）");
   push("capture_js_console_logs", await invoke("capture_js_console_logs", {
-    sessionId,
-    timeoutMs: 2500,
-    maxLogs: 20,
+    sessionId, timeoutMs: 2500, maxLogs: 20,
   }), "without Metro expected limited/empty");
 
+  // ── Step 21: capture_js_network_events ────────────────────────
+  logStep("capture_js_network_events — 捕获JS网络事件（预期失败）");
   push("capture_js_network_events", await invoke("capture_js_network_events", {
-    sessionId,
-    timeoutMs: 2500,
-    maxEvents: 20,
-    failuresOnly: false,
+    sessionId, timeoutMs: 2500, maxEvents: 20, failuresOnly: false,
   }), "without Metro expected limited/empty");
 
+  // ── Step 22: end_session ──────────────────────────────────────
+  logStep("end_session — 关闭会话");
   push("end_session", await invoke("end_session", { sessionId }), "close session");
 
-  const summary = summarize(records);
-  const report = { runId, checklistSource, sessionId, deviceId, platform, runnerProfile, appId, flowPath, summary, records };
+  // ═══════════════════════════════════════════════════════════════
+  // 报告生成
+  // ═══════════════════════════════════════════════════════════════
+  const classifiedRecords = reclassifyObservedEffects(records);
+  const summary = summarize(classifiedRecords);
+  const report = {
+    runId, checklistSource, sessionId, deviceId, platform, runnerProfile, appId, flowPath,
+    summary, records: classifiedRecords,
+  };
 
   const artifactJsonPath = join(artifactsDir, "report.json");
   const artifactMdPath = join(artifactsDir, "summary.md");
@@ -316,11 +442,15 @@ export async function runIosToolProbe(): Promise<void> {
   const latestMdPath = join(reportsDir, "ios-tool-probe.md");
 
   await writeFile(artifactJsonPath, JSON.stringify(report, null, 2), "utf8");
-  await writeFile(artifactMdPath, toMarkdown({ runId, sessionId, deviceId, platform, runnerProfile, appId, flowPath, summary, records }), "utf8");
+  await writeFile(artifactMdPath, toMarkdown({ runId, sessionId, deviceId, platform, runnerProfile, appId, flowPath, summary, records: classifiedRecords }), "utf8");
   await writeFile(latestJsonPath, JSON.stringify(report, null, 2), "utf8");
-  await writeFile(latestMdPath, toMarkdown({ runId, sessionId, deviceId, platform, runnerProfile, appId, flowPath, summary, records }), "utf8");
+  await writeFile(latestMdPath, toMarkdown({ runId, sessionId, deviceId, platform, runnerProfile, appId, flowPath, summary, records: classifiedRecords }), "utf8");
 
-  console.log(JSON.stringify({ runId, sessionId, summary, artifactJsonPath, artifactMdPath, latestJsonPath, latestMdPath }, null, 2));
+  log(`\n═══ 探针完成 ═══`);
+  log(`总计: ${summary.total} | 成功: ${summary.success} | 部分: ${summary.partial} | 失败: ${summary.failed}`);
+  console.log(JSON.stringify({
+    runId, sessionId, summary, artifactJsonPath, artifactMdPath, latestJsonPath, latestMdPath,
+  }, null, 2));
 }
 
 const entryFilePath = process.argv[1];
