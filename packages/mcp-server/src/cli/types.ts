@@ -47,6 +47,7 @@ export interface CliOptions {
   resolveUiTarget: boolean;
   scrollAndResolveUiTarget: boolean;
   scrollAndTapElement: boolean;
+  scrollOnly: boolean;
   takeScreenshot: boolean;
   suggestKnownRemediation: boolean;
   tap: boolean;
@@ -105,6 +106,11 @@ export interface CliOptions {
   maxSwipes?: number;
   swipeDirection?: UiScrollDirection;
   swipeDurationMs?: number;
+  /** Gesture input for scroll_only tool. */
+  gestureDirection?: "up" | "down" | "left" | "right";
+  gestureStartRatio?: number;
+  gestureEndRatio?: number;
+  settleDelayMs?: number;
   platformProvided: boolean;
   useContextAlias: boolean;
   presetName?: "quick_debug_ios" | "quick_e2e_android" | "crash_triage_android";
