@@ -1750,6 +1750,7 @@ export interface WaitForUiData {
   content?: string;
   summary?: InspectUiSummary;
 }
+/** Direction for scroll-and-resolve UI target scrolling. Vertical only. */
 export type UiScrollDirection = "up" | "down";
 export interface ScrollAndResolveUiTargetInput extends ResolveUiTargetInput {
   platform?: Platform;
@@ -1775,6 +1776,18 @@ export interface ScrollAndResolveUiTargetData {
   summary?: InspectUiSummary;
 }
 
+/** Structured gesture descriptor for scroll_only. Direction is the finger-swipe direction. */
+export interface ScrollOnlyGesture {
+  direction: "up" | "down" | "left" | "right";
+  /** Start position as a ratio of the viewport (0-1). Must be provided with endRatio. */
+  startRatio?: number;
+  /** End position as a ratio of the viewport (0-1). Must be provided with startRatio. */
+  endRatio?: number;
+}
+
+/** How the scroll_only runtime resolved the gesture input. */
+export type ScrollOnlyGestureMode = "default" | "precision" | "legacy_direction";
+
 /** Input for the scroll_only MCP tool — swipe without target resolution. */
 export interface ScrollOnlyInput {
   sessionId: string;
@@ -1785,7 +1798,8 @@ export interface ScrollOnlyInput {
   dryRun?: boolean;
   /** Number of swipe iterations to perform. Default: 1. */
   count?: number;
-  swipeDirection?: UiScrollDirection;
+  /** Required structured gesture input. direction: up|down|left|right, optional startRatio/endRatio for precision. */
+  gesture: ScrollOnlyGesture;
   swipeDurationMs?: number;
   /** Milliseconds to wait after each swipe for animation to settle. Default: 2000. */
   settleDelayMs?: number;
@@ -1795,7 +1809,6 @@ export interface ScrollOnlyInput {
 export interface ScrollOnlyData {
   dryRun: boolean;
   runnerProfile: RunnerProfile;
-  swipeDirection: UiScrollDirection;
   swipeDurationMs: number;
   countRequested: number;
   swipesPerformed: number;
@@ -1803,6 +1816,13 @@ export interface ScrollOnlyData {
   commandHistory: string[][];
   exitCode: number | null;
   supportLevel: "full" | "partial";
+  /** Describes which gesture the runtime actually applied. */
+  gestureApplied: {
+    direction: "up" | "down" | "left" | "right";
+    startRatio?: number;
+    endRatio?: number;
+    mode: ScrollOnlyGestureMode;
+  };
 }
 export type AndroidTextInputStrategy = "auto" | "maestro" | "oem_fallback";
 export interface AndroidReplayOptions {

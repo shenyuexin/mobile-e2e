@@ -212,6 +212,8 @@ import {
 import {
   buildNonExecutedUiTargetResolution,
   buildScrollSwipeCoordinates,
+  buildScrollOnlySwipeCoordinates,
+  ScrollOnlySwipeDirection,
   buildUiTargetResolution,
   buildInspectUiSummary,
   hasQueryUiSelector,

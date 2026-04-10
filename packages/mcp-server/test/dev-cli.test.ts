@@ -381,7 +381,7 @@ test("main dispatches scroll_and_resolve_ui_target Android dry-run through the C
   assert.equal(output.scrollAndResolveUiTargetResult.data.swipeDirection, "up");
 });
 
-test("main dispatches scroll_and_resolve_ui_target iOS dry-run through the CLI", async () => {
+test("main rejects scroll_and_resolve_ui_target on iOS (Android-only)", async () => {
   const output = await runCli([
     "--scroll-and-resolve-ui-target",
     "--platform", "ios",
@@ -392,15 +392,11 @@ test("main dispatches scroll_and_resolve_ui_target iOS dry-run through the CLI",
     scrollAndResolveUiTargetResult: {
       status: string;
       reasonCode: string;
-      data: { supportLevel: string; resolution: { status: string }; commandHistory: string[][] };
     };
   };
 
-  assert.equal(output.scrollAndResolveUiTargetResult.status, "partial");
+  assert.equal(output.scrollAndResolveUiTargetResult.status, "failed");
   assert.equal(output.scrollAndResolveUiTargetResult.reasonCode, "UNSUPPORTED_OPERATION");
-  assert.equal(output.scrollAndResolveUiTargetResult.data.supportLevel, "full");
-  assert.equal(output.scrollAndResolveUiTargetResult.data.resolution.status, "not_executed");
-  assert.equal(output.scrollAndResolveUiTargetResult.data.commandHistory[1]?.includes("swipe"), true);
 });
 
 test("main dispatches scroll_and_tap_element Android dry-run through the CLI", async () => {

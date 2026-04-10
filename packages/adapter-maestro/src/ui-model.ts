@@ -840,3 +840,56 @@ export function buildScrollSwipeCoordinates(nodes: InspectUiNode[], direction: U
     ? { start: { x, y: lower }, end: { x, y: upper }, durationMs }
     : { start: { x, y: upper }, end: { x, y: lower }, durationMs };
 }
+
+/** Extended swipe direction supporting horizontal gestures for scroll_only. */
+export type ScrollOnlySwipeDirection = "up" | "down" | "left" | "right";
+
+/**
+ * Build swipe coordinates for scroll_only with optional viewport-relative ratios.
+ * When nodes are empty (scroll_only mode), uses viewport defaults.
+ * When ratios are provided, they override the default start/end positions.
+ */
+export function buildScrollOnlySwipeCoordinates(
+  nodes: InspectUiNode[],
+  direction: ScrollOnlySwipeDirection,
+  durationMs: number,
+  startRatio?: number,
+  endRatio?: number,
+): UiSwipeCoordinates {
+  const viewport = detectViewportBounds(nodes);
+
+  if (startRatio !== undefined && endRatio !== undefined) {
+    // Precision mode: use explicit ratios
+    if (direction === "left" || direction === "right") {
+      // Horizontal: y stays centered, x spans the ratio range
+      const y = viewport.center.y;
+      const startX = Math.round(viewport.left + viewport.width * startRatio);
+      const endX = Math.round(viewport.left + viewport.width * endRatio);
+      return { start: { x: startX, y }, end: { x: endX, y }, durationMs };
+    }
+    // Vertical: x stays centered, y spans the ratio range
+    const x = viewport.center.x;
+    const startY = Math.round(viewport.top + viewport.height * startRatio);
+    const endY = Math.round(viewport.top + viewport.height * endRatio);
+    return { start: { x, y: startY }, end: { x, y: endY }, durationMs };
+  }
+
+  // Default mode: use repo-owned default anchors per direction
+  const centerX = viewport.center.x;
+  const centerY = viewport.center.y;
+  const upper = Math.round(viewport.top + viewport.height * 0.25);
+  const lower = Math.round(viewport.top + viewport.height * 0.75);
+  const left = Math.round(viewport.left + viewport.width * 0.25);
+  const right = Math.round(viewport.left + viewport.width * 0.75);
+
+  switch (direction) {
+    case "up":
+      return { start: { x: centerX, y: lower }, end: { x: centerX, y: upper }, durationMs };
+    case "down":
+      return { start: { x: centerX, y: upper }, end: { x: centerX, y: lower }, durationMs };
+    case "left":
+      return { start: { x: right, y: centerY }, end: { x: left, y: centerY }, durationMs };
+    case "right":
+      return { start: { x: left, y: centerY }, end: { x: right, y: centerY }, durationMs };
+  }
+}

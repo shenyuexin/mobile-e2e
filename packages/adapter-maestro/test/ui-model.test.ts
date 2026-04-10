@@ -772,7 +772,7 @@ test("scrollAndResolveUiTargetWithMaestro reports configuration errors without a
   assert.equal(result.data.resolution.status, "not_executed");
 });
 
-test("scrollAndResolveUiTargetWithMaestro previews iOS swipe-assisted dry-run", async () => {
+test("scrollAndResolveUiTargetWithMaestro rejects iOS (Android-only)", async () => {
   const result = await scrollAndResolveUiTargetWithMaestro({
     sessionId: "test-scroll-ios",
     platform: "ios",
@@ -780,10 +780,9 @@ test("scrollAndResolveUiTargetWithMaestro previews iOS swipe-assisted dry-run", 
     dryRun: true,
   });
 
-  assert.equal(result.status, "partial");
+  assert.equal(result.status, "failed");
   assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
-  assert.equal(result.data.supportLevel, "full");
-  assert.equal(result.data.resolution.status, "not_executed");
+  assert.equal(result.data.supportLevel, "partial");
 });
 
 test("scrollAndResolveUiTargetWithMaestro keeps Android dry-run as not_executed preview", async () => {
@@ -805,7 +804,7 @@ test("scrollOnlyWithMaestro previews swipe-only dry-run semantics", async () => 
     sessionId: "test-scroll-only-dry-run",
     platform: "android",
     count: 2,
-    swipeDirection: "up",
+    gesture: { direction: "up" },
     settleDelayMs: 1500,
     dryRun: true,
   });
@@ -814,8 +813,16 @@ test("scrollOnlyWithMaestro previews swipe-only dry-run semantics", async () => 
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.countRequested, 2);
   assert.equal(result.data.swipesPerformed, 0);
-  assert.deepEqual(result.data.commandHistory, []);
-  assert.equal(result.nextSuggestions[0]?.includes("scroll_only"), true);
+  // Dry-run now returns preview command (one swipe command in commandHistory)
+  assert.ok(Array.isArray(result.data.commandHistory), "commandHistory should be an array");
+  assert.equal(result.data.commandHistory.length, 1, `commandHistory length should be 1, got ${result.data.commandHistory.length}`);
+  // commandHistory[0] is a string[]; check that it contains "swipe"
+  const cmd = result.data.commandHistory[0];
+  assert.ok(cmd.some((s) => s === "swipe"), `command should contain "swipe", got: ${JSON.stringify(cmd)}`);
+  // gestureApplied should reflect default mode
+  assert.equal(result.data.gestureApplied.mode, "default");
+  assert.equal(result.data.gestureApplied.direction, "up");
+  assert.ok(result.nextSuggestions[0]?.includes("Dry-run"), `nextSuggestion should reference dry-run, got: ${result.nextSuggestions[0]}`);
 });
 
 test("buildCapabilityProfile stays honest across Android and iOS UI action support", () => {
@@ -830,7 +837,6 @@ test("buildCapabilityProfile stays honest across Android and iOS UI action suppo
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "type_into_element")?.supportLevel, "conditional");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "scroll_only")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "full");
-  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "scroll_and_resolve_ui_target")?.supportLevel, "full");
   assert.equal(androidProfile.toolCapabilities.find((tool) => tool.toolName === "record_screen")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "reset_app_state")?.supportLevel, "conditional");
   assert.equal(androidProfile.groups.find((group) => group.groupName === "ui_actions")?.toolNames.includes("scroll_only"), true);
@@ -885,7 +891,7 @@ test("describeCapabilitiesWithMaestro returns a capability profile", async () =>
   assert.equal(result.data.capabilities.ocrFallback?.deterministicFirst, true);
 });
 
-test("scrollAndTapElementWithMaestro keeps iOS partial and unsupported", async () => {
+test("scrollAndTapElementWithMaestro rejects iOS (Android-only)", async () => {
   const result = await scrollAndTapElementWithMaestro({
     sessionId: "test-scroll-tap-ios",
     platform: "ios",
@@ -893,10 +899,8 @@ test("scrollAndTapElementWithMaestro keeps iOS partial and unsupported", async (
     dryRun: true,
   });
 
-  assert.equal(result.status, "partial");
+  assert.equal(result.status, "failed");
   assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
-  assert.equal(result.data.supportLevel, "full");
-  assert.equal(result.data.resolveResult.resolution.status, "not_executed");
 });
 
 test("scrollAndTapElementWithMaestro keeps Android dry-run as preview-only partial result", async () => {

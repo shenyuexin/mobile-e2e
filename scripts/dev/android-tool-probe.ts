@@ -353,7 +353,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   logStep("scroll_only — 滑动 3 次");
   push("scroll_only", await invoke("scroll_only", {
     sessionId, platform, runnerProfile, deviceId,
-    count: 3, swipeDirection: "up", swipeDurationMs: 500, settleDelayMs: 2000,
+    count: 3, gesture: { direction: "up" }, swipeDurationMs: 500, settleDelayMs: 2000,
   }), "scroll 3 times");
 
   // 额外等待确保 View 层级完全更新

@@ -292,15 +292,13 @@ const validationCases: ValidationCase[] = [
     },
   },
   {
-    name: "scroll_and_resolve_ui_target iOS dry-run",
+    name: "scroll_and_resolve_ui_target iOS rejected (Android-only)",
     cliArgs: ["--scroll-and-resolve-ui-target", "--platform", "ios", "--content-desc", "View products", "--max-swipes", "2", "--dry-run"],
+    allowFailureExit: true,
     validate: (result) => {
-      const typed = result as { scrollAndResolveUiTargetResult: { status: string; reasonCode: string; data: { supportLevel: string; resolution: { status: string }; commandHistory: string[][] } } };
-      assert.equal(typed.scrollAndResolveUiTargetResult.status, "partial");
+      const typed = result as { scrollAndResolveUiTargetResult: { status: string; reasonCode: string } };
+      assert.equal(typed.scrollAndResolveUiTargetResult.status, "failed");
       assert.equal(typed.scrollAndResolveUiTargetResult.reasonCode, "UNSUPPORTED_OPERATION");
-      assert.equal(typed.scrollAndResolveUiTargetResult.data.supportLevel, "full");
-      assert.equal(typed.scrollAndResolveUiTargetResult.data.resolution.status, "not_executed");
-      assert.equal(typed.scrollAndResolveUiTargetResult.data.commandHistory[1]?.includes("swipe"), true);
     },
   },
   {

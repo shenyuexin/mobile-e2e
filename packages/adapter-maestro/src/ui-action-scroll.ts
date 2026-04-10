@@ -10,6 +10,7 @@ import type {
   ScrollAndResolveUiTargetInput,
   ScrollOnlyData,
   ScrollOnlyInput,
+  ScrollOnlyGestureMode,
   ToolResult,
   RunnerProfile,
   UiScrollDirection,
@@ -25,13 +26,13 @@ import {
 import {
   buildNonExecutedUiTargetResolution,
   buildScrollSwipeCoordinates,
+  buildScrollOnlySwipeCoordinates,
   hasQueryUiSelector,
   reasonCodeForResolutionStatus,
 } from "./ui-model.js";
 import {
   buildAndroidUiDumpCommands,
   captureAndroidUiRuntimeSnapshot,
-  captureIosUiRuntimeSnapshot,
   executeUiActionCommand,
   runUiScrollResolveLoop,
 } from "./ui-runtime.js";
@@ -139,11 +140,8 @@ export async function scrollAndResolveUiTargetWithMaestroTool(
         commandHistory: [],
         exitCode: null,
         result: { query, totalMatches: 0, matches: [] },
-        resolution: buildNonExecutedUiTargetResolution(
-          query,
-          platform === "android" ? "full" : "partial",
-        ),
-        supportLevel: platform === "android" ? "full" : "partial",
+        resolution: buildNonExecutedUiTargetResolution(query, "full"),
+        supportLevel: "full",
       },
       nextSuggestions: [
         "Provide at least one selector field before calling scroll_and_resolve_ui_target.",
@@ -151,195 +149,33 @@ export async function scrollAndResolveUiTargetWithMaestroTool(
     };
   }
 
+  // scroll_and_resolve_ui_target is Android-only. iOS uses scroll_only → wait_for_ui → resolve_ui_target.
   if (platform === "ios") {
-    const deviceId = input.deviceId ?? buildDefaultDeviceId(platform);
-    const previewSwipe = buildScrollSwipeCoordinates(
-      [],
-      swipeDirection,
-      swipeDurationMs,
-    );
-    const previewSwipeCommand = runtimeHooks.buildSwipeCommand(
-      deviceId,
-      previewSwipe,
-    );
-
-    if (input.dryRun) {
-      return {
-        status: "partial",
-        reasonCode: REASON_CODES.unsupportedOperation,
-        sessionId: input.sessionId,
-        durationMs: Date.now() - startTime,
-        attempts: 1,
-        artifacts: [],
-        data: {
-          dryRun: true,
-          runnerProfile,
-          outputPath: defaultOutputPath,
-          query,
-          maxSwipes,
-          swipeDirection,
-          swipeDurationMs,
-          swipesPerformed: 0,
-          commandHistory: [
-            runtimeHooks.buildHierarchyCapturePreviewCommand(deviceId),
-            previewSwipeCommand,
-          ],
-          exitCode: 0,
-          result: { query, totalMatches: 0, matches: [] },
-          resolution: buildNonExecutedUiTargetResolution(query, "full"),
-          supportLevel: "full",
-        },
-        nextSuggestions: [
-          "scroll_and_resolve_ui_target dry-run only previews iOS hierarchy capture and swipe commands. Run it without --dry-run to resolve against the current simulator hierarchy.",
-        ],
-      };
-    }
-
-    const scrollOutcome = await runUiScrollResolveLoop({
-      query,
-      maxSwipes,
-      defaultOutputPath,
-      captureSnapshot: () =>
-        captureIosUiRuntimeSnapshot(
-          repoRoot,
-          deviceId,
-          input.sessionId,
-          runnerProfile,
-          input.outputPath,
-          {
-            sessionId: input.sessionId,
-            platform,
-            runnerProfile,
-            harnessConfigPath: input.harnessConfigPath,
-            deviceId,
-            outputPath: input.outputPath,
-            dryRun: false,
-            ...query,
-          },
-        ),
-      buildSwipeCommand: (nodes) =>
-        runtimeHooks.buildSwipeCommand(
-          deviceId,
-          buildScrollSwipeCoordinates(nodes, swipeDirection, swipeDurationMs),
-        ),
-      executeSwipeCommand: async (command) => {
-        const execution = await executeUiActionCommand({
-          repoRoot,
-          command,
-          requiresProbe: false,
-        });
-        return execution.execution ?? { exitCode: null, stdout: "", stderr: "" };
-      },
-      scrollFailureMessage:
-        "iOS swipe failed while searching for the target. Check simulator state and axe/WDA availability before retrying scroll_and_resolve_ui_target.",
-    });
-
-    if (scrollOutcome.outcome === "failure") {
-      return {
-        status: "failed",
-        reasonCode: scrollOutcome.reasonCode,
-        sessionId: input.sessionId,
-        durationMs: Date.now() - startTime,
-        attempts: scrollOutcome.state.attempts,
-        artifacts: scrollOutcome.state.absoluteOutputPath
-          ? [toRelativePath(repoRoot, scrollOutcome.state.absoluteOutputPath)]
-          : [],
-        data: {
-          dryRun: false,
-          runnerProfile,
-          outputPath: scrollOutcome.state.outputPath,
-          query,
-          maxSwipes,
-          swipeDirection,
-          swipeDurationMs,
-          swipesPerformed: scrollOutcome.state.swipesPerformed,
-          commandHistory: scrollOutcome.state.commandHistory,
-          exitCode: scrollOutcome.state.exitCode,
-          result: scrollOutcome.state.result,
-          resolution: scrollOutcome.state.resolution,
-          supportLevel: "full",
-          content: scrollOutcome.state.content,
-          summary: scrollOutcome.state.summary,
-        },
-        nextSuggestions: [scrollOutcome.message],
-      };
-    }
-
-    if (scrollOutcome.outcome === "resolved" || scrollOutcome.outcome === "stopped") {
-      return {
-        status:
-          scrollOutcome.outcome === "resolved" ? "success" : "partial",
-        reasonCode: reasonCodeForResolutionStatus(
-          scrollOutcome.state.resolution.status,
-        ),
-        sessionId: input.sessionId,
-        durationMs: Date.now() - startTime,
-        attempts: scrollOutcome.state.attempts,
-        artifacts: scrollOutcome.state.absoluteOutputPath
-          ? [toRelativePath(repoRoot, scrollOutcome.state.absoluteOutputPath)]
-          : [],
-        data: {
-          dryRun: false,
-          runnerProfile,
-          outputPath: scrollOutcome.state.outputPath,
-          query,
-          maxSwipes,
-          swipeDirection,
-          swipeDurationMs,
-          swipesPerformed: scrollOutcome.state.swipesPerformed,
-          commandHistory: scrollOutcome.state.commandHistory,
-          exitCode: scrollOutcome.state.exitCode,
-          result: scrollOutcome.state.result,
-          resolution: scrollOutcome.state.resolution,
-          supportLevel: "full",
-          content: scrollOutcome.state.content,
-          summary: scrollOutcome.state.summary,
-        },
-        nextSuggestions:
-          scrollOutcome.outcome === "resolved"
-            ? []
-            : buildResolutionNextSuggestions(
-                scrollOutcome.state.resolution.status,
-                "scroll_and_resolve_ui_target",
-                scrollOutcome.state.resolution,
-              ),
-      };
-    }
-
     return {
-      status: "partial",
-      reasonCode: REASON_CODES.noMatch,
+      status: "failed",
+      reasonCode: REASON_CODES.unsupportedOperation,
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
-      attempts: scrollOutcome.state.attempts,
-      artifacts: scrollOutcome.state.absoluteOutputPath
-        ? [toRelativePath(repoRoot, scrollOutcome.state.absoluteOutputPath)]
-        : [],
+      attempts: 1,
+      artifacts: [],
       data: {
-        dryRun: false,
+        dryRun: Boolean(input.dryRun),
         runnerProfile,
-        outputPath: scrollOutcome.state.outputPath,
+        outputPath: defaultOutputPath,
         query,
         maxSwipes,
         swipeDirection,
         swipeDurationMs,
-        swipesPerformed: scrollOutcome.state.swipesPerformed,
-        commandHistory: scrollOutcome.state.commandHistory,
-        exitCode: scrollOutcome.state.exitCode,
-        result: scrollOutcome.state.result,
-        resolution: scrollOutcome.state.resolution,
-        supportLevel: "full",
-        content: scrollOutcome.state.content,
-        summary: scrollOutcome.state.summary,
+        swipesPerformed: 0,
+        commandHistory: [],
+        exitCode: null,
+        result: { query, totalMatches: 0, matches: [] },
+        resolution: buildNonExecutedUiTargetResolution(query, "partial"),
+        supportLevel: "partial",
       },
-      nextSuggestions:
-        scrollOutcome.state.resolution.status === "off_screen"
-          ? [
-              "Reached maxSwipes while the best iOS match stayed off-screen. Keep scrolling, change swipe direction, or refine the selector toward visible content.",
-            ]
-          : [
-              "Reached maxSwipes without finding a matching iOS target. Narrow the selector or increase maxSwipes.",
-            ],
+      nextSuggestions: [
+        "scroll_and_resolve_ui_target is Android-only. On iOS, use scroll_only → wait_for_ui → resolve_ui_target instead.",
+      ],
     };
   }
 
@@ -547,16 +383,110 @@ export async function scrollAndResolveUiTargetWithMaestroTool(
 }
 
 /**
+ * Normalized internal gesture model for scroll_only processing.
+ */
+type NormalizedScrollGesture = {
+  direction: "up" | "down" | "left" | "right";
+  mode: "default" | "precision" | "legacy_direction";
+  startRatio?: number;
+  endRatio?: number;
+};
+
+/**
+ * Normalize scroll_only input into a single internal gesture model.
+ * `gesture` is required — no legacy swipeDirection fallback.
+ * Returns either a normalized gesture or a validation error string.
+ */
+function normalizeScrollOnlyGesture(input: ScrollOnlyInput): NormalizedScrollGesture | string {
+  const { gesture } = input;
+
+  if (!gesture) {
+    return "gesture is required. Provide { direction: 'up' | 'down' | 'left' | 'right', startRatio?, endRatio? }.";
+  }
+  if (!gesture.direction) {
+    return "gesture.direction is required.";
+  }
+  const validDirs: Array<"up" | "down" | "left" | "right"> = ["up", "down", "left", "right"];
+  if (!validDirs.includes(gesture.direction)) {
+    return `gesture.direction must be one of: up, down, left, right. Got: "${gesture.direction}".`;
+  }
+
+  // Validate ratios
+  const hasStart = gesture.startRatio !== undefined;
+  const hasEnd = gesture.endRatio !== undefined;
+  if (hasStart !== hasEnd) {
+    return "Both startRatio and endRatio must be provided together, or neither.";
+  }
+
+  if (hasStart && hasEnd) {
+    const s = gesture.startRatio!;
+    const e = gesture.endRatio!;
+    if (s <= 0 || s >= 1) {
+      return `startRatio must be between 0 and 1 (exclusive). Got: ${s}.`;
+    }
+    if (e <= 0 || e >= 1) {
+      return `endRatio must be between 0 and 1 (exclusive). Got: ${e}.`;
+    }
+    if (s === e) {
+      return `startRatio and endRatio must not be equal. Both are ${s}.`;
+    }
+    return {
+      direction: gesture.direction,
+      mode: "precision" as const,
+      startRatio: s,
+      endRatio: e,
+    };
+  }
+
+  return {
+    direction: gesture.direction,
+    mode: "default" as const,
+  };
+}
+
+/**
  * Scroll-only tool — performs N swipes without target resolution.
  * Designed to be used as: scroll_only → wait_for_ui → resolve_ui_target
+ *
+ * Requires structured gesture input: { direction: 'up'|'down'|'left'|'right', startRatio?, endRatio? }.
+ * No legacy swipeDirection fallback.
  */
 export async function scrollOnlyWithMaestroTool(
   input: ScrollOnlyInput,
 ): Promise<ToolResult<ScrollOnlyData>> {
   const startTime = Date.now();
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+
+  // Normalize the gesture
+  const normalized = normalizeScrollOnlyGesture(input);
+  if (typeof normalized === "string") {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        swipeDurationMs: typeof input.swipeDurationMs === "number" ? input.swipeDurationMs : DEFAULT_SCROLL_DURATION_MS,
+        countRequested: input.count ?? 1,
+        swipesPerformed: 0,
+        commandHistory: [],
+        exitCode: null,
+        supportLevel: "partial",
+        gestureApplied: {
+          direction: input.gesture?.direction ?? "up",
+          mode: "default",
+        },
+      },
+      nextSuggestions: [`Invalid scroll gesture configuration: ${normalized}`],
+    };
+  }
+
+  // Missing platform guard
   if (!input.platform) {
-    const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
-    const swipeDirection = normalizeScrollDirection(input.swipeDirection ?? "up");
     const swipeDurationMs =
       typeof input.swipeDurationMs === "number" && input.swipeDurationMs > 0
         ? Math.floor(input.swipeDurationMs)
@@ -571,13 +501,18 @@ export async function scrollOnlyWithMaestroTool(
       data: {
         dryRun: Boolean(input.dryRun),
         runnerProfile,
-        swipeDirection,
         swipeDurationMs,
         countRequested: input.count ?? 1,
         swipesPerformed: 0,
         commandHistory: [],
         exitCode: null,
         supportLevel: "partial",
+        gestureApplied: {
+          direction: normalized.direction,
+          startRatio: normalized.startRatio,
+          endRatio: normalized.endRatio,
+          mode: normalized.mode,
+        },
       },
       nextSuggestions: [buildMissingPlatformSuggestion("scroll_only")],
     };
@@ -586,7 +521,6 @@ export async function scrollOnlyWithMaestroTool(
   const platform = input.platform;
   const repoRoot = resolveRepoPath();
   const runtimeHooks = resolveUiRuntimePlatformHooks(platform);
-  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
   const count = typeof input.count === "number" && input.count >= 1 ? Math.floor(input.count) : 1;
   const swipeDurationMs =
     typeof input.swipeDurationMs === "number" && input.swipeDurationMs > 0
@@ -596,7 +530,6 @@ export async function scrollOnlyWithMaestroTool(
     typeof input.settleDelayMs === "number" && input.settleDelayMs >= 0
       ? Math.floor(input.settleDelayMs)
       : 2000;
-  const swipeDirection = normalizeScrollDirection(input.swipeDirection ?? "up");
 
   const selection = await loadHarnessSelection(
     repoRoot,
@@ -616,19 +549,34 @@ export async function scrollOnlyWithMaestroTool(
       data: {
         dryRun: Boolean(input.dryRun),
         runnerProfile,
-        swipeDirection,
         swipeDurationMs,
         countRequested: count,
         swipesPerformed: 0,
         commandHistory: [],
         exitCode: null,
         supportLevel: "partial",
+        gestureApplied: {
+          direction: normalized.direction,
+          startRatio: normalized.startRatio,
+          endRatio: normalized.endRatio,
+          mode: normalized.mode,
+        },
       },
       nextSuggestions: ["Provide a deviceId or update the harness configuration."],
     };
   }
 
+  // Dry-run path: return gesture preview
   if (input.dryRun) {
+    const previewSwipe = buildScrollOnlySwipeCoordinates(
+      [],
+      normalized.direction,
+      swipeDurationMs,
+      normalized.startRatio,
+      normalized.endRatio,
+    );
+    const previewCommand = runtimeHooks.buildSwipeCommand(deviceId, previewSwipe);
+
     return {
       status: "success",
       reasonCode: REASON_CODES.ok,
@@ -639,24 +587,40 @@ export async function scrollOnlyWithMaestroTool(
       data: {
         dryRun: true,
         runnerProfile,
-        swipeDirection,
         swipeDurationMs,
         countRequested: count,
         swipesPerformed: 0,
-        commandHistory: [],
+        commandHistory: [previewCommand],
         exitCode: 0,
         supportLevel: "full",
+        gestureApplied: {
+          direction: normalized.direction,
+          startRatio: normalized.startRatio,
+          endRatio: normalized.endRatio,
+          mode: normalized.mode,
+        },
       },
-      nextSuggestions: ["Run scroll_only without dryRun to perform actual swipes."],
+      nextSuggestions: [
+        normalized.mode === "precision"
+          ? `Dry-run preview: ${normalized.direction} swipe with startRatio=${normalized.startRatio}, endRatio=${normalized.endRatio}. Run without dryRun to execute.`
+          : `Dry-run preview: default ${normalized.direction} swipe. Run without dryRun to execute.`,
+      ],
     };
   }
 
+  // Execution loop
   const commandHistory: string[][] = [];
   let swipesPerformed = 0;
   let lastExitCode: number | null = null;
 
   for (let i = 0; i < count; i++) {
-    const swipe = buildScrollSwipeCoordinates([], swipeDirection, swipeDurationMs);
+    const swipe = buildScrollOnlySwipeCoordinates(
+      [],
+      normalized.direction,
+      swipeDurationMs,
+      normalized.startRatio,
+      normalized.endRatio,
+    );
     const swipeCommand = runtimeHooks.buildSwipeCommand(deviceId, swipe);
 
     const execution = await executeUiActionCommand({
@@ -689,17 +653,22 @@ export async function scrollOnlyWithMaestroTool(
     data: {
       dryRun: false,
       runnerProfile,
-      swipeDirection,
       swipeDurationMs,
       countRequested: count,
       swipesPerformed,
       commandHistory,
       exitCode: lastExitCode,
       supportLevel: "full",
+      gestureApplied: {
+        direction: normalized.direction,
+        startRatio: normalized.startRatio,
+        endRatio: normalized.endRatio,
+        mode: normalized.mode,
+      },
     },
     nextSuggestions:
       lastExitCode === 0
-        ? [`Performed ${swipesPerformed} swipe(s). Use wait_for_ui then resolve_ui_target to find your target.`]
-        : ["Android swipe failed. Check device state and retry."],
+        ? [`Performed ${swipesPerformed} swipe(s) (${normalized.direction}, ${normalized.mode}). Use wait_for_ui then resolve_ui_target to find your target.`]
+        : ["Swipe failed. Check device state and retry."],
   };
 }

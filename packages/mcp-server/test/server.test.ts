@@ -732,7 +732,7 @@ test("server invoke keeps scroll_and_resolve_ui_target Android dry-run semantics
   assert.equal(result.data.maxSwipes, 2);
 });
 
-test("server invoke previews iOS scroll_and_resolve_ui_target dry-run semantics", async () => {
+test("server invoke rejects iOS scroll_and_resolve_ui_target (Android-only)", async () => {
   const server = createServer();
   const result = await server.invoke("scroll_and_resolve_ui_target", {
     sessionId: "server-scroll-ios-dry-run",
@@ -740,13 +740,10 @@ test("server invoke previews iOS scroll_and_resolve_ui_target dry-run semantics"
     contentDesc: "View products",
     maxSwipes: 2,
     dryRun: true,
-  }) as { status: string; reasonCode: string; data: { supportLevel: string; resolution: { status: string }; commandHistory: string[][] } };
+  }) as { status: string; reasonCode: string };
 
-  assert.equal(result.status, "partial");
+  assert.equal(result.status, "failed");
   assert.equal(result.reasonCode, "UNSUPPORTED_OPERATION");
-  assert.equal(result.data.supportLevel, "full");
-  assert.equal(result.data.resolution.status, "not_executed");
-  assert.equal(result.data.commandHistory[1]?.includes("swipe"), true);
 });
 
 test("server invoke keeps scroll_and_tap_element Android dry-run semantics", async () => {
