@@ -1774,6 +1774,35 @@ export interface ScrollAndResolveUiTargetData {
   content?: string;
   summary?: InspectUiSummary;
 }
+
+/** Input for the scroll_only MCP tool — swipe without target resolution. */
+export interface ScrollOnlyInput {
+  sessionId: string;
+  platform?: Platform;
+  runnerProfile?: RunnerProfile;
+  deviceId?: string;
+  harnessConfigPath?: string;
+  dryRun?: boolean;
+  /** Number of swipe iterations to perform. Default: 1. */
+  count?: number;
+  swipeDirection?: UiScrollDirection;
+  swipeDurationMs?: number;
+  /** Milliseconds to wait after each swipe for animation to settle. Default: 2000. */
+  settleDelayMs?: number;
+}
+
+/** Output data for the scroll_only MCP tool. */
+export interface ScrollOnlyData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  swipeDirection: UiScrollDirection;
+  swipeDurationMs: number;
+  countRequested: number;
+  swipesPerformed: number;
+  commandHistory: string[][];
+  exitCode: number | null;
+  supportLevel: "full" | "partial";
+}
 export type AndroidTextInputStrategy = "auto" | "maestro" | "oem_fallback";
 export interface AndroidReplayOptions {
   userId?: string;

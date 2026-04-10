@@ -8,6 +8,8 @@
 import type {
   ScrollAndResolveUiTargetData,
   ScrollAndResolveUiTargetInput,
+  ScrollOnlyData,
+  ScrollOnlyInput,
   ToolResult,
   RunnerProfile,
   UiScrollDirection,
@@ -541,6 +543,176 @@ export async function scrollAndResolveUiTargetWithMaestroTool(
         : [
             "Reached maxSwipes without finding a matching Android target. Narrow the selector or increase maxSwipes.",
           ],
+  };
+}
+
+/**
+ * Scroll-only tool — performs N swipes without target resolution.
+ * Designed to be used as: scroll_only → wait_for_ui → resolve_ui_target
+ */
+export async function scrollOnlyWithMaestroTool(
+  input: ScrollOnlyInput,
+): Promise<ToolResult<ScrollOnlyData>> {
+  const startTime = Date.now();
+  if (!input.platform) {
+    const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+    const swipeDirection = normalizeScrollDirection(input.swipeDirection ?? "up");
+    const swipeDurationMs =
+      typeof input.swipeDurationMs === "number" && input.swipeDurationMs > 0
+        ? Math.floor(input.swipeDurationMs)
+        : DEFAULT_SCROLL_DURATION_MS;
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.configurationError,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        swipeDirection,
+        swipeDurationMs,
+        countRequested: input.count ?? 1,
+        swipesPerformed: 0,
+        commandHistory: [],
+        exitCode: null,
+        supportLevel: "partial",
+      },
+      nextSuggestions: [buildMissingPlatformSuggestion("scroll_only")],
+    };
+  }
+
+  const platform = input.platform;
+  const repoRoot = resolveRepoPath();
+  const runtimeHooks = resolveUiRuntimePlatformHooks(platform);
+  const runnerProfile = input.runnerProfile ?? DEFAULT_RUNNER_PROFILE;
+  const count = typeof input.count === "number" && input.count >= 1 ? Math.floor(input.count) : 1;
+  const swipeDurationMs =
+    typeof input.swipeDurationMs === "number" && input.swipeDurationMs > 0
+      ? Math.floor(input.swipeDurationMs)
+      : DEFAULT_SCROLL_DURATION_MS;
+  const settleDelayMs =
+    typeof input.settleDelayMs === "number" && input.settleDelayMs >= 0
+      ? Math.floor(input.settleDelayMs)
+      : 2000;
+  const swipeDirection = normalizeScrollDirection(input.swipeDirection ?? "up");
+
+  const selection = await loadHarnessSelection(
+    repoRoot,
+    platform,
+    runnerProfile,
+    input.harnessConfigPath ?? DEFAULT_HARNESS_CONFIG_PATH,
+  );
+  const deviceId = input.deviceId ?? selection.deviceId;
+  if (!deviceId) {
+    return {
+      status: "failed",
+      reasonCode: REASON_CODES.deviceUnavailable,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: Boolean(input.dryRun),
+        runnerProfile,
+        swipeDirection,
+        swipeDurationMs,
+        countRequested: count,
+        swipesPerformed: 0,
+        commandHistory: [],
+        exitCode: null,
+        supportLevel: "partial",
+      },
+      nextSuggestions: ["Provide a deviceId or update the harness configuration."],
+    };
+  }
+
+  if (input.dryRun) {
+    return {
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: Date.now() - startTime,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: true,
+        runnerProfile,
+        swipeDirection,
+        swipeDurationMs,
+        countRequested: count,
+        swipesPerformed: 0,
+        commandHistory: [],
+        exitCode: 0,
+        supportLevel: "full",
+      },
+      nextSuggestions: ["Run scroll_only without dryRun to perform actual swipes."],
+    };
+  }
+
+  const commandHistory: string[][] = [];
+  let swipesPerformed = 0;
+  let lastExitCode: number | null = null;
+
+  for (let i = 0; i < count; i++) {
+    // For each swipe: capture current UI → build swipe command → execute → wait for settle
+    let captureCommand: string[];
+    let readCommand: string[];
+    if (platform === "android") {
+      ({ dumpCommand: captureCommand, readCommand } = buildAndroidUiDumpCommands(deviceId));
+    } else {
+      // iOS: use preview capture command (just need to trigger UI update)
+      captureCommand = runtimeHooks.buildHierarchyCapturePreviewCommand(deviceId);
+      readCommand = [];
+    }
+
+    // Build swipe command
+    const swipe = buildScrollSwipeCoordinates([], swipeDirection, swipeDurationMs);
+    const swipeCommand = runtimeHooks.buildSwipeCommand(deviceId, swipe);
+
+    const execution = await executeUiActionCommand({
+      repoRoot,
+      command: swipeCommand,
+      requiresProbe: false,
+    });
+
+    if (execution.execution?.exitCode !== 0) {
+      lastExitCode = execution.execution?.exitCode ?? null;
+      break;
+    }
+
+    commandHistory.push([...(Array.isArray(captureCommand) ? captureCommand : [captureCommand]), ...(Array.isArray(readCommand) ? readCommand : [readCommand]), ...(Array.isArray(swipeCommand) ? swipeCommand : [swipeCommand])]);
+    lastExitCode = execution.execution?.exitCode ?? 0;
+    swipesPerformed += 1;
+
+    // Wait for scroll animation to settle + View hierarchy to update
+    // Android RecyclerView fling can take 1-2 seconds after touch release
+    await new Promise((r) => setTimeout(r, settleDelayMs));
+  }
+
+  return {
+    status: lastExitCode === 0 ? "success" : "failed",
+    reasonCode: lastExitCode === 0 ? REASON_CODES.ok : REASON_CODES.actionScrollFailed,
+    sessionId: input.sessionId,
+    durationMs: Date.now() - startTime,
+    attempts: 1,
+    artifacts: [],
+    data: {
+      dryRun: false,
+      runnerProfile,
+      swipeDirection,
+      swipeDurationMs,
+      countRequested: count,
+      swipesPerformed,
+      commandHistory,
+      exitCode: lastExitCode,
+      supportLevel: "full",
+    },
+    nextSuggestions:
+      lastExitCode === 0
+        ? [`Performed ${swipesPerformed} swipe(s). Use wait_for_ui then resolve_ui_target to find your target.`]
+        : ["Android swipe failed. Check device state and retry."],
   };
 }
 

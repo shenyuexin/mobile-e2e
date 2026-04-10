@@ -680,6 +680,29 @@ export async function runUiScrollResolveLoop(
     }
 
     if (swipesPerformed === options.maxSwipes) {
+      // 达到最大滑动次数后，再等待一段时间让 View 层级完全更新，
+      // 然后做最终确认 capture。
+      await delay(2000);
+      const finalCapture = await options.captureSnapshot();
+      if (!isUiRuntimeSnapshotFailure(finalCapture)) {
+        const finalRetryableFailure = options.buildRetryableSnapshotFailure?.(finalCapture);
+        if (!finalRetryableFailure) {
+          const finalSnapshotState = buildScrollResolutionStateFromSnapshot(
+            options.query,
+            finalCapture,
+            [...commandHistory, finalCapture.command],
+            swipesPerformed,
+          );
+          if (!shouldContinueScrollResolution(finalSnapshotState.resolution.status)) {
+            return {
+              outcome:
+                finalSnapshotState.resolution.status === "resolved" ? "resolved" : "stopped",
+              state: finalSnapshotState,
+            };
+          }
+          return { outcome: "max_swipes", state: finalSnapshotState };
+        }
+      }
       return {
         outcome: "max_swipes",
         state: snapshotState,
@@ -701,6 +724,11 @@ export async function runUiScrollResolveLoop(
         },
       };
     }
+
+    // 滑动命令返回后，惯性滚动（fling）还在进行中。
+    // 等待动画完全停止、View 层级更新后再 capture 下一次 UI 快照。
+    // Android RecyclerView/ListView 的惯性滚动 + 视图回收需要较长时间。
+    await delay(2000);
 
     swipesPerformed += 1;
   }

@@ -168,6 +168,7 @@ export async function runAndroidToolProbe(): Promise<void> {
     for (const text of candidates) {
       const result = await invoke(toolName, buildInput(text));
       last = result;
+      await stabilize(500); // 每次尝试后等待动画稳定
       if (result.status === "success" || result.status === "partial") return push(toolName, result, `${notesPrefix} text=${text}`);
     }
     return push(toolName, last ?? { status: "failed" }, `${notesPrefix} text=${candidates[candidates.length - 1]}`);
@@ -180,10 +181,12 @@ export async function runAndroidToolProbe(): Promise<void> {
   ): Promise<ToolResultLike> => {
     for (const text of textCandidates) {
       const result = await invoke(toolName, buildInput({ text }));
+      await stabilize(500); // 每次尝试后等待动画稳定
       if (result.status === "success" || result.status === "partial") return push(toolName, result, `${notesPrefix} text=${text}`);
     }
     for (const contentDesc of contentDescCandidates) {
       const result = await invoke(toolName, buildInput({ contentDesc }));
+      await stabilize(500); // 每次尝试后等待动画稳定
       if (result.status === "success" || result.status === "partial") return push(toolName, result, `${notesPrefix} content-desc=${contentDesc}`);
     }
     return push(toolName, { status: "failed" }, `${notesPrefix} text=${textCandidates[textCandidates.length - 1]}`);
@@ -196,27 +199,41 @@ export async function runAndroidToolProbe(): Promise<void> {
   // 3. goback()         — press_back 回退（通用兜底）
   // ───────────────────────────────────────────────────────────────
   const scroll_to_top = async () => {
-    await invoke("scroll_and_resolve_ui_target", {
+    log("→ calling scroll_to_top");
+    const result = await invoke("scroll_and_resolve_ui_target", {
       sessionId, platform, runnerProfile, deviceId,
-      text: "Airplane mode", maxSwipes: 5, swipeDirection: "down", limit: 1,
+      text: "Airplane mode", maxSwipes: 3, swipeDirection: "down", swipeDurationMs: 500, limit: 1,
     });
-    await stabilize(1000);
+    // 滚动动画需要更长时间稳定，等待所有惯性滚动停止
+    await stabilize(4000);
+    // 验证：等待 Wi-Fi 再次可见（确认回到顶部）
+    await invoke("wait_for_ui", {
+      sessionId, platform, runnerProfile, deviceId,
+      text: "Wi-Fi", timeoutMs: 5000, intervalMs: 1000, waitUntil: "visible",
+    });
+    return result;
   };
 
   const tap_cancel = async () => {
-    await invoke("tap_element", {
+    log("→ calling tap_cancel");
+    const result = await invoke("tap_element", {
       sessionId, platform, runnerProfile, deviceId,
       text: "Cancel", limit: 1,
     });
-    await stabilize(2000);
+    // Cancel 点击后页面转场动画需要等待
+    await stabilize(3000);
+    return result;
   };
 
   const goback = async () => {
-    await invoke("execute_intent", {
-      sessionId, platform, runnerProfile, deviceId, appId,
-      intent: "go back", actionType: "press_back",
+    log("→ calling goback");
+    const result = await invoke("navigate_back", {
+      sessionId, platform, runnerProfile, deviceId,
+      target: "system",
     });
-    await stabilize(1500);
+    // 返回动画需要等待
+    await stabilize(3000);
+    return result;
   };
 
     // ───────────────────────────────────────────────────────────────
@@ -227,6 +244,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   // ───────────────────────────────────────────────────────────────
   // NOTE: relaunch is no longer used; kept for reference.
   const _relaunch_unused = async () => {
+    log("→ calling relaunch app");
     await invoke("terminate_app", {
       sessionId, platform, runnerProfile, deviceId, appId,
     });
@@ -250,10 +268,50 @@ export async function runAndroidToolProbe(): Promise<void> {
 
   // ── Step 2 ─────────────────────────────────────────────────────
   logStep("launch_app — 打开 Settings 首页");
+  // 先检测 Settings app 是否已在运行（通过 dumpsys activity 检查）
+  let isAppRunning = false;
+  try {
+    // 方法 1：尝试获取 session 状态
+    try {
+      const sessionState = await invoke("get_session_state", { sessionId }) as { currentScreen?: { topActivity?: string } };
+      if (sessionState?.currentScreen?.topActivity?.includes("settings")) {
+        isAppRunning = true;
+        log(`    检测到 Settings 已在运行 (session topActivity: ${sessionState.currentScreen.topActivity})`);
+      }
+    } catch {
+      // session 未创建或其他错误，继续用方法 2
+    }
+
+    // 方法 2：如果 session 检测不确定，直接用 adb 检查
+    if (!isAppRunning) {
+      const { execFile } = await import("child_process");
+      const dumpsysResult = await new Promise<string>((resolve) => {
+        execFile("adb", ["-s", deviceId, "shell", "dumpsys", "activity", "top"], { timeout: 5000 }, (err, stdout) => {
+          resolve(err ? "" : stdout);
+        });
+      });
+      isAppRunning = dumpsysResult.includes("com.android.settings");
+      if (isAppRunning) {
+        log("    检测到 Settings 已在运行 (adb dumpsys)");
+      }
+    }
+  } catch (err) {
+    log(`    无法检测 app 状态，将执行 cold start: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (isAppRunning) {
+    // App 已在运行：terminate + relaunch 确保干净的首页状态
+    log("    Settings 已在运行，执行 relaunch (force-stop + launch)...");
+    await invoke("terminate_app", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+    });
+    await stabilize(500);
+  }
+
   push("launch_app", await invoke("launch_app", {
     sessionId, platform, runnerProfile, deviceId, appId,
     launchUrl: "android.settings.SETTINGS",
-  }), "open Android Settings");
+  }), isAppRunning ? "relaunch Android Settings (was running)" : "launch Android Settings (cold start)");
 
   await stabilize();
 
@@ -277,6 +335,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   const cdResult1 = await invoke("resolve_ui_target", {
     sessionId, platform, runnerProfile, deviceId, contentDesc: "Bluetooth, On", limit: 1,
   });
+  await stabilize(500); // 等待 UI 查询稳定
   if (cdResult1.status === "success") {
     push("resolve_ui_target", cdResult1, "resolve content-desc=Bluetooth, On");
   } else {
@@ -290,12 +349,29 @@ export async function runAndroidToolProbe(): Promise<void> {
   // ── goback ───────────────────────────────────────────────────
   // await goback();
 
-  // ── Step 5: scroll_and_resolve_ui_target ──────────────────────
-  logStep("scroll_and_resolve_ui_target — 滑动找 About phone");
+  // ── Step 5: scroll_only + wait_for_ui + resolve_ui_target ────
+  logStep("scroll_only — 滑动 3 次");
+  push("scroll_only", await invoke("scroll_only", {
+    sessionId, platform, runnerProfile, deviceId,
+    count: 3, swipeDirection: "up", swipeDurationMs: 500, settleDelayMs: 2000,
+  }), "scroll 3 times");
+
+  // 额外等待确保 View 层级完全更新
+  await stabilize(2000);
+
+  // 验证：先 wait_for_ui 确认 About phone 可见，再 resolve
+  logStep("wait_for_ui — 等待 About phone 可见");
+  const aboutWaitResult = await invoke("wait_for_ui", {
+    sessionId, platform, runnerProfile, deviceId,
+    text: "About phone", timeoutMs: 3000, intervalMs: 500, waitUntil: "visible",
+  });
+  log(`    ← wait_for_ui About phone: ${aboutWaitResult.status}`);
+
+  logStep("resolve_ui_target — 解析 About phone");
   await tryTextSelector(
-    "scroll_and_resolve_ui_target", "scroll resolve",
+    "resolve_ui_target", "resolve",
     ["About phone", "关于手机", "System", "系统"],
-    (text) => ({ sessionId, platform, runnerProfile, deviceId, text, maxSwipes: 5, swipeDirection: "up", swipeDurationMs: 400, limit: 1 }),
+    (text) => ({ sessionId, platform, runnerProfile, deviceId, text, limit: 1 }),
   );
 
   // ── scroll_to_top ────────────────────────────────────────────
@@ -307,6 +383,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   const tapCdResult = await invoke("tap_element", {
     sessionId, platform, runnerProfile, deviceId, contentDesc: "Search settings", limit: 1,
   });
+  await stabilize(1000); // 点击后等待页面转场动画
   if (tapCdResult.status === "success") {
     push("tap_element", tapCdResult, "tap content-desc=Search settings");
   } else {
@@ -325,7 +402,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   // 验证：确保回到 Settings 首页
   await invoke("wait_for_ui", {
     sessionId, platform, runnerProfile, deviceId,
-    text: "Wi-Fi", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
+    text: "Wi-Fi", timeoutMs: 5000, intervalMs: 1500, waitUntil: "visible",
   });
 
   // ── Step 7: type_into_element ─────────────────────────────────
@@ -334,6 +411,8 @@ export async function runAndroidToolProbe(): Promise<void> {
     sessionId, platform, runnerProfile, deviceId,
     className: "android.widget.EditText", value: "wifi", limit: 1,
   }), "type into edit text");
+  // 输入后等待键盘弹出和搜索结果渲染
+  await stabilize(2000);
 
   // ── tap_cancel ───────────────────────────────────────────────
   // 搜索结果页点击 Cancel 按钮退出搜索，回到 Settings 首页
@@ -342,7 +421,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   // 验证：确保回到 Settings 首页（Wi-Fi 可见）
   await invoke("wait_for_ui", {
     sessionId, platform, runnerProfile, deviceId,
-    text: "Wi-Fi", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
+    text: "Wi-Fi", timeoutMs: 5000, intervalMs: 1500, waitUntil: "visible",
   });
 
   // ── Step 8: execute_intent ────────────────────────────────────
@@ -375,6 +454,11 @@ export async function runAndroidToolProbe(): Promise<void> {
       { intent: "tap Bluetooth", actionType: "tap_element", contentDesc: "Bluetooth, On" },
     ],
   }), "run multi-step task");
+
+  // ── goback ───────────────────────────────────────────────────
+  // complete_task 点击 Bluetooth 后会停留在 Bluetooth 子页面，必须先回退
+  // 否则 recover_to_known_state 会在错误的页面上下文中执行
+  await goback();
 
   // ═══════════════════════════════════════════════════════════════
   // Phase 3: Recovery / diagnosis

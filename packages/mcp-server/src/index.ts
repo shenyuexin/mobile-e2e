@@ -77,6 +77,7 @@ import { resolveUiTarget } from "./tools/resolve-ui-target.js";
 import { resumeInterruptedAction } from "./tools/resume-interrupted-action.js";
 import { runFlow } from "./tools/run-flow.js";
 import { scrollAndResolveUiTarget } from "./tools/scroll-and-resolve-ui-target.js";
+import { scrollOnly } from "./tools/scroll-only.js";
 import { scrollAndTapElement } from "./tools/scroll-and-tap-element.js";
 import { startSession } from "./tools/start-session.js";
 import { suggestKnownRemediation } from "./tools/suggest-known-remediation.js";
@@ -718,6 +719,14 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     name: TOOL_NAMES.scrollAndResolveUiTarget,
     description: "Scroll Android or iOS UI containers while trying to resolve a selector to a single actionable target.",
     handler: scrollAndResolveUiTarget,
+    policy: { enforced: true, requiredScopes: ["write"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: TOOL_NAMES.scrollOnly,
+    description: "Perform scroll gestures without target resolution. Use with wait_for_ui and resolve_ui_target for explicit control.",
+    handler: scrollOnly,
     policy: { enforced: true, requiredScopes: ["write"] },
     session: { required: true, requireResolvedSessionContext: true },
     audit: { captureResultEvidence: false },

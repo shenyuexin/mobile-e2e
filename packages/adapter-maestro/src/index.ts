@@ -101,6 +101,8 @@ import {
   type ScrollAndTapElementInput,
   type ScrollAndResolveUiTargetData,
   type ScrollAndResolveUiTargetInput,
+  type ScrollOnlyData,
+  type ScrollOnlyInput,
   type IosPerformanceTemplate,
   type InterruptionEvent,
   type InterruptionPolicyRuleV2,
@@ -249,6 +251,7 @@ import {
   resolveUiTargetWithMaestroTool,
   reasonCodeForWaitTimeout,
   scrollAndResolveUiTargetWithMaestroTool,
+  scrollOnlyWithMaestroTool,
   scrollAndTapElementWithMaestroTool,
   tapElementWithMaestroTool,
   tapWithMaestroTool,
@@ -703,6 +706,10 @@ export async function waitForUiWithMaestro(input: WaitForUiInput): Promise<ToolR
 
 export async function scrollAndResolveUiTargetWithMaestro(input: ScrollAndResolveUiTargetInput): Promise<ToolResult<ScrollAndResolveUiTargetData>> {
   return scrollAndResolveUiTargetWithMaestroTool(input);
+}
+
+export async function scrollOnlyWithMaestro(input: ScrollOnlyInput): Promise<ToolResult<ScrollOnlyData>> {
+  return scrollOnlyWithMaestroTool(input);
 }
 
 export async function tapWithMaestro(input: TapInput): Promise<ToolResult<TapData>> {
