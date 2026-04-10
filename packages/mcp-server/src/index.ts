@@ -717,7 +717,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
   }),
   defineToolDescriptor({
     name: TOOL_NAMES.scrollAndResolveUiTarget,
-    description: "Scroll Android or iOS UI containers while trying to resolve a selector to a single actionable target.",
+    description: "Scroll Android UI containers while trying to resolve a selector to a single actionable target. iOS: use scroll_only → wait_for_ui → resolve_ui_target instead.",
     handler: scrollAndResolveUiTarget,
     policy: { enforced: true, requiredScopes: ["write"] },
     session: { required: true, requireResolvedSessionContext: true },
@@ -733,7 +733,7 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
   }),
   defineToolDescriptor({
     name: TOOL_NAMES.scrollAndTapElement,
-    description: "Scroll Android or iOS UI containers until a target resolves, then tap the resolved element.",
+    description: "Scroll Android UI containers until a target resolves, then tap the resolved element. iOS: use scroll_only → wait_for_ui → tap_element instead.",
     handler: scrollAndTapElement,
     policy: { enforced: true, requiredScopes: ["write"] },
     session: { required: true, requireResolvedSessionContext: true },

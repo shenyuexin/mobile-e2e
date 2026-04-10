@@ -26,12 +26,14 @@
 
 - wait_for_ui
 - resolve_ui_target
-- scroll_and_resolve_ui_target
+- scroll_only (iOS: explicit swipe control before wait_for_ui/resolve_ui_target)
 - tap_element
 - type_into_element
 - execute_intent
 - perform_action_with_evidence
 - complete_task
+
+> Note: `scroll_and_resolve_ui_target` is Android-only. On iOS, use `scroll_only → wait_for_ui → resolve_ui_target`.
 
 ### Recovery / diagnosis
 

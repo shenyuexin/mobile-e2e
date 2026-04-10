@@ -28,6 +28,7 @@ import {
   reasonCodeForResolutionStatus,
   resolveFirstTapTarget,
   shouldAbortWaitForUiAfterReadFailure,
+  buildScrollOnlySwipeCoordinates,
 } from "../src/ui-model.ts";
 import { buildResolutionNextSuggestions } from "../src/ui-tools.ts";
 import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, explainLastFailureWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, navigateBackWithMaestro, performActionWithEvidenceWithMaestro, rankFailureCandidatesWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetInterruptionGuardTestHooksForTesting, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, scrollOnlyWithMaestro, setInterruptionGuardTestHooksForTesting, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
@@ -823,6 +824,105 @@ test("scrollOnlyWithMaestro previews swipe-only dry-run semantics", async () => 
   assert.equal(result.data.gestureApplied.mode, "default");
   assert.equal(result.data.gestureApplied.direction, "up");
   assert.ok(result.nextSuggestions[0]?.includes("Dry-run"), `nextSuggestion should reference dry-run, got: ${result.nextSuggestions[0]}`);
+});
+
+test("scrollOnlyWithMaestro rejects missing gesture", async () => {
+  // @ts-expect-error gesture is required but we test the validation path
+  const result = await scrollOnlyWithMaestro({
+    sessionId: "test-no-gesture",
+    platform: "android",
+    count: 1,
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, "CONFIGURATION_ERROR");
+  assert.ok(result.nextSuggestions[0]?.includes("gesture is required"));
+});
+
+test("scrollOnlyWithMaestro rejects invalid ratio", async () => {
+  const result = await scrollOnlyWithMaestro({
+    sessionId: "test-bad-ratio",
+    platform: "android",
+    gesture: { direction: "up", startRatio: 0.5, endRatio: 1.5 },
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, "CONFIGURATION_ERROR");
+  assert.ok(result.nextSuggestions[0]?.includes("endRatio must be between 0 and 1"));
+});
+
+test("scrollOnlyWithMaestro rejects partial ratio (startRatio only)", async () => {
+  const result = await scrollOnlyWithMaestro({
+    sessionId: "test-partial-ratio",
+    platform: "android",
+    gesture: { direction: "up", startRatio: 0.5 },
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.reasonCode, "CONFIGURATION_ERROR");
+  assert.ok(result.nextSuggestions[0]?.includes("Both startRatio and endRatio must be provided together"));
+});
+
+test("scrollOnlyWithMaestro dry-run with precision ratios", async () => {
+  const result = await scrollOnlyWithMaestro({
+    sessionId: "test-precision-dry-run",
+    platform: "android",
+    gesture: { direction: "up", startRatio: 0.82, endRatio: 0.34 },
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.data.gestureApplied.mode, "precision");
+  assert.equal(result.data.gestureApplied.direction, "up");
+  assert.equal(result.data.gestureApplied.startRatio, 0.82);
+  assert.equal(result.data.gestureApplied.endRatio, 0.34);
+  assert.ok(result.nextSuggestions[0]?.includes("startRatio=0.82"));
+});
+
+test("scrollOnlyWithMaestro dry-run with horizontal left gesture", async () => {
+  const result = await scrollOnlyWithMaestro({
+    sessionId: "test-left-dry-run",
+    platform: "android",
+    gesture: { direction: "left" },
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.data.gestureApplied.direction, "left");
+  assert.equal(result.data.gestureApplied.mode, "default");
+});
+
+test("scrollOnlyWithMaestro dry-run with horizontal right + precision", async () => {
+  const result = await scrollOnlyWithMaestro({
+    sessionId: "test-right-precision",
+    platform: "android",
+    gesture: { direction: "right", startRatio: 0.1, endRatio: 0.9 },
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.data.gestureApplied.direction, "right");
+  assert.equal(result.data.gestureApplied.mode, "precision");
+  assert.equal(result.data.gestureApplied.startRatio, 0.1);
+  assert.equal(result.data.gestureApplied.endRatio, 0.9);
+});
+
+test("buildScrollOnlySwipeCoordinates generates correct geometry", () => {
+  const coords = buildScrollOnlySwipeCoordinates([], "up", 250);
+  assert.ok(coords.start.y > coords.end.y, "up: start y should be below end y");
+  assert.equal(coords.start.x, coords.end.x, "up: x should be centered");
+
+  const leftCoords = buildScrollOnlySwipeCoordinates([], "left", 250);
+  assert.ok(leftCoords.start.x > leftCoords.end.x, "left: start x should be right of end x");
+  assert.equal(leftCoords.start.y, leftCoords.end.y, "left: y should be centered");
+
+  const rightCoords = buildScrollOnlySwipeCoordinates([], "right", 250);
+  assert.ok(rightCoords.start.x < rightCoords.end.x, "right: start x should be left of end x");
+
+  const precisionCoords = buildScrollOnlySwipeCoordinates([], "up", 250, 0.8, 0.3);
+  assert.ok(precisionCoords.start.y > precisionCoords.end.y, "precision up: start below end");
 });
 
 test("buildCapabilityProfile stays honest across Android and iOS UI action support", () => {
