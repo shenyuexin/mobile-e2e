@@ -64,6 +64,7 @@ function buildAndroidToolCapabilities(): ToolCapability[] {
     buildToolCapability(TOOL_NAMES.inspectUi, FULL, "Android UI hierarchy capture is fully supported."),
     buildToolCapability(TOOL_NAMES.queryUi, FULL, "Android UI query filtering is fully supported."),
     buildToolCapability(TOOL_NAMES.resolveUiTarget, FULL, "Android target resolution is fully supported."),
+    buildToolCapability(TOOL_NAMES.scrollOnly, FULL, "Android standalone scroll gestures are fully supported when you want explicit control before wait_for_ui or resolve_ui_target."),
     buildToolCapability(TOOL_NAMES.scrollAndResolveUiTarget, FULL, "Android scroll-assisted target resolution is fully supported."),
     buildToolCapability(TOOL_NAMES.installApp, FULL, "Android app installation is supported."),
     buildToolCapability(TOOL_NAMES.launchApp, FULL, "Android app launch is supported."),
@@ -104,6 +105,7 @@ function buildIosToolCapabilities(): ToolCapability[] {
     buildToolCapability(TOOL_NAMES.inspectUi, CONDITIONAL, `iOS hierarchy capture uses axe describe-ui (simulators) or WDA /source (physical devices). Query and action parity is full for simulators with axe, partial for physical devices. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
     buildToolCapability(TOOL_NAMES.queryUi, FULL, "iOS query_ui filters captured hierarchy nodes through axe-backed hierarchy (simulators) or WDA /source (physical devices)."),
     buildToolCapability(TOOL_NAMES.resolveUiTarget, FULL, "iOS target resolution uses axe-backed hierarchy for simulators and WDA /source for physical devices."),
+    buildToolCapability(TOOL_NAMES.scrollOnly, FULL, "iOS standalone scroll gestures are supported for explicit swipe control before wait_for_ui or resolve_ui_target."),
     buildToolCapability(TOOL_NAMES.scrollAndResolveUiTarget, FULL, "iOS scroll-assisted target resolution uses axe swipe for simulators and WDA drag API for physical devices."),
     buildToolCapability(TOOL_NAMES.installApp, FULL, "iOS simulator app installation is supported."),
     buildToolCapability(TOOL_NAMES.launchApp, FULL, "iOS simulator app launch is supported."),
@@ -182,7 +184,7 @@ export function buildCapabilityProfile(platform: Platform, runnerProfile: Runner
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.appLifecycle, [TOOL_NAMES.installApp, TOOL_NAMES.launchApp, TOOL_NAMES.terminateApp, TOOL_NAMES.resetAppState], "Install, launch, terminate, and reset application workflows."),
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.artifactsAndDiagnostics, [TOOL_NAMES.takeScreenshot, TOOL_NAMES.recordScreen, TOOL_NAMES.getLogs, TOOL_NAMES.getCrashSignals, TOOL_NAMES.collectDebugEvidence, TOOL_NAMES.collectDiagnostics, TOOL_NAMES.measureAndroidPerformance, TOOL_NAMES.measureIosPerformance], "Evidence capture, diagnostics collection, and lightweight performance analysis tools."),
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.uiInspection, [TOOL_NAMES.inspectUi, TOOL_NAMES.queryUi, TOOL_NAMES.resolveUiTarget, TOOL_NAMES.waitForUi, TOOL_NAMES.scrollAndResolveUiTarget], "Hierarchy capture, querying, target resolution, and wait logic."),
-      summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.uiActions, [TOOL_NAMES.tap, TOOL_NAMES.tapElement, TOOL_NAMES.typeText, TOOL_NAMES.typeIntoElement, TOOL_NAMES.navigateBack], "Coordinate and element-level UI action tooling including back navigation."),
+      summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.uiActions, [TOOL_NAMES.tap, TOOL_NAMES.tapElement, TOOL_NAMES.typeText, TOOL_NAMES.typeIntoElement, TOOL_NAMES.scrollOnly, TOOL_NAMES.navigateBack], "Coordinate, text, and standalone scroll action tooling including back navigation."),
     ],
   };
 }

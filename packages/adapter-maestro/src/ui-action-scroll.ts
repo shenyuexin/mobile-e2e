@@ -656,18 +656,6 @@ export async function scrollOnlyWithMaestroTool(
   let lastExitCode: number | null = null;
 
   for (let i = 0; i < count; i++) {
-    // For each swipe: capture current UI → build swipe command → execute → wait for settle
-    let captureCommand: string[];
-    let readCommand: string[];
-    if (platform === "android") {
-      ({ dumpCommand: captureCommand, readCommand } = buildAndroidUiDumpCommands(deviceId));
-    } else {
-      // iOS: use preview capture command (just need to trigger UI update)
-      captureCommand = runtimeHooks.buildHierarchyCapturePreviewCommand(deviceId);
-      readCommand = [];
-    }
-
-    // Build swipe command
     const swipe = buildScrollSwipeCoordinates([], swipeDirection, swipeDurationMs);
     const swipeCommand = runtimeHooks.buildSwipeCommand(deviceId, swipe);
 
@@ -682,7 +670,7 @@ export async function scrollOnlyWithMaestroTool(
       break;
     }
 
-    commandHistory.push([...(Array.isArray(captureCommand) ? captureCommand : [captureCommand]), ...(Array.isArray(readCommand) ? readCommand : [readCommand]), ...(Array.isArray(swipeCommand) ? swipeCommand : [swipeCommand])]);
+    commandHistory.push([...swipeCommand]);
     lastExitCode = execution.execution?.exitCode ?? 0;
     swipesPerformed += 1;
 
@@ -715,4 +703,3 @@ export async function scrollOnlyWithMaestroTool(
         : ["Android swipe failed. Check device state and retry."],
   };
 }
-

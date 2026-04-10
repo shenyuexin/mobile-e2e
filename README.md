@@ -206,7 +206,7 @@ Tool registry/signature dispatch live in `packages/mcp-server/src/server.ts`, wh
 
 ## Complete MCP Tool Catalog (Current)
 
-The server currently exposes **62 tools**. For AI agents, this is the current tool surface.
+The server currently exposes **63 tools**. For AI agents, this is the current tool surface.
 
 ### 1) Session & lifecycle
 
@@ -222,7 +222,7 @@ The server currently exposes **62 tools**. For AI agents, this is the current to
 
 ### 4) UI perception, targeting, and interaction
 
-`inspect_ui`, `query_ui`, `resolve_ui_target`, `scroll_and_resolve_ui_target`, `wait_for_ui`, `tap`, `tap_element`, `scroll_and_tap_element`, `type_text`, `type_into_element`, `navigate_back`
+`inspect_ui`, `query_ui`, `resolve_ui_target`, `scroll_only`, `scroll_and_resolve_ui_target`, `wait_for_ui`, `tap`, `tap_element`, `scroll_and_tap_element`, `type_text`, `type_into_element`, `navigate_back`
 
 ### 5) Evidence, observability, and diagnostics
 
@@ -372,4 +372,4 @@ If this project helps your team, you can support it by:
 
 Donation note:
 
-- [![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/shenyuexin) [paypal.me/shenyuexin](https://paypal.me/shenyuexin)
+- [![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/shenyuexin)

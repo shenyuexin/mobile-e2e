@@ -71,6 +71,7 @@ test("createServer lists newly added UI tools", () => {
   assert.ok(tools.includes("query_ui"));
   assert.ok(tools.includes("resolve_ui_target"));
   assert.ok(tools.includes("wait_for_ui"));
+  assert.ok(tools.includes("scroll_only"));
   assert.ok(tools.includes("scroll_and_resolve_ui_target"));
   assert.ok(tools.includes("scroll_and_tap_element"));
   assert.ok(tools.includes("tap_element"));
@@ -118,6 +119,7 @@ test("server invoke returns capability discovery profiles", async () => {
   assert.equal(result.reasonCode, "OK");
   assert.equal(result.data.capabilities.platform, "ios");
   assert.equal(result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "full");
+  assert.equal(result.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "scroll_only")?.supportLevel, "full");
   assert.equal(result.data.capabilities.ocrFallback?.deterministicFirst, true);
   assert.equal(result.data.capabilities.ocrFallback?.hostRequirement, "darwin");
   assert.equal(Array.isArray(result.data.capabilities.ocrFallback?.configuredProviders), true);
@@ -1198,6 +1200,35 @@ test("server invoke denies tap under a read-only session policy", async () => {
       platform: "android",
       x: 10,
       y: 20,
+      dryRun: true,
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.reasonCode, "POLICY_DENIED");
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
+});
+
+test("server invoke denies scroll_only under a read-only session policy", async () => {
+  const server = createServer();
+  const sessionId = `server-read-only-scroll-${Date.now()}`;
+  await cleanupSessionArtifact(sessionId);
+
+  try {
+    const startResult = await server.invoke("start_session", {
+      sessionId,
+      platform: "android",
+      deviceId: buildTestDeviceId(sessionId),
+      profile: "phase1",
+      policyProfile: "read-only",
+    });
+    assert.equal(startResult.status, "success");
+
+    const result = await server.invoke("scroll_only", {
+      sessionId,
+      platform: "android",
+      count: 1,
       dryRun: true,
     });
 

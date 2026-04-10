@@ -330,6 +330,9 @@ export async function replayLastStablePathWithMaestro(
     ? deriveReplayValueFromStableRecord(stableRecord.outcome)
     : "medium";
 
+  // Stabilize before replay: wait for device state to settle
+  await new Promise((r) => setTimeout(r, 2000));
+
   const replayed = await deps.performActionWithEvidenceWithMaestro({
     sessionId: input.sessionId,
     platform,

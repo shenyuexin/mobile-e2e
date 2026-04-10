@@ -189,7 +189,7 @@ test("runUiScrollResolveLoop reports swipe failures with last snapshot state", a
   assert.equal(outcome.state.exitCode, 13);
 });
 
-test("runUiScrollResolveLoop returns max_swipes with off-screen resolution state", async () => {
+test("runUiScrollResolveLoop returns max_swipes with off-screen resolution state after final recapture", async () => {
   const offScreenMatch = {
     node: {
       text: "Continue",
@@ -229,7 +229,7 @@ test("runUiScrollResolveLoop returns max_swipes with off-screen resolution state
   }
   assert.equal(outcome.state.resolution.status, "off_screen");
   assert.equal(outcome.state.swipesPerformed, 0);
-  assert.deepEqual(outcome.state.commandHistory, [["capture"]]);
+  assert.deepEqual(outcome.state.commandHistory, [["capture"], ["capture"]]);
 });
 
 test("runUiScrollResolveLoop keeps a single off-screen match as off_screen instead of resolved", async () => {
