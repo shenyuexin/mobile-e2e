@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,15 @@ import { buildDeviceLeaseRecordRelativePath, buildSessionRecordRelativePath } fr
 import { createServer } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+
+function isAdbAvailable(): boolean {
+  try {
+    const result = spawnSync("adb", ["--version"], { timeout: 5000 });
+    return result.error === undefined;
+  } catch {
+    return false;
+  }
+}
 
 function buildTestDeviceId(sessionId: string): string {
   return `${sessionId}-device`;
@@ -115,7 +125,7 @@ test("compare_visual_baseline returns no-baseline response when none exists", as
 
 // ── capture_element_screenshot ─────────────────────────────────────────────
 
-test("capture_element_screenshot returns element bounds and screenshot paths", async () => {
+test("capture_element_screenshot returns element bounds and screenshot paths", { skip: !isAdbAvailable() ? "adb not available in CI" : false }, async () => {
   const sessionId = `element-screenshot-${Date.now()}`;
   const server = createServer();
   await cleanupSessionArtifact(sessionId);
@@ -145,7 +155,7 @@ test("capture_element_screenshot returns element bounds and screenshot paths", a
   await cleanupSessionArtifact(sessionId);
 });
 
-test("capture_element_screenshot returns error for missing element", async () => {
+test("capture_element_screenshot returns error for missing element", { skip: !isAdbAvailable() ? "adb not available in CI" : false }, async () => {
   const sessionId = `element-not-found-${Date.now()}`;
   const server = createServer();
   await cleanupSessionArtifact(sessionId);
