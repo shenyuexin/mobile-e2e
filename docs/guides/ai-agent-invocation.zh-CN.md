@@ -131,9 +131,10 @@
 
 `scroll_only -> wait_for_ui -> resolve_ui_target`
 
-如果你已经确认“滚动直到目标出现并立即点击”更适合当前场景，再考虑：
+如果你已经确认"滚动直到目标出现并立即点击"更适合当前场景：
 
-`scroll_and_resolve_ui_target -> scroll_and_tap_element`
+- **Android**: `scroll_and_resolve_ui_target` / `scroll_and_tap_element`
+- **iOS**: 不支持 `scroll_and_resolve_ui_target` / `scroll_and_tap_element`。请使用 `scroll_only → wait_for_ui → resolve_ui_target → tap_element` 分步组合。
 
 ### 3.4 对表单或输入框填值
 
@@ -209,7 +210,12 @@
 
 - `tap_element`
 - `type_into_element`
-- `scroll_and_tap_element`
+
+滚动辅助（Android only）：
+
+- `scroll_and_resolve_ui_target` — Android-only
+- `scroll_and_tap_element` — Android-only
+- iOS 回退：`scroll_only → wait_for_ui → resolve_ui_target → tap_element`
 
 后备：
 

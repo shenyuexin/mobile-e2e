@@ -107,6 +107,7 @@ function buildIosToolCapabilities(): ToolCapability[] {
     buildToolCapability(TOOL_NAMES.resolveUiTarget, FULL, "iOS target resolution uses axe-backed hierarchy for simulators and WDA /source for physical devices."),
     buildToolCapability(TOOL_NAMES.scrollOnly, FULL, "iOS standalone scroll gestures are supported for explicit swipe control before wait_for_ui or resolve_ui_target."),
     buildToolCapability(TOOL_NAMES.scrollAndResolveUiTarget, UNSUPPORTED, "scroll_and_resolve_ui_target is Android-only. On iOS, use scroll_only → wait_for_ui → resolve_ui_target instead."),
+    buildToolCapability(TOOL_NAMES.scrollAndTapElement, UNSUPPORTED, "scroll_and_tap_element is Android-only. On iOS, use scroll_only → wait_for_ui → resolve_ui_target → tap_element instead."),
     buildToolCapability(TOOL_NAMES.installApp, FULL, "iOS simulator app installation is supported."),
     buildToolCapability(TOOL_NAMES.launchApp, FULL, "iOS simulator app launch is supported."),
     buildToolCapability(TOOL_NAMES.resetAppState, CONDITIONAL, `iOS simulator app reset is supported with strategy-specific caveats (simctl uninstall/reinstall and keychain reset); physical-device reset remains non-deterministic in the current adapter path and stays platform-dependent. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
