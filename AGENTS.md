@@ -53,12 +53,20 @@ Do not rely on memory or prior sessions for these rules. Re-read the guideline i
 3. Session and policy context must remain auditable.
 4. Failure paths should preserve evidence quality (artifacts/timeline context).
 
+### 3.1) UI Stabilization Timing (Critical)
+
+Every UI-affecting action requires a settle delay before the next action or UI capture. Failure to wait causes `OCR_POST_VERIFY_FAILED`, `NO_MATCH`, and `stateChanged=false` — the tool executed correctly on-device but post-action capture happened before the screen updated.
+
+See [`docs/guides/ui-stabilization-timing.md`](docs/guides/ui-stabilization-timing.md) for the full timing table, root cause analysis, and flow authoring patterns.
+
 ## 4) Recommended Edit Strategy
 
 1. Identify target package boundary first.
 2. Mirror existing naming and file placement conventions.
 3. Update docs near changed behavior (README/docs/tests notes) when behavior changes.
 4. Re-run relevant verification commands before proposing changes.
+
+**When writing flows or automation scripts**: Always insert settle delays between UI-affecting actions. See `docs/guides/ui-stabilization-timing.md`.
 
 ## 5) Canonical References
 
@@ -75,6 +83,7 @@ Use these as source-of-truth references instead of duplicating details in this f
 - `docs/architecture/architecture.md`
 - `docs/architecture/capability-map.md`
 - `docs/architecture/governance-security.md`
+- `docs/guides/ui-stabilization-timing.md` — **UI 稳定时序**：为什么需要等待、各动作推荐时间、Flow 编写最佳实践
 - `tests/README.md`
 
 ### 6.6) Release Doc-Sync Guardrail (README is not always required)

@@ -141,6 +141,7 @@ For MCP tool usage and invocation sequencing after installation, use:
 - [`docs/guides/ai-agent-invocation.zh-CN.md`](docs/guides/ai-agent-invocation.zh-CN.md) — canonical tool-selection and invocation guide
 - [`docs/guides/golden-path.md`](docs/guides/golden-path.md) — first-run closed loop
 - [`docs/guides/flow-generation.md`](docs/guides/flow-generation.md) — record/export/replay topic guide
+- [`docs/guides/ui-stabilization-timing.md`](docs/guides/ui-stabilization-timing.md) — UI stabilization timing: why settle delays matter, per-action timing guide, flow authoring best practices
 
 Why: packed context may omit some files (binary assets, ignored paths, etc.), so final conclusions must be verified against live files.
 
