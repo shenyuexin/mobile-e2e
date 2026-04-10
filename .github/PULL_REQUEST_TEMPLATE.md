@@ -7,6 +7,8 @@
 ## Capability impact
 
 > Required when this PR touches capability-governed paths such as `packages/contracts`, `packages/core`, `packages/adapter-*`, `packages/mcp-server`, `configs/*`, `README*`, or support-boundary docs under `docs/architecture/*` and selected `docs/engineering/*` guides. CI checks these fields for guarded-path PRs.
+>
+> **Local validation**: Before pushing, run `pnpm validate:pr-gate .pr-body.md` (see [Pre-push workflow](#pre-push-workflow) below).
 
 - Capability category: state / action / evidence / diagnosis / recovery / infra-only
 - User-visible or AI-facing behavior change:
@@ -74,3 +76,11 @@ The following remain **reviewer-only** checks:
 - [ ] No low-level helper backflow into `index.ts` and no reverse import that breaks intended module direction
 - [ ] If touching `adapter-maestro` hotspots (`index.ts`/`ui-tools.ts`/`device-runtime.ts`/`recording-runtime.ts`), include line-count delta + boundary justification in PR notes
 - [ ] Scope is focused and reviewable
+
+## Pre-push workflow (for guarded-path PRs)
+
+1. Copy this template: `cp .github/PULL_REQUEST_TEMPLATE.md .pr-body.md`
+2. Fill in all fields (replace placeholder values with actual content)
+3. Validate locally: `pnpm validate:pr-gate .pr-body.md`
+4. Push: the pre-push hook will re-validate `.pr-body.md` automatically
+5. Create PR: `gh pr create --body-file .pr-body.md`

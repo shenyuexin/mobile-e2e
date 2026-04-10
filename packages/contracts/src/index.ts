@@ -217,6 +217,8 @@ export type {
   ScrollAndResolveUiTargetInput,
   ScrollOnlyData,
   ScrollOnlyInput,
+  ScrollOnlyGesture,
+  ScrollOnlyGestureMode,
   Session,
   OrchestrationStepState,
   StateReadiness,

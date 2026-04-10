@@ -2352,7 +2352,7 @@ test("handleRequest supports tools/call alias for iOS type_text dry-run", async 
 });
 
 
-test("handleRequest supports tools/call alias for iOS scroll_and_resolve_ui_target dry-run", async () => {
+test("handleRequest rejects iOS scroll_and_resolve_ui_target (Android-only)", async () => {
   const result = await handleRequest({
     id: 17,
     method: "tools/call",
@@ -2370,14 +2370,10 @@ test("handleRequest supports tools/call alias for iOS scroll_and_resolve_ui_targ
   const typedResult = result as {
     status: string;
     reasonCode: string;
-    data: { supportLevel: string; resolution: { status: string }; commandHistory: string[][] };
   };
 
-  assert.equal(typedResult.status, "partial");
+  assert.equal(typedResult.status, "failed");
   assert.equal(typedResult.reasonCode, "UNSUPPORTED_OPERATION");
-  assert.equal(typedResult.data.supportLevel, "full");
-  assert.equal(typedResult.data.resolution.status, "not_executed");
-  assert.equal(typedResult.data.commandHistory[1]?.includes("swipe"), true);
 });
 
 test("handleRequest supports tools/call alias for start_session", async () => {

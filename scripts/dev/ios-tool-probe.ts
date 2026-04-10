@@ -193,9 +193,9 @@ export async function runIosToolProbe(): Promise<void> {
   // 3. goback()         — app-level back（iOS 不支持 system back）
   // ───────────────────────────────────────────────────────────────
   const scroll_to_top = async () => {
-    await invoke("scroll_and_resolve_ui_target", {
-      sessionId, platform, runnerProfile, deviceId, appId,
-      text: "General", maxSwipes: 5, swipeDirection: "down", limit: 1,
+    await invoke("scroll_only", {
+      sessionId, platform, runnerProfile, deviceId,
+      count: 5, gesture: { direction: "down" }, swipeDurationMs: 400, settleDelayMs: 1000,
     });
     await stabilize(1000);
   };
@@ -255,12 +255,26 @@ export async function runIosToolProbe(): Promise<void> {
     (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, limit: 1 }),
   );
 
-  // ── Step 5: scroll_and_resolve_ui_target ──────────────────────
-  logStep("scroll_and_resolve_ui_target — 滑动找 Developer");
+  // ── Step 5: scroll_only + wait_for_ui + resolve_ui_target (iOS) ─
+  logStep("scroll_only — 滑动找 Developer");
+  await invoke("scroll_only", {
+    sessionId, platform, runnerProfile, deviceId,
+    count: 5, gesture: { direction: "up" }, swipeDurationMs: 400, settleDelayMs: 2000,
+  });
+
+  // 验证：wait_for_ui 确认 Developer 可见，再 resolve
+  logStep("wait_for_ui — 等待 Developer 可见");
+  const devWaitResult = await invoke("wait_for_ui", {
+    sessionId, platform, runnerProfile, deviceId, appId,
+    text: "Developer", timeoutMs: 3000, intervalMs: 500, waitUntil: "visible",
+  });
+  log(`    ← wait_for_ui Developer: ${devWaitResult.status}`);
+
+  logStep("resolve_ui_target — 解析 Developer");
   await tryTextSelector(
-    "scroll_and_resolve_ui_target", "scroll resolve",
+    "resolve_ui_target", "resolve",
     ["Developer", "开发者", "Privacy & Security", "隐私"],
-    (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, maxSwipes: 5, swipeDirection: "up", swipeDurationMs: 400, limit: 1 }),
+    (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, limit: 1 }),
   );
 
   // ── scroll_to_top ────────────────────────────────────────────

@@ -28,6 +28,7 @@
     "validate:bounded-auto-remediation-real-run": "tsx scripts/validate-bounded-auto-remediation-real-run.ts",
     "validate:android-tool-probe": "tsx scripts/dev/android-tool-probe.ts",
     "validate:ios-tool-probe": "tsx scripts/dev/ios-tool-probe.ts",
+    "validate:pr-gate": "node scripts/validate-local-pr-body.mjs",
     "fixtures:ocr:sync": "tsx scripts/sync-ocr-fixtures.ts",
     "fixtures:ocr:check": "tsx scripts/sync-ocr-fixtures.ts --check",
     "skills:export": "tsx scripts/skills/export-canonical-skills.ts",
