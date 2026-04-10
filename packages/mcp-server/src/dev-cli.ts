@@ -1,4 +1,4 @@
-import type { ActionIntent, AndroidPerformancePreset, AndroidReplayOptions, CaptureJsConsoleLogsInput, CaptureJsNetworkEventsInput, CollectDebugEvidenceInput, CollectDiagnosticsInput, CompareAgainstBaselineInput, DescribeCapabilitiesInput, DoctorInput, ExplainLastFailureInput, FindSimilarFailuresInput, GetActionOutcomeInput, GetCrashSignalsInput, GetLogsInput, GetScreenSummaryInput, GetSessionStateInput, InspectUiInput, InstallAppInput, IosPerformanceTemplate, LaunchAppInput, ListDevicesInput, ListJsDebugTargetsInput, MeasureAndroidPerformanceInput, MeasureIosPerformanceInput, PerformActionWithEvidenceInput, Platform, QueryUiInput, RankFailureCandidatesInput, RecordScreenInput, RecoverToKnownStateInput, ReplayLastStablePathInput, RequestManualHandoffInput, ResetAppStateInput, ResetAppStateStrategy, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, ScrollAndTapElementInput, StartSessionInput, SuggestKnownRemediationInput, TapElementInput, TapInput, TerminateAppInput, ToolResult, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
+import type { ActionIntent, AndroidPerformancePreset, AndroidReplayOptions, CaptureJsConsoleLogsInput, CaptureJsNetworkEventsInput, CollectDebugEvidenceInput, CollectDiagnosticsInput, CompareAgainstBaselineInput, DescribeCapabilitiesInput, DoctorInput, ExplainLastFailureInput, FindSimilarFailuresInput, GetActionOutcomeInput, GetCrashSignalsInput, GetLogsInput, GetScreenSummaryInput, GetSessionStateInput, InspectUiInput, InstallAppInput, IosPerformanceTemplate, LaunchAppInput, ListDevicesInput, ListJsDebugTargetsInput, MeasureAndroidPerformanceInput, MeasureIosPerformanceInput, PerformActionWithEvidenceInput, Platform, QueryUiInput, RankFailureCandidatesInput, RecordScreenInput, RecoverToKnownStateInput, ReplayLastStablePathInput, RequestManualHandoffInput, ResetAppStateInput, ResetAppStateStrategy, ResolveUiTargetInput, RunFlowInput, RunnerProfile, ScreenshotInput, ScrollAndResolveUiTargetInput, ScrollAndTapElementInput, ScrollOnlyInput, StartSessionInput, SuggestKnownRemediationInput, TapElementInput, TapInput, TerminateAppInput, ToolResult, TypeTextInput, TypeIntoElementInput, UiScrollDirection, WaitForUiInput, WaitForUiMode } from "@mobile-e2e-mcp/contracts";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { applyContextAlias } from "./cli/context-resolver.js";
@@ -58,6 +58,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let resolveUiTarget = false;
   let scrollAndResolveUiTarget = false;
   let scrollAndTapElement = false;
+  let scrollOnly = false;
   let takeScreenshot = false;
   let suggestKnownRemediation = false;
   let tap = false;
@@ -118,6 +119,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let maxSwipes: number | undefined;
   let swipeDirection: UiScrollDirection | undefined;
   let swipeDurationMs: number | undefined;
+  let gestureDirection: "up" | "down" | "left" | "right" | undefined;
+  let gestureStartRatio: number | undefined;
+  let gestureEndRatio: number | undefined;
+  let settleDelayMs: number | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -218,6 +223,11 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--max-swipes" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 0) maxSwipes = Math.floor(parsed); index += 1; }
     else if (arg === "--swipe-direction" && isUiScrollDirection(nextValue)) { swipeDirection = nextValue; index += 1; }
     else if (arg === "--swipe-duration-ms" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) swipeDurationMs = Math.floor(parsed); index += 1; }
+    else if (arg === "--scroll-only") { scrollOnly = true; }
+    else if (arg === "--gesture-direction" && ["up", "down", "left", "right"].includes(nextValue)) { gestureDirection = nextValue as "up" | "down" | "left" | "right"; index += 1; }
+    else if (arg === "--gesture-start-ratio" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) gestureStartRatio = parsed; index += 1; }
+    else if (arg === "--gesture-end-ratio" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) gestureEndRatio = parsed; index += 1; }
+    else if (arg === "--settle-delay-ms" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 0) settleDelayMs = Math.floor(parsed); index += 1; }
     else if (arg === "--no-context-alias") { useContextAlias = false; }
     else if (arg === "--preset-name" && nextValue && ["quick_debug_ios", "quick_e2e_android", "crash_triage_android"].includes(nextValue)) { presetName = nextValue as PresetName; index += 1; }
   }
@@ -259,6 +269,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     resolveUiTarget,
     scrollAndResolveUiTarget,
     scrollAndTapElement,
+    scrollOnly,
     takeScreenshot,
     suggestKnownRemediation,
     tap,
@@ -323,6 +334,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
     maxSwipes,
     swipeDirection,
     swipeDurationMs,
+    gestureDirection,
+    gestureStartRatio,
+    gestureEndRatio,
+    settleDelayMs,
     platformProvided,
     useContextAlias,
     presetName,
@@ -777,6 +792,39 @@ export async function main(): Promise<void> {
     };
     const result = await server.invoke("resolve_ui_target", resolveInput);
     console.log(JSON.stringify({ tools: server.listTools(), resolveUiTargetResult: result }, null, 2));
+    if (result.status === "failed") process.exitCode = 1;
+    return;
+  }
+  if (cliOptions.scrollOnly) {
+    if (!cliOptions.gestureDirection) {
+      console.error("Error: --gesture-direction is required for --scroll-only. Must be one of: up, down, left, right.");
+      process.exitCode = 1;
+      return;
+    }
+    const gesture: NonNullable<ScrollOnlyInput["gesture"]> = {
+      direction: cliOptions.gestureDirection,
+    };
+    if (cliOptions.gestureStartRatio !== undefined && cliOptions.gestureEndRatio !== undefined) {
+      gesture.startRatio = cliOptions.gestureStartRatio;
+      gesture.endRatio = cliOptions.gestureEndRatio;
+    } else if (cliOptions.gestureStartRatio !== undefined || cliOptions.gestureEndRatio !== undefined) {
+      console.error("Error: --gesture-start-ratio and --gesture-end-ratio must be provided together.");
+      process.exitCode = 1;
+      return;
+    }
+    const scrollOnlyInput: ScrollOnlyInput = {
+      sessionId: cliOptions.sessionId ?? `scroll-only-${Date.now()}`,
+      platform: cliOptions.platform,
+      runnerProfile: cliOptions.runnerProfile,
+      harnessConfigPath: cliOptions.harnessConfigPath,
+      deviceId: cliOptions.deviceId,
+      gesture,
+      swipeDurationMs: cliOptions.swipeDurationMs,
+      settleDelayMs: cliOptions.settleDelayMs,
+      dryRun: cliOptions.dryRun,
+    };
+    const result = await server.invoke("scroll_only", scrollOnlyInput);
+    console.log(JSON.stringify({ tools: server.listTools(), scrollOnlyResult: result }, null, 2));
     if (result.status === "failed") process.exitCode = 1;
     return;
   }

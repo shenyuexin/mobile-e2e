@@ -72,7 +72,6 @@
 - query_ui
 - tap
 - type_text
-- scroll_and_tap_element
 - get_screen_summary
 - get_session_state
 - take_screenshot
