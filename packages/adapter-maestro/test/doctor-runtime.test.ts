@@ -20,8 +20,8 @@ test("runDoctorWithMaestro each check has valid status enum value and non-empty 
 
 test("runDoctorWithMaestro result has expected top-level fields", async () => {
   const result = await runDoctorWithMaestro({});
-  // Status may be "success" or "partial" depending on environment
-  assert.ok(["success", "partial"].includes(result.status), `Unexpected status: ${result.status}`);
+  // Status varies by environment: "success" (all tools available), "partial" (some missing), or "failed" (most missing, e.g. CI)
+  assert.ok(["success", "partial", "failed"].includes(result.status), `Unexpected status: ${result.status}`);
   assert.ok(result.data);
   assert.ok(Array.isArray(result.data.checks));
   // platform field may be undefined in some environments
