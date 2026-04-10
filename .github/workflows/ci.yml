@@ -67,6 +67,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm test:smoke
       - name: Prepare CI metadata artifact (dry-run-smoke)
         if: always()
