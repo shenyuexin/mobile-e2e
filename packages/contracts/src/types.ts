@@ -1786,7 +1786,7 @@ export interface ScrollOnlyGesture {
 }
 
 /** How the scroll_only runtime resolved the gesture input. */
-export type ScrollOnlyGestureMode = "default" | "precision" | "legacy_direction";
+export type ScrollOnlyGestureMode = "default" | "precision";
 
 /** Input for the scroll_only MCP tool — swipe without target resolution. */
 export interface ScrollOnlyInput {

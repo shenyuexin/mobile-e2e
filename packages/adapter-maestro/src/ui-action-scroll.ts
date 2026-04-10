@@ -387,7 +387,7 @@ export async function scrollAndResolveUiTargetWithMaestroTool(
  */
 type NormalizedScrollGesture = {
   direction: "up" | "down" | "left" | "right";
-  mode: "default" | "precision" | "legacy_direction";
+  mode: "default" | "precision";
   startRatio?: number;
   endRatio?: number;
 };
@@ -421,11 +421,11 @@ function normalizeScrollOnlyGesture(input: ScrollOnlyInput): NormalizedScrollGes
   if (hasStart && hasEnd) {
     const s = gesture.startRatio!;
     const e = gesture.endRatio!;
-    if (s <= 0 || s >= 1) {
-      return `startRatio must be between 0 and 1 (exclusive). Got: ${s}.`;
+    if (s < 0 || s > 1) {
+      return `startRatio must be between 0 and 1. Got: ${s}.`;
     }
-    if (e <= 0 || e >= 1) {
-      return `endRatio must be between 0 and 1 (exclusive). Got: ${e}.`;
+    if (e < 0 || e > 1) {
+      return `endRatio must be between 0 and 1. Got: ${e}.`;
     }
     if (s === e) {
       return `startRatio and endRatio must not be equal. Both are ${s}.`;
@@ -478,6 +478,8 @@ export async function scrollOnlyWithMaestroTool(
         supportLevel: "partial",
         gestureApplied: {
           direction: input.gesture?.direction ?? "up",
+          startRatio: undefined,
+          endRatio: undefined,
           mode: "default",
         },
       },

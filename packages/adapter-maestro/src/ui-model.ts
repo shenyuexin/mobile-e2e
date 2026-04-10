@@ -891,5 +891,9 @@ export function buildScrollOnlySwipeCoordinates(
       return { start: { x: right, y: centerY }, end: { x: left, y: centerY }, durationMs };
     case "right":
       return { start: { x: left, y: centerY }, end: { x: right, y: centerY }, durationMs };
+    default: {
+      const _exhaustive: never = direction;
+      throw new Error(`Unknown scroll direction: ${_exhaustive}`);
+    }
   }
 }
