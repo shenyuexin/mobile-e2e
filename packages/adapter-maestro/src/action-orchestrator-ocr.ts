@@ -72,6 +72,18 @@ export function canAttemptOcrFallback(
 ): boolean {
   if (deterministicResult.status === "success") return false;
   if (action.actionType !== ACTION_TYPES.tapElement && action.actionType !== ACTION_TYPES.waitForUi) return false;
+
+  // For tap_element: if the deterministic path already resolved the target
+  // (even with partial post-verification), don't trigger OCR to re-tap.
+  // OCR fallback should only trigger when the element couldn't be found at all.
+  if (action.actionType === ACTION_TYPES.tapElement) {
+    const data = deterministicResult.data as Record<string, unknown> | undefined;
+    const resolution = data?.resolution as { status?: string } | undefined;
+    if (resolution?.status === "resolved" || resolution?.status === "partial_match") {
+      return false;
+    }
+  }
+
   return Boolean(buildOcrTargetText(action));
 }
 
@@ -271,6 +283,10 @@ export async function executeOcrFallback(params: {
         nextSuggestions: tapResult.nextSuggestions,
       };
     }
+
+    // Wait for page transition animation to complete before capturing post-state.
+    // Android activity transitions typically take 300-500ms.
+    await new Promise((r) => setTimeout(r, 1500));
 
     postStateResult = await params.deps.getScreenSummary({
       sessionId: params.input.sessionId,

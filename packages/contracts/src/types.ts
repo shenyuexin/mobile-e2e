@@ -1799,6 +1799,7 @@ export interface ScrollOnlyData {
   swipeDurationMs: number;
   countRequested: number;
   swipesPerformed: number;
+  /** Executed swipe commands only; scroll_only does not imply hierarchy capture evidence. */
   commandHistory: string[][];
   exitCode: number | null;
   supportLevel: "full" | "partial";

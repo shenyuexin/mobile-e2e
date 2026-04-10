@@ -58,6 +58,7 @@ test("buildToolList includes the new UI tools", () => {
   assert.ok(toolNames.includes("measure_ios_performance"));
   assert.ok(toolNames.includes("resolve_ui_target"));
   assert.ok(toolNames.includes("wait_for_ui"));
+  assert.ok(toolNames.includes("scroll_only"));
   assert.ok(toolNames.includes("scroll_and_resolve_ui_target"));
   assert.ok(toolNames.includes("scroll_and_tap_element"));
   assert.ok(toolNames.includes("tap_element"));
@@ -115,6 +116,7 @@ test("handleRequest returns stdio initialize payload", async () => {
   assert.ok(typedResult.tools.some((tool) => tool.name === "reset_app_state"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "suggest_known_remediation"));
   assert.ok(typedResult.tools.some((tool) => tool.name === "wait_for_ui"));
+  assert.ok(typedResult.tools.some((tool) => tool.name === "scroll_only"));
 });
 
 test("handleRequest supports tools/call alias for describe_capabilities", async () => {
@@ -149,6 +151,7 @@ test("handleRequest supports tools/call alias for describe_capabilities", async 
   assert.equal(typedResult.reasonCode, "OK");
   assert.equal(typedResult.data.capabilities.platform, "android");
   assert.equal(typedResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "tap_element")?.supportLevel, "full");
+  assert.equal(typedResult.data.capabilities.toolCapabilities.find((tool) => tool.toolName === "scroll_only")?.supportLevel, "full");
   assert.equal(typedResult.data.capabilities.ocrFallback?.hostRequirement, "darwin");
   assert.equal(Array.isArray(typedResult.data.capabilities.ocrFallback?.configuredProviders), true);
 });
@@ -2486,6 +2489,48 @@ test("handleRequest denies tap under a read-only session policy", async () => {
           platform: "android",
           x: 10,
           y: 20,
+          dryRun: true,
+        },
+      },
+    });
+    const typedResult = result as { status: string; reasonCode: string };
+
+    assert.equal(typedResult.status, "failed");
+    assert.equal(typedResult.reasonCode, "POLICY_DENIED");
+  } finally {
+    await cleanupSessionArtifact(sessionId);
+  }
+});
+
+test("handleRequest denies scroll_only under a read-only session policy", async () => {
+  const sessionId = `stdio-read-only-scroll-${Date.now()}`;
+  await cleanupSessionArtifact(sessionId);
+
+  try {
+    await handleRequest({
+      id: 118,
+      method: "tools/call",
+      params: {
+        name: "start_session",
+        arguments: {
+          sessionId,
+          platform: "android",
+          deviceId: buildTestDeviceId(sessionId),
+          profile: "phase1",
+          policyProfile: "read-only",
+        },
+      },
+    });
+
+    const result = await handleRequest({
+      id: 119,
+      method: "tools/call",
+      params: {
+        name: "scroll_only",
+        arguments: {
+          sessionId,
+          platform: "android",
+          count: 1,
           dryRun: true,
         },
       },

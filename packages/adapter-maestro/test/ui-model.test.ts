@@ -30,7 +30,7 @@ import {
   shouldAbortWaitForUiAfterReadFailure,
 } from "../src/ui-model.ts";
 import { buildResolutionNextSuggestions } from "../src/ui-tools.ts";
-import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, explainLastFailureWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, navigateBackWithMaestro, performActionWithEvidenceWithMaestro, rankFailureCandidatesWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetInterruptionGuardTestHooksForTesting, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, setInterruptionGuardTestHooksForTesting, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
+import { buildCapabilityProfile, buildDiagnosisBriefing, buildLogSummary, buildStateSummaryFromSignals, collectDebugEvidenceWithMaestro, collectDiagnosticsWithMaestro, compareAgainstBaselineWithMaestro, describeCapabilitiesWithMaestro, explainLastFailureWithMaestro, findSimilarFailuresWithMaestro, getActionOutcomeWithMaestro, getCrashSignalsWithMaestro, getLogsWithMaestro, getScreenSummaryWithMaestro, getSessionStateWithMaestro, inspectUiWithMaestro, navigateBackWithMaestro, performActionWithEvidenceWithMaestro, rankFailureCandidatesWithMaestro, recordScreenWithMaestro, recoverToKnownStateWithMaestro, replayLastStablePathWithMaestro, resetAppStateWithMaestro, resetInterruptionGuardTestHooksForTesting, resetOcrFallbackTestHooksForTesting, resolveUiTargetWithMaestro, scrollAndResolveUiTargetWithMaestro, scrollAndTapElementWithMaestro, scrollOnlyWithMaestro, setInterruptionGuardTestHooksForTesting, setOcrFallbackTestHooksForTesting, suggestKnownRemediationWithMaestro, takeScreenshotWithMaestro, tapElementWithMaestro, tapWithMaestro, typeIntoElementWithMaestro, typeTextWithMaestro, waitForUiWithMaestro } from "../src/index.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const ocrFixtureRoot = path.join(repoRoot, "tests", "fixtures", "ocr");
@@ -800,19 +800,40 @@ test("scrollAndResolveUiTargetWithMaestro keeps Android dry-run as not_executed 
   assert.equal(result.data.resolution.status, "not_executed");
 });
 
+test("scrollOnlyWithMaestro previews swipe-only dry-run semantics", async () => {
+  const result = await scrollOnlyWithMaestro({
+    sessionId: "test-scroll-only-dry-run",
+    platform: "android",
+    count: 2,
+    swipeDirection: "up",
+    settleDelayMs: 1500,
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, "OK");
+  assert.equal(result.data.countRequested, 2);
+  assert.equal(result.data.swipesPerformed, 0);
+  assert.deepEqual(result.data.commandHistory, []);
+  assert.equal(result.nextSuggestions[0]?.includes("scroll_only"), true);
+});
+
 test("buildCapabilityProfile stays honest across Android and iOS UI action support", () => {
   const androidProfile = buildCapabilityProfile("android", "phase1");
   const iosProfile = buildCapabilityProfile("ios", "phase1");
 
   assert.equal(androidProfile.toolCapabilities.find((tool) => tool.toolName === "tap_element")?.supportLevel, "full");
+  assert.equal(androidProfile.toolCapabilities.find((tool) => tool.toolName === "scroll_only")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "tap")?.supportLevel, "conditional");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "type_text")?.supportLevel, "conditional");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "tap_element")?.supportLevel, "conditional");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "type_into_element")?.supportLevel, "conditional");
+  assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "scroll_only")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "wait_for_ui")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "scroll_and_resolve_ui_target")?.supportLevel, "full");
   assert.equal(androidProfile.toolCapabilities.find((tool) => tool.toolName === "record_screen")?.supportLevel, "full");
   assert.equal(iosProfile.toolCapabilities.find((tool) => tool.toolName === "reset_app_state")?.supportLevel, "conditional");
+  assert.equal(androidProfile.groups.find((group) => group.groupName === "ui_actions")?.toolNames.includes("scroll_only"), true);
   assert.equal(iosProfile.groups.find((group) => group.groupName === "ui_actions")?.supportLevel, "conditional");
 });
 

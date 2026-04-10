@@ -269,7 +269,7 @@ export function requiredPolicyScopesForTool(toolName: string): string[] {
   if (["type_text", "type_into_element"].includes(toolName)) {
     return ["type"];
   }
-  if (["scroll_and_resolve_ui_target", "scroll_and_tap_element"].includes(toolName)) {
+  if (["scroll_only", "scroll_and_resolve_ui_target", "scroll_and_tap_element"].includes(toolName)) {
     return ["swipe"];
   }
   if (["recover_to_known_state", "replay_last_stable_path"].includes(toolName)) {
