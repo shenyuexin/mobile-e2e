@@ -209,7 +209,7 @@ export async function runIosToolProbe(): Promise<void> {
     log("→ calling scroll_to_top");
     const result = await invoke("scroll_only", {
       sessionId, platform, runnerProfile, deviceId,
-      count: 5, gesture: { direction: "down" }, swipeDurationMs: 400, settleDelayMs: 1000,
+      count: 3, gesture: { direction: "down" }, swipeDurationMs: 400, settleDelayMs: 1000,
     });
     // 滚动动画需要更长时间稳定，等待所有惯性滚动停止
     await stabilize(3000);
