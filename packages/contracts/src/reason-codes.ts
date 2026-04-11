@@ -32,6 +32,7 @@ export const REASON_CODES = {
   networkOfflineTerminal: "NETWORK_OFFLINE_TERMINAL",
   networkAmbiguityUnresolved: "NETWORK_AMBIGUITY_UNRESOLVED",
   timeout: "TIMEOUT",
+  stabilityTimeout: "STABLE_TIMEOUT",
   unsupportedOperation: "UNSUPPORTED_OPERATION",
   visualDiffExceeded: "VISUAL_DIFF_EXCEEDED",
 } as const;

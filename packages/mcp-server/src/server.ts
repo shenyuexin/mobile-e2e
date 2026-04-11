@@ -119,6 +119,8 @@ import type {
   VisualDiffInput,
   WaitForUiData,
   WaitForUiInput,
+  WaitForUiStableData,
+  WaitForUiStableInput,
   EndSessionData,
   ListDevicesData,
   NetworkProbeInput,
@@ -193,6 +195,7 @@ export interface MobileE2EMcpToolContractMap {
   type_into_element: ToolContract<TypeIntoElementInput, TypeIntoElementData>;
   validate_flow: ToolContract<ValidateFlowInput, ValidateFlowData>;
   wait_for_ui: ToolContract<WaitForUiInput, WaitForUiData>;
+  wait_for_ui_stable: ToolContract<WaitForUiStableInput, WaitForUiStableData>;
   end_session: ToolContract<EndSessionInput, EndSessionData>;
   probe_network_readiness: ToolContract<NetworkProbeInput, NetworkProbeData>;
 }

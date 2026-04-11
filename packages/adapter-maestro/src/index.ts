@@ -136,6 +136,8 @@ import {
   type UiScrollDirection,
   type WaitForUiData,
   type WaitForUiInput,
+  type WaitForUiStableData,
+  type WaitForUiStableInput,
   type WaitForUiMode,
   REASON_CODES,
 } from "@mobile-e2e-mcp/contracts";
@@ -259,6 +261,7 @@ import {
   typeIntoElementWithMaestroTool,
   typeTextWithMaestroTool,
   waitForUiWithMaestroTool,
+  waitForUiStableWithMaestro as waitForUiStableWithMaestroImpl,
   navigateBackWithMaestroTool,
 } from "./ui-tools.js";
 import { classifyInterruptionFromSignals } from "./interruption-classifier.js";
@@ -703,6 +706,10 @@ export async function scrollAndTapElementWithMaestro(input: ScrollAndTapElementI
 
 export async function waitForUiWithMaestro(input: WaitForUiInput): Promise<ToolResult<WaitForUiData>> {
   return waitForUiWithMaestroTool(input);
+}
+
+export async function waitForUiStableWithMaestro(input: WaitForUiStableInput): Promise<ToolResult<WaitForUiStableData>> {
+  return waitForUiStableWithMaestroImpl(input);
 }
 
 export async function scrollAndResolveUiTargetWithMaestro(input: ScrollAndResolveUiTargetInput): Promise<ToolResult<ScrollAndResolveUiTargetData>> {

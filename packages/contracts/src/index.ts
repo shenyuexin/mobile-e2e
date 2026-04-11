@@ -259,6 +259,8 @@ export type {
   TypeIntoElementInput,
   WaitForUiData,
   WaitForUiInput,
+  WaitForUiStableData,
+  WaitForUiStableInput,
   WaitForUiMode,
   UiScrollDirection,
   RawRecordedEvent,
