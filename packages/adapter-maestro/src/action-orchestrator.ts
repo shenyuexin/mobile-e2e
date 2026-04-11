@@ -57,6 +57,7 @@ import {
   executeOcrFallback,
 } from "./action-orchestrator-ocr.js";
 import { getScreenSummaryWithMaestro } from "./session-state.js";
+import { hasStateChanged } from "./session-state.js";
 import { tapWithMaestroTool } from "./ui-tools.js";
 import { resolveInterruptionWithMaestro, resumeInterruptedActionWithMaestro, buildInterruptionCheckpoint } from "./interruption-tools.js";
 import { takeScreenshotWithRuntime } from "./device-runtime.js";
@@ -331,7 +332,7 @@ export async function performActionWithEvidenceWithMaestro(
   });
 
   let postStateSummary = postStateResult.data.screenSummary;
-  let stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
+  let stateChanged = hasStateChanged(preStateSummary, postStateSummary);
   const targetResolution = readResolutionSignal(lowLevelResult.data);
   let evidenceDelta = buildActionEvidenceDelta({
     preState: preStateSummary,
@@ -398,7 +399,7 @@ export async function performActionWithEvidenceWithMaestro(
     });
     retryAttemptIndex += 1;
     postStateSummary = retryPostStateResult.data.screenSummary;
-    stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
+    stateChanged = hasStateChanged(preStateSummary, postStateSummary);
     evidenceDelta = buildActionEvidenceDelta({
       preState: preStateSummary,
       postState: postStateSummary,
@@ -505,9 +506,9 @@ export async function performActionWithEvidenceWithMaestro(
       dryRun: input.dryRun,
     });
     refreshedPostStateSummary = refreshedPostStateResult.data.screenSummary;
-    if (JSON.stringify(postStateSummary) !== JSON.stringify(refreshedPostStateSummary)) {
+    if (hasStateChanged(postStateSummary, refreshedPostStateSummary)) {
       postStateSummary = refreshedPostStateSummary;
-      stateChanged = JSON.stringify(preStateSummary) !== JSON.stringify(postStateSummary);
+      stateChanged = hasStateChanged(preStateSummary, postStateSummary);
       evidenceDelta = buildActionEvidenceDelta({
         preState: preStateSummary,
         postState: postStateSummary,
@@ -655,7 +656,7 @@ export async function performActionWithEvidenceWithMaestro(
     stateChanged,
   });
   if (postActionRefreshAttempted) {
-    const refreshSignal = refreshedPostStateSummary && JSON.stringify(postStateResult.data.screenSummary) !== JSON.stringify(refreshedPostStateSummary)
+    const refreshSignal = refreshedPostStateSummary && hasStateChanged(postStateResult.data.screenSummary, refreshedPostStateSummary)
       ? "post_action_refresh_detected_additional_state_change"
       : "post_action_refresh_no_additional_change";
     actionabilityReview.unshift(refreshSignal);

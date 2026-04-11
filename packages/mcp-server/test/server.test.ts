@@ -71,6 +71,7 @@ test("createServer lists newly added UI tools", () => {
   assert.ok(tools.includes("query_ui"));
   assert.ok(tools.includes("resolve_ui_target"));
   assert.ok(tools.includes("wait_for_ui"));
+  assert.ok(tools.includes("wait_for_ui_stable"));
   assert.ok(tools.includes("scroll_only"));
   assert.ok(tools.includes("scroll_and_resolve_ui_target"));
   assert.ok(tools.includes("scroll_and_tap_element"));

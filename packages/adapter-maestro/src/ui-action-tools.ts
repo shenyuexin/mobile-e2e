@@ -1310,7 +1310,8 @@ export async function navigateBackWithMaestroTool(
     let postBackVerified = false;
     let postBackStableAfterMs: number | undefined;
     let postBackPageIdentity: import("@mobile-e2e-mcp/contracts").PageIdentity | undefined;
-    let noMaterialChange = false;
+    let preBackTreeHash: string | undefined;
+    let postBackTreeHash: string | undefined;
 
     if (waitForStable && isSuccess && !dryRun) {
       const { getScreenSummaryWithMaestro } = await import("./session-state.js");
@@ -1323,6 +1324,7 @@ export async function navigateBackWithMaestroTool(
         runnerProfile,
         deviceId,
       });
+      preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
 
       // Wait for UI to stabilize after back
       const stableResult = await waitForUiStableWithMaestro({
@@ -1340,19 +1342,23 @@ export async function navigateBackWithMaestroTool(
           ? { treeHash: stableResult.data.stableFingerprint }
           : undefined;
 
-        // Compare pre/post states
+        // Compare pre/post state tree hashes.
+        // NOTE: matching tree hashes only indicate the visible hierarchy
+        // did not change — back could still have dismissed a keyboard,
+        // changed readiness, or exited the app. Do NOT infer stateChanged
+        // from this alone; let the caller decide.
         const postBackState = await getScreenSummaryWithMaestro({
           sessionId: input.sessionId,
           platform: "android",
           runnerProfile,
           deviceId,
         });
-
-        const preHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
-        const postHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
-        noMaterialChange = preHash === postHash && preHash !== undefined;
+        postBackTreeHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
       }
     }
+
+    const pageTreeHashUnchanged = preBackTreeHash !== undefined
+      && preBackTreeHash === postBackTreeHash;
 
     return {
       status: isSuccess ? "success" : "failed",
@@ -1369,12 +1375,14 @@ export async function navigateBackWithMaestroTool(
         fallbackUsed: false,
         command: command.join(" "),
         exitCode,
-        stateChanged: noMaterialChange ? false : "unknown",
+        stateChanged: "unknown",
         capabilityNote: "KEYEVENT_BACK dispatched. Verify screen transition separately.",
         postBackVerified,
         postBackStableAfterMs,
         postBackPageIdentity,
-        noMaterialChange,
+        pageTreeHashUnchanged,
+        preBackTreeHash,
+        postBackTreeHash,
       },
       nextSuggestions: isSuccess
         ? ["Verify the expected screen transition using get_session_state or inspect_ui."]
@@ -1474,7 +1482,8 @@ async function navigateBackIosWithSelector(
   let postBackVerified = false;
   let postBackStableAfterMs: number | undefined;
   let postBackPageIdentity: import("@mobile-e2e-mcp/contracts").PageIdentity | undefined;
-  let noMaterialChange = false;
+  let preBackTreeHash: string | undefined;
+  let postBackTreeHash: string | undefined;
 
   if (waitForStable && tapResult.status === "success" && !ctx.dryRun) {
     const { getScreenSummaryWithMaestro } = await import("./session-state.js");
@@ -1487,6 +1496,7 @@ async function navigateBackIosWithSelector(
       runnerProfile: ctx.runnerProfile,
       deviceId: ctx.deviceId,
     });
+    preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
 
     // Wait for UI to stabilize after back
     const stableResult = await waitForUiStableWithMaestro({
@@ -1504,19 +1514,23 @@ async function navigateBackIosWithSelector(
         ? { treeHash: stableResult.data.stableFingerprint }
         : undefined;
 
-      // Compare pre/post states to detect if page actually changed
+      // Compare pre/post state tree hashes.
+      // NOTE: matching tree hashes only indicate the visible hierarchy
+      // did not change — back tap could still have dismissed a keyboard,
+      // changed readiness, or failed to transition. Do NOT infer stateChanged
+      // from this alone; let the caller decide.
       const postBackState = await getScreenSummaryWithMaestro({
         sessionId: ctx.sessionId,
         platform: "ios",
         runnerProfile: ctx.runnerProfile,
         deviceId: ctx.deviceId,
       });
-
-      const preHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
-      const postHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
-      noMaterialChange = preHash === postHash && preHash !== undefined;
+      postBackTreeHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
     }
   }
+
+  const pageTreeHashUnchanged = preBackTreeHash !== undefined
+    && preBackTreeHash === postBackTreeHash;
 
   return {
     status: tapResult.status,
@@ -1537,12 +1551,14 @@ async function navigateBackIosWithSelector(
       exitCode: typeof tapResult.data?.exitCode === "number"
         ? tapResult.data.exitCode
         : null,
-      stateChanged: noMaterialChange ? false : "unknown",
+      stateChanged: "unknown",
       capabilityNote: "iOS app back via selector-based back button tap.",
       postBackVerified,
       postBackStableAfterMs,
       postBackPageIdentity,
-      noMaterialChange,
+      pageTreeHashUnchanged,
+      preBackTreeHash,
+      postBackTreeHash,
     },
     nextSuggestions: tapResult.nextSuggestions,
   };

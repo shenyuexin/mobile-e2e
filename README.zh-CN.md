@@ -198,7 +198,7 @@
 
 ### 4）UI 感知、定位与交互
 
-`inspect_ui`、`query_ui`、`resolve_ui_target`、`scroll_only`、`scroll_and_resolve_ui_target`、`wait_for_ui`、`tap`、`tap_element`、`scroll_and_tap_element`、`type_text`、`type_into_element`、`navigate_back`
+`inspect_ui`、`query_ui`、`resolve_ui_target`、`scroll_only`、`scroll_and_resolve_ui_target`、`wait_for_ui`、`wait_for_ui_stable`、`tap`、`tap_element`、`scroll_and_tap_element`、`type_text`、`type_into_element`、`navigate_back`
 
 ### 5）证据、可观测与诊断
 
