@@ -1305,6 +1305,55 @@ export async function navigateBackWithMaestroTool(
     const exitCode = execution.execution?.exitCode ?? null;
     const isSuccess = exitCode === 0;
 
+    // Post-back stabilization (P24-C enhancement for Android)
+    const waitForStable = input.postBackWaitForStable !== false;
+    let postBackVerified = false;
+    let postBackStableAfterMs: number | undefined;
+    let postBackPageIdentity: import("@mobile-e2e-mcp/contracts").PageIdentity | undefined;
+    let noMaterialChange = false;
+
+    if (waitForStable && isSuccess && !dryRun) {
+      const { getScreenSummaryWithMaestro } = await import("./session-state.js");
+      const { waitForUiStableWithMaestro } = await import("./ui-stability.js");
+
+      // Capture pre-back state
+      const preBackState = await getScreenSummaryWithMaestro({
+        sessionId: input.sessionId,
+        platform: "android",
+        runnerProfile,
+        deviceId,
+      });
+
+      // Wait for UI to stabilize after back
+      const stableResult = await waitForUiStableWithMaestro({
+        sessionId: input.sessionId,
+        platform: "android",
+        runnerProfile,
+        deviceId,
+        timeoutMs: input.verificationTimeoutMs ?? 5000,
+      });
+
+      if (stableResult.status === "success") {
+        postBackVerified = true;
+        postBackStableAfterMs = stableResult.data.stableAfterMs;
+        postBackPageIdentity = stableResult.data.stableFingerprint
+          ? { treeHash: stableResult.data.stableFingerprint }
+          : undefined;
+
+        // Compare pre/post states
+        const postBackState = await getScreenSummaryWithMaestro({
+          sessionId: input.sessionId,
+          platform: "android",
+          runnerProfile,
+          deviceId,
+        });
+
+        const preHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
+        const postHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
+        noMaterialChange = preHash === postHash && preHash !== undefined;
+      }
+    }
+
     return {
       status: isSuccess ? "success" : "failed",
       reasonCode: isSuccess ? REASON_CODES.ok : REASON_CODES.adapterError,
@@ -1320,8 +1369,12 @@ export async function navigateBackWithMaestroTool(
         fallbackUsed: false,
         command: command.join(" "),
         exitCode,
-        stateChanged: "unknown",
+        stateChanged: noMaterialChange ? false : "unknown",
         capabilityNote: "KEYEVENT_BACK dispatched. Verify screen transition separately.",
+        postBackVerified,
+        postBackStableAfterMs,
+        postBackPageIdentity,
+        noMaterialChange,
       },
       nextSuggestions: isSuccess
         ? ["Verify the expected screen transition using get_session_state or inspect_ui."]
@@ -1339,6 +1392,8 @@ export async function navigateBackWithMaestroTool(
       startTime,
       selector: input.selector,
       dryRun,
+      postBackWaitForStable: input.postBackWaitForStable,
+      verificationTimeoutMs: input.verificationTimeoutMs,
     });
   }
 
@@ -1401,7 +1456,7 @@ interface IosBackTapContext {
 }
 
 async function navigateBackIosWithSelector(
-  ctx: IosBackTapContext,
+  ctx: IosBackTapContext & { postBackWaitForStable?: boolean; verificationTimeoutMs?: number },
 ): Promise<ToolResult<NavigateBackData>> {
   const tapResult = await tapElementWithMaestroTool({
     sessionId: ctx.sessionId,
@@ -1413,6 +1468,55 @@ async function navigateBackIosWithSelector(
   });
 
   const executedStrategy: BackExecutionPath = "ios_selector_tap";
+
+  // Post-back stabilization (P24-C enhancement)
+  const waitForStable = ctx.postBackWaitForStable !== false;
+  let postBackVerified = false;
+  let postBackStableAfterMs: number | undefined;
+  let postBackPageIdentity: import("@mobile-e2e-mcp/contracts").PageIdentity | undefined;
+  let noMaterialChange = false;
+
+  if (waitForStable && tapResult.status === "success" && !ctx.dryRun) {
+    const { getScreenSummaryWithMaestro } = await import("./session-state.js");
+    const { waitForUiStableWithMaestro } = await import("./ui-stability.js");
+
+    // Capture pre-back state for comparison
+    const preBackState = await getScreenSummaryWithMaestro({
+      sessionId: ctx.sessionId,
+      platform: "ios",
+      runnerProfile: ctx.runnerProfile,
+      deviceId: ctx.deviceId,
+    });
+
+    // Wait for UI to stabilize after back
+    const stableResult = await waitForUiStableWithMaestro({
+      sessionId: ctx.sessionId,
+      platform: "ios",
+      runnerProfile: ctx.runnerProfile,
+      deviceId: ctx.deviceId,
+      timeoutMs: ctx.verificationTimeoutMs ?? 5000,
+    });
+
+    if (stableResult.status === "success") {
+      postBackVerified = true;
+      postBackStableAfterMs = stableResult.data.stableAfterMs;
+      postBackPageIdentity = stableResult.data.stableFingerprint
+        ? { treeHash: stableResult.data.stableFingerprint }
+        : undefined;
+
+      // Compare pre/post states to detect if page actually changed
+      const postBackState = await getScreenSummaryWithMaestro({
+        sessionId: ctx.sessionId,
+        platform: "ios",
+        runnerProfile: ctx.runnerProfile,
+        deviceId: ctx.deviceId,
+      });
+
+      const preHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
+      const postHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
+      noMaterialChange = preHash === postHash && preHash !== undefined;
+    }
+  }
 
   return {
     status: tapResult.status,
@@ -1433,8 +1537,12 @@ async function navigateBackIosWithSelector(
       exitCode: typeof tapResult.data?.exitCode === "number"
         ? tapResult.data.exitCode
         : null,
-      stateChanged: "unknown",
+      stateChanged: noMaterialChange ? false : "unknown",
       capabilityNote: "iOS app back via selector-based back button tap.",
+      postBackVerified,
+      postBackStableAfterMs,
+      postBackPageIdentity,
+      noMaterialChange,
     },
     nextSuggestions: tapResult.nextSuggestions,
   };
