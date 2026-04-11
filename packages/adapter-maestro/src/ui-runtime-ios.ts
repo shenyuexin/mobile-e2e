@@ -145,13 +145,14 @@ export async function verifyResolvedIosPointWithHooks(
     && actual.className === expected.className;
 
   // If the tap succeeded (exitCode 0) but the node doesn't match, the screen likely
-  // changed due to navigation. Treat this as verified — the tap caused a state transition.
+  // changed due to navigation. Report it as not verified so the caller can decide
+  // based on full state comparison rather than silently masking the mismatch.
   if (!verified && actionResult.execution.exitCode === 0) {
     return {
-      verified: true,
+      verified: false,
       command,
       exitCode: actionResult.execution.exitCode,
-      reasonCode: REASON_CODES.ok,
+      reasonCode: REASON_CODES.noMatch,
     };
   }
 
