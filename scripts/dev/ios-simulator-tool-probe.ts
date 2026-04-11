@@ -164,6 +164,12 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
     return result;
   };
 
+  // Wait for UI to stabilize (replaces hard-coded stabilize for page transitions)
+  const waitForStable = async () => invoke("wait_for_ui_stable", {
+    sessionId, platform, runnerProfile, deviceId,
+    timeoutMs: 5000, intervalMs: 300, consecutiveStable: 2,
+  });
+
   const tryTextSelector = async (
     toolName: string, notesPrefix: string, candidates: string[],
     buildInput: (text: string) => Record<string, unknown>,
@@ -216,10 +222,10 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
     // Swipe down (content moves down, revealing top items)
     const result = await invoke("scroll_only", {
       sessionId, platform, runnerProfile, deviceId,
-      count: 5, gesture: { direction: "down" }, swipeDurationMs: 400, settleDelayMs: 1000,
+      count: 3, gesture: { direction: "down" }, swipeDurationMs: 400, settleDelayMs: 1000,
     });
     // 滚动动画需要更长时间稳定，等待所有惯性滚动停止
-    await stabilize(3000);
+    await waitForStable();
     // 验证：等待 General 再次可见（确认回到顶部）
     await invoke("wait_for_ui", {
       sessionId, platform, runnerProfile, deviceId, appId,
@@ -235,7 +241,7 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
       text: "Cancel", limit: 1,
     });
     // Cancel 点击后页面转场动画需要等待
-    await stabilize(3000);
+    await waitForStable();
     return result;
   };
 
@@ -254,7 +260,7 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
         sessionId, platform, runnerProfile, deviceId, appId,
         text: "Settings", limit: 1,
       });
-      await stabilize(2000);
+      await waitForStable();
       // Verify we actually returned to main page
       const verifyResult = await invoke("wait_for_ui", {
         sessionId, platform, runnerProfile, deviceId, appId,
@@ -279,11 +285,10 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
     await invoke("terminate_app", {
       sessionId, platform, runnerProfile, deviceId, appId,
     });
-    await stabilize(500);
     await invoke("launch_app", {
       sessionId, platform, runnerProfile, deviceId, appId,
     });
-    await stabilize(3000);
+    await waitForStable();
   };
 
   // ═══════════════════════════════════════════════════════════════
@@ -328,7 +333,7 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
     sessionId, platform, runnerProfile, deviceId, appId,
   }), isAppRunning ? "relaunch iOS Settings (was running)" : "launch iOS Settings (cold start)");
 
-  await stabilize();
+  await waitForStable();
 
   // ═══════════════════════════════════════════════════════════════
   // Phase 2: UI inspect / action / orchestration
@@ -366,7 +371,7 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
   }), "scroll 3 times (direction=up to see items below)");
 
   // 额外等待确保 View 层级完全更新
-  await stabilize(2000);
+  await waitForStable();
 
   // 验证：先 wait_for_ui 确认 Developer 可见，再 resolve
   logStep("wait_for_ui — 等待 Developer 可见");
@@ -393,8 +398,8 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
     sessionId, platform, runnerProfile, deviceId, appId,
     text: "General", limit: 1,
   }), "tap General (after scroll_to_top)");
-  // Page transition animation takes ~1s; wait before goback checks for Settings button
-  await stabilize(2000);
+  // Page transition animation needs time before goback checks for Settings button
+  await waitForStable();
 
   // ── goback ───────────────────────────────────────────────────
   // General 子页面需要返回
@@ -415,7 +420,7 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
     className: "TextField", value: "bluetooth", limit: 1,
   }), "type into TextField (search field)");
   // 输入后等待键盘弹出和搜索结果渲染
-  await stabilize(2000);
+  await waitForStable();
 
   // 清除搜索：重新打开 Settings 回到干净状态
   log("→ relaunch Settings after search");
