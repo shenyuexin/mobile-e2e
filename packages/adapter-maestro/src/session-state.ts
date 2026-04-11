@@ -62,7 +62,10 @@ function detectBlockingSignals(visibleTexts: string[], candidateActions: string[
   const combined = [...visibleTexts, ...candidateActions].map((value) => value.toLowerCase());
 
   for (const value of combined) {
-    if (value.includes("allow") || value.includes("permission") || value.includes("while using") || value.includes("don't allow")) {
+    // Use word-boundary matching to avoid false positives like "Spoken" matching "ok"
+    const hasWord = (word: string) => new RegExp(`\\b${word}\\b`, "i").test(value);
+
+    if (value.includes("permission") || hasWord("allow") || value.includes("while using") || value.includes("don't allow")) {
       signals.add("permission_prompt");
     }
     if (value.includes("loading") || value.includes("please wait") || value.includes("signing in") || value.includes("progress")) {
@@ -77,7 +80,8 @@ function detectBlockingSignals(visibleTexts: string[], candidateActions: string[
     if (value.includes("empty") || value.includes("no items") || value.includes("no results") || value.includes("nothing here")) {
       signals.add("empty_state");
     }
-    if (value.includes("cancel") || value.includes("not now") || value.includes("ok") || value.includes("open settings")) {
+    // Dialog actions: match standalone button labels only (word-boundary)
+    if (hasWord("cancel") || hasWord("not now") || hasWord("ok") || hasWord("open settings")) {
       signals.add("dialog_actions");
     }
   }

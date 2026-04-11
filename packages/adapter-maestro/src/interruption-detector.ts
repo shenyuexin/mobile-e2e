@@ -181,12 +181,14 @@ export function detectInterruptionFromSummary(params: {
 
 	for (const text of stateSummary.topVisibleTexts ?? []) {
 		const lower = text.toLowerCase();
+		// Use word-boundary matching to avoid false positives like "Spoken" matching "ok"
+		const hasWord = (word: string) => new RegExp(`\\b${word}\\b`, "i").test(text);
 		if (
-			lower.includes("allow") ||
-			lower.includes("not now") ||
-			lower.includes("save password") ||
-			lower.includes("deny") ||
-			lower.includes("while using")
+			hasWord("allow") ||
+			hasWord("not now") ||
+			hasWord("save password") ||
+			hasWord("deny") ||
+			hasWord("while using")
 		) {
 			pushSignal(
 				signals,

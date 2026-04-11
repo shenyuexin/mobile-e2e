@@ -401,8 +401,8 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
   // Use className to target it directly.
   push("type_into_element", await invoke("type_into_element", {
     sessionId, platform, runnerProfile, deviceId, appId,
-    className: "AXTextField", value: "bluetooth", limit: 1,
-  }), "type into AXTextField (search field)");
+    className: "TextField", value: "bluetooth", limit: 1,
+  }), "type into TextField (search field)");
   // 输入后等待键盘弹出和搜索结果渲染
   await stabilize(2000);
 
