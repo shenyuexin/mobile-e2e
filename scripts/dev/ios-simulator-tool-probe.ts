@@ -255,6 +255,15 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
         text: "Settings", limit: 1,
       });
       await stabilize(2000);
+      // Verify we actually returned to main page
+      const verifyResult = await invoke("wait_for_ui", {
+        sessionId, platform, runnerProfile, deviceId, appId,
+        text: "General", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
+      });
+      if (verifyResult.status !== "success") {
+        log("    WARNING: goback did not return to main page, forcing relaunch");
+        await relaunch();
+      }
       return result;
     }
     log("    already on main page (no Settings back button found), skipping goback");
@@ -507,13 +516,15 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
 
   // ── Step 19: resume_interrupted_action ────────────────────────
   logStep("resume_interrupted_action — 恢复中断操作");
+  // replay_last_stable_path may have navigated to a sub-page; return to main Settings first
+  await goback();
   push("resume_interrupted_action", await invoke("resume_interrupted_action", {
     sessionId, platform, runnerProfile, deviceId, appId,
     checkpoint: {
       actionId: failedActionId ?? `checkpoint-${Date.now()}`,
       sessionId, platform, actionType: "wait_for_ui",
       selector: { text: "General" },
-      params: { text: "General", waitUntil: "visible", timeoutMs: 1500, intervalMs: 300 },
+      params: { text: "General", waitUntil: "visible", timeoutMs: 5000, intervalMs: 500 },
       createdAt: new Date().toISOString(),
     },
   }), "resume synthetic checkpoint");
