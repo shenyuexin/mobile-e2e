@@ -2065,3 +2065,34 @@ export interface NavigateBackData {
   /** Note about support boundaries (e.g., iOS system back is unsupported). */
   capabilityNote?: string;
 }
+
+/** Stability basis for wait_for_ui_stable. */
+export type StabilityBasis = "visible-tree" | "semantic-subset" | "full-structure";
+
+/** Input data for the wait_for_ui_stable MCP tool. */
+export interface WaitForUiStableInput {
+  sessionId: string;
+  platform: Platform;
+  runnerProfile?: RunnerProfile;
+  deviceId?: string;
+  appId?: string;
+  timeoutMs?: number;
+  intervalMs?: number;
+  consecutiveStable?: number;
+}
+
+/** Output data for the wait_for_ui_stable MCP tool. */
+export interface WaitForUiStableData {
+  dryRun: boolean;
+  runnerProfile: RunnerProfile;
+  stable: boolean;
+  polls: number;
+  stableAfterMs: number;
+  stableFingerprint: string;
+  lastDiffSignals?: string[];
+  confidence: number;
+  stabilityBasis: StabilityBasis;
+  timeoutMs: number;
+  intervalMs: number;
+  consecutiveStable: number;
+}

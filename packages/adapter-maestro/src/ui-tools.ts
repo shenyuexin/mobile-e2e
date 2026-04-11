@@ -14,6 +14,7 @@ export {
   scrollAndTapElementWithMaestroTool,
   navigateBackWithMaestroTool,
 } from "./ui-action-tools.js";
+export { waitForUiStableWithMaestro } from "./ui-stability.js";
 export {
   buildResolutionNextSuggestions,
   normalizeScrollDirection,

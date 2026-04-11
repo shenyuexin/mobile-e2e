@@ -90,6 +90,7 @@ import { typeText } from "./tools/type-text.js";
 import { validateFlowTool } from "./tools/validate-flow.js";
 import { probeNetworkReadinessTool } from "./tools/probe-network-readiness.js";
 import { waitForUi } from "./tools/wait-for-ui.js";
+import { waitForUiStable } from "./tools/wait-for-ui-stable.js";
 
 interface ActiveSessionCandidate {
   sessionId: string;
@@ -964,6 +965,14 @@ const TOOL_DESCRIPTORS: ReadonlyArray<ToolDescriptor> = [
     name: TOOL_NAMES.waitForUi,
     description: "Poll the Android or iOS hierarchy until a selector matches or timeout is reached.",
     handler: waitForUi,
+    policy: { enforced: true, requiredScopes: ["read"] },
+    session: { required: true, requireResolvedSessionContext: true },
+    audit: { captureResultEvidence: false },
+  }),
+  defineToolDescriptor({
+    name: TOOL_NAMES.waitForUiStable,
+    description: "Poll the UI hierarchy until consecutive snapshots produce the same structural hash, indicating the UI has stopped animating.",
+    handler: waitForUiStable,
     policy: { enforced: true, requiredScopes: ["read"] },
     session: { required: true, requireResolvedSessionContext: true },
     audit: { captureResultEvidence: false },
