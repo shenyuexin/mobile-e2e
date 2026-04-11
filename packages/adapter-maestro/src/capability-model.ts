@@ -85,6 +85,7 @@ function buildAndroidToolCapabilities(): ToolCapability[] {
     buildToolCapability(TOOL_NAMES.typeText, FULL, "Android text input is supported."),
     buildToolCapability(TOOL_NAMES.typeIntoElement, FULL, "Android element text input is supported after resolution."),
     buildToolCapability(TOOL_NAMES.waitForUi, FULL, "Android UI polling is supported."),
+    buildToolCapability(TOOL_NAMES.waitForUiStable, FULL, "Android UI stabilization polling waits for the visible hierarchy to stop animating before returning."),
     buildToolCapability(TOOL_NAMES.endSession, FULL, "Android session shutdown is supported."),
   ];
 }
@@ -127,6 +128,7 @@ function buildIosToolCapabilities(): ToolCapability[] {
   buildToolCapability(TOOL_NAMES.typeText, CONDITIONAL, `Direct iOS text input uses axe (simulators) or WDA HTTP API (physical devices). Physical-device execution remains signing-dependent and platform-dependent. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
   buildToolCapability(TOOL_NAMES.typeIntoElement, CONDITIONAL, `iOS element text input resolves targets through axe-backed hierarchy (simulators) or WDA HTTP API (physical devices), then executes text input. Physical-device execution remains platform-dependent. ${IOS_CONDITIONAL_NOTE}`, true, undefined, IOS_CONDITIONAL_NOTE),
     buildToolCapability(TOOL_NAMES.waitForUi, FULL, "iOS wait_for_ui polls axe hierarchy capture for simulators; physical device wait uses WDA /source polling."),
+  buildToolCapability(TOOL_NAMES.waitForUiStable, FULL, "iOS UI stabilization polling waits for the visible hierarchy to stop animating before returning."),
     buildToolCapability(TOOL_NAMES.endSession, FULL, "iOS session shutdown is supported."),
   ];
 }
@@ -184,7 +186,7 @@ export function buildCapabilityProfile(platform: Platform, runnerProfile: Runner
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.recordingAndReplay, [TOOL_NAMES.startRecordSession, TOOL_NAMES.getRecordSessionStatus, TOOL_NAMES.endRecordSession, TOOL_NAMES.cancelRecordSession, TOOL_NAMES.runFlow], "Passive record-session lifecycle and replay closure capabilities."),
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.appLifecycle, [TOOL_NAMES.installApp, TOOL_NAMES.launchApp, TOOL_NAMES.terminateApp, TOOL_NAMES.resetAppState], "Install, launch, terminate, and reset application workflows."),
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.artifactsAndDiagnostics, [TOOL_NAMES.takeScreenshot, TOOL_NAMES.recordScreen, TOOL_NAMES.getLogs, TOOL_NAMES.getCrashSignals, TOOL_NAMES.collectDebugEvidence, TOOL_NAMES.collectDiagnostics, TOOL_NAMES.measureAndroidPerformance, TOOL_NAMES.measureIosPerformance], "Evidence capture, diagnostics collection, and lightweight performance analysis tools."),
-      summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.uiInspection, [TOOL_NAMES.inspectUi, TOOL_NAMES.queryUi, TOOL_NAMES.resolveUiTarget, TOOL_NAMES.waitForUi, TOOL_NAMES.scrollAndResolveUiTarget], "Hierarchy capture, querying, target resolution, and wait logic."),
+      summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.uiInspection, [TOOL_NAMES.inspectUi, TOOL_NAMES.queryUi, TOOL_NAMES.resolveUiTarget, TOOL_NAMES.waitForUi, TOOL_NAMES.waitForUiStable, TOOL_NAMES.scrollAndResolveUiTarget], "Hierarchy capture, querying, target resolution, wait logic, and UI stabilization polling."),
       summarizeGroup(toolCapabilities, CAPABILITY_GROUPS.uiActions, [TOOL_NAMES.tap, TOOL_NAMES.tapElement, TOOL_NAMES.typeText, TOOL_NAMES.typeIntoElement, TOOL_NAMES.scrollOnly, TOOL_NAMES.navigateBack], "Coordinate, text, and standalone scroll action tooling including back navigation."),
     ],
   };

@@ -223,7 +223,7 @@ The server currently exposes **63 tools**. For AI agents, this is the current to
 
 ### 4) UI perception, targeting, and interaction
 
-`inspect_ui`, `query_ui`, `resolve_ui_target`, `scroll_only`, `scroll_and_resolve_ui_target`, `wait_for_ui`, `tap`, `tap_element`, `scroll_and_tap_element`, `type_text`, `type_into_element`, `navigate_back`
+`inspect_ui`, `query_ui`, `resolve_ui_target`, `scroll_only`, `scroll_and_resolve_ui_target`, `wait_for_ui`, `wait_for_ui_stable`, `tap`, `tap_element`, `scroll_and_tap_element`, `type_text`, `type_into_element`, `navigate_back`
 
 ### 5) Evidence, observability, and diagnostics
 

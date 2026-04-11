@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildLogSummary, buildStateSummaryFromSignals } from "../src/session-state.ts";
+import { buildLogSummary, buildStateSummaryFromSignals, hasStateChanged } from "../src/session-state.ts";
+import { computeTreeHash, sampleNodeSignatures } from "../src/ui-tree-hash.ts";
 
 test("partial-render-before-business-readiness is classified as waiting_network", () => {
   const summary = buildStateSummaryFromSignals({
@@ -100,4 +101,113 @@ test("otp verification surfaces trigger protected-page and manual-handoff signal
   assert.equal(summary.manualHandoff?.reason, "otp_required");
   assert.equal(summary.derivedSignals?.includes("protected_page_suspected"), true);
   assert.equal(summary.derivedSignals?.includes("manual_handoff:otp_required"), true);
+});
+
+// ─── pageIdentity derivation tests ───────────────────────────────────────
+
+test("pageIdentity is derived from uiSummary when present", () => {
+  const summary = buildStateSummaryFromSignals({
+    uiSummary: {
+      totalNodes: 5,
+      clickableNodes: 2,
+      scrollableNodes: 0,
+      nodesWithText: 3,
+      nodesWithContentDesc: 1,
+      sampleNodes: [
+        { clickable: false, enabled: true, scrollable: false, text: "Settings", className: "UIAStaticText", bounds: "[0,50][400,100]" },
+        { clickable: true, enabled: true, scrollable: false, text: "Back", className: "UIAButton", bounds: "[10,20][60,60]" },
+        { clickable: true, enabled: true, scrollable: false, text: "Toggle", className: "UIASwitch", bounds: "[100,100][200,150]" },
+      ],
+    },
+  });
+
+  assert.ok(summary.pageIdentity, "pageIdentity should be present");
+  assert.ok(summary.pageIdentity!.treeHash, "treeHash should be present");
+  assert.equal(summary.pageIdentity!.visibleElementCount, 5);
+  assert.equal(summary.pageIdentity!.primaryHeading, "Settings");
+  assert.equal(summary.pageIdentity!.identitySource, "heading");
+  assert.equal(summary.pageIdentity!.hasBackAffordance, true);
+  assert.equal(summary.pageIdentity!.backAffordanceLabel, "Back");
+  assert.equal(summary.pageIdentity!.isTopLevel, false);
+});
+
+test("pageIdentity isTopLevel when no back button detected", () => {
+  const summary = buildStateSummaryFromSignals({
+    uiSummary: {
+      totalNodes: 3,
+      clickableNodes: 1,
+      scrollableNodes: 0,
+      nodesWithText: 2,
+      nodesWithContentDesc: 0,
+      sampleNodes: [
+        { clickable: false, enabled: true, scrollable: false, text: "Home", className: "UIAStaticText", bounds: "[0,50][400,100]" },
+        { clickable: true, enabled: true, scrollable: false, text: "Enter", className: "UIAButton", bounds: "[100,300][200,350]" },
+      ],
+    },
+  });
+
+  assert.ok(summary.pageIdentity, "pageIdentity should be present");
+  assert.equal(summary.pageIdentity!.isTopLevel, true);
+  assert.equal(summary.pageIdentity!.hasBackAffordance, false);
+});
+
+// ─── hasStateChanged tests ──────────────────────────────────────────────
+
+test("hasStateChanged returns false for identical summaries", () => {
+  const a = { appPhase: "ready" as const, readiness: "ready" as const, blockingSignals: [] as string[] };
+  assert.equal(hasStateChanged(a, a), false);
+});
+
+test("hasStateChanged returns true when appPhase differs", () => {
+  const a = { appPhase: "ready" as const, readiness: "ready" as const, blockingSignals: [] as string[] };
+  const b = { appPhase: "blocked" as const, readiness: "ready" as const, blockingSignals: [] as string[] };
+  assert.equal(hasStateChanged(a, b), true);
+});
+
+test("hasStateChanged ignores pageIdentity differences", () => {
+  const base = { appPhase: "ready" as const, readiness: "ready" as const, blockingSignals: [] as string[] };
+  const a = { ...base, pageIdentity: { treeHash: "abc123", visibleElementCount: 10 } };
+  const b = { ...base, pageIdentity: { treeHash: "def456", visibleElementCount: 20, isTopLevel: true } };
+  // Despite different pageIdentity, material state is the same
+  assert.equal(hasStateChanged(a as typeof base & { pageIdentity?: unknown }, b as typeof base & { pageIdentity?: unknown }), false);
+});
+
+test("hasStateChanged detects real state changes even with same pageIdentity", () => {
+  const base = { appPhase: "ready" as const, readiness: "ready" as const, blockingSignals: [] as string[] };
+  const a = { ...base, pageIdentity: { treeHash: "same" } };
+  const b = { ...base, readiness: "waiting_network" as const, pageIdentity: { treeHash: "same" } };
+  assert.equal(hasStateChanged(a as typeof base & { pageIdentity?: unknown }, b as typeof base & { pageIdentity?: unknown }), true);
+});
+
+// ─── computeTreeHash tests ──────────────────────────────────────────────
+
+test("computeTreeHash produces consistent output for same input", () => {
+  const sigs = ["Button|Hello|[0,0][100,50]", "Text|World|[0,60][200,100]"];
+  const hash1 = computeTreeHash(sigs);
+  const hash2 = computeTreeHash(sigs);
+  assert.equal(hash1, hash2);
+});
+
+test("computeTreeHash differs for different input", () => {
+  const hash1 = computeTreeHash(["Button|Hello|[0,0][100,50]"]);
+  const hash2 = computeTreeHash(["Button|World|[0,0][100,50]"]);
+  assert.notEqual(hash1, hash2);
+});
+
+test("computeTreeHash returns empty-string hash for empty input", () => {
+  const hash = computeTreeHash([]);
+  assert.equal(hash, "00000000");
+});
+
+test("sampleNodeSignatures filters nodes without text or bounds", () => {
+  const sigs = sampleNodeSignatures({
+    sampleNodes: [
+      { text: "Hello", bounds: "[0,0][100,50]", className: "Btn" },
+      { text: "NoBounds", className: "Btn" },
+      { bounds: "[0,0][100,50]", className: "Btn" },
+      { text: "", bounds: "[0,0][100,50]" },
+    ],
+  });
+  assert.equal(sigs.length, 1);
+  assert.ok(sigs[0].includes("Hello"));
 });

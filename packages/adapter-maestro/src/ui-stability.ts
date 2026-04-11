@@ -17,66 +17,16 @@ import {
   captureAndroidUiSnapshot,
 } from "./ui-runtime.js";
 import { resolveRepoPath } from "./harness-config.js";
+import { computeStabilityUiTreeHash, flattenNodeSignatures } from "./ui-tree-hash-stability.js";
 
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_INTERVAL_MS = 300;
 const DEFAULT_CONSECUTIVE_STABLE = 2;
 
-/**
- * Flatten the UI hierarchy into an array of node signatures suitable for hashing.
- * Only includes visible nodes with text content.
- */
-export function flattenNodeSignatures(
-  nodes: Array<Record<string, unknown>>,
-  output: string[] = [],
-): string[] {
-  for (const node of nodes) {
-    const visible = node.visible !== false;
-    const text = typeof node.text === "string" ? node.text : "";
-    const type = typeof node.type === "string" ? node.type : "";
-    const bounds = typeof node.bounds === "string" ? node.bounds : "";
-
-    if (visible && text) {
-      output.push(`${type}|${text.slice(0, 60)}|${bounds}`);
-    }
-
-    const children = node.children as Array<Record<string, unknown>> | undefined;
-    if (Array.isArray(children)) {
-      flattenNodeSignatures(children, output);
-    }
-  }
-  return output;
-}
-
-/**
- * Compute a structural hash of the visible UI tree.
- * Used to detect when the UI has stopped changing.
- */
-export function computeUiTreeHash(
-  rawJson: string,
-): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawJson);
-  } catch {
-    return "parse_error";
-  }
-
-  const nodes = Array.isArray(parsed) ? parsed : [parsed];
-  const signatures = flattenNodeSignatures(nodes as Array<Record<string, unknown>>);
-  const content = signatures.join("\n");
-
-  // Simple hash: we use a rolling hash approach since crypto may not be available
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0; // Convert to 32-bit integer
-  }
-
-  // Convert to hex string, take first 16 chars
-  return Math.abs(hash).toString(16).padStart(8, "0").slice(0, 16);
-}
+// Re-export for consumers that previously imported computeUiTreeHash.
+// @deprecated Use `computeStabilityUiTreeHash` from `./ui-tree-hash-stability.js` instead.
+export { computeStabilityUiTreeHash as computeUiTreeHash } from "./ui-tree-hash-stability.js";
+export { flattenNodeSignatures } from "./ui-tree-hash-stability.js";
 
 export async function waitForUiStableWithMaestro(
   input: WaitForUiStableInput,
@@ -157,7 +107,7 @@ export async function waitForUiStableWithMaestro(
       nodes = snapshot.nodes as unknown as Array<Record<string, unknown>>;
     }
 
-    const hash = computeUiTreeHash(rawJson);
+    const hash = computeStabilityUiTreeHash(rawJson);
 
     if (hash === lastHash && hash !== null) {
       stableCount++;

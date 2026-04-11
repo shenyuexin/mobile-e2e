@@ -287,14 +287,28 @@ export interface StateSummary {
   topVisibleTexts?: string[];
   protectedPage?: ProtectedPageAssessment;
   manualHandoff?: ManualHandoffRecommendation;
-  /** Page identity signals (optional, does not affect existing comparison logic). */
+  /** Page identity signals (optional).
+   *
+   *  IMPORTANT: pageIdentity.treeHash is derived from InspectUiSummary.sampleNodes
+   *  and is NOT cross-comparable with wait_for_ui_stable.stableFingerprint, which
+   *  hashes the full raw hierarchy snapshot. Both use the same rolling-hash algorithm
+   *  but operate on different input sets.
+   *
+   *  pageIdentity does NOT participate in JSON.stringify-based state comparisons
+   *  used by perform_action_with_evidence, retry, and checkpoint logic. Use a
+   *  dedicated StateSummary comparator if you need page-aware state comparison. */
   pageIdentity?: PageIdentity;
 }
 
 /** Page identity derived from the UI hierarchy. All fields optional to avoid
- *  breaking existing StateSummary comparison logic. */
+ *  breaking existing StateSummary comparison logic.
+ *
+ *  NOTE: treeHash is derived from InspectUiSummary.sampleNodes (a subset of
+ *  the full hierarchy). It shares the same rolling-hash algorithm with
+ *  wait_for_ui_stable.stableFingerprint but operates on a different input set,
+ *  so the two values are NOT cross-comparable. */
 export interface PageIdentity {
-  /** Single-snapshot UI tree hash (not from wait_for_ui_stable stable poll). */
+  /** Single-snapshot UI tree hash from sample nodes (NOT from wait_for_ui_stable stable poll). */
   treeHash?: string;
   /** Count of visible elements. */
   visibleElementCount?: number;
@@ -2100,8 +2114,17 @@ export interface NavigateBackData {
   postBackStableAfterMs?: number;
   /** Page identity after back navigation (if stabilization succeeded). */
   postBackPageIdentity?: PageIdentity;
-  /** Whether the back action had no effect (already at top level or back button ineffective). */
-  noMaterialChange?: boolean;
+  /** Whether the page tree hash remained unchanged (same sample-node hierarchy).
+   *
+   *  IMPORTANT: matching hashes only mean the visible hierarchy didn't change.
+   *  Back could still have dismissed a keyboard, changed readiness, exited the
+   *  app, or failed to transition. Do NOT use this to infer stateChanged=false;
+   *  let the caller decide based on full state comparison. */
+  pageTreeHashUnchanged?: boolean;
+  /** Page tree hash before back navigation (from StateSummary.pageIdentity.treeHash). */
+  preBackTreeHash?: string;
+  /** Page tree hash after back navigation (from StateSummary.pageIdentity.treeHash). */
+  postBackTreeHash?: string;
 }
 
 /** Stability basis for wait_for_ui_stable. */

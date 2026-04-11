@@ -19,6 +19,7 @@ import { DEFAULT_RUNNER_PROFILE, resolveRepoPath } from "./harness-config.js";
 import { getCrashSignalsWithRuntime as getCrashSignalsWithMaestro, getLogsWithRuntime as getLogsWithMaestro } from "./device-runtime.js";
 import { classifyDebugSignal } from "./js-debug.js";
 import { inspectUiWithMaestroTool } from "./ui-tools.js";
+import { computeTreeHash, sampleNodeSignatures } from "./ui-tree-hash.js";
 
 function isInterestingDebugLine(line: string): boolean {
   const normalized = line.toLowerCase();
@@ -293,6 +294,56 @@ export function summarizeStateDelta(previous: StateSummary | undefined, current:
   ], 6);
 }
 
+/**
+ * Determine whether two StateSummary objects differ in material state fields.
+ *
+ * This comparator explicitly EXCLUDES pageIdentity from the comparison, because
+ * pageIdentity is a supplementary identification signal, not a state-change
+ * detector. Using JSON.stringify on full StateSummary objects will silently
+ * change behavior when pageIdentity is present.
+ *
+ * Returns true when the summaries differ in any material field.
+ */
+export function hasStateChanged(a: StateSummary, b: StateSummary): boolean {
+  if (a === b) return false;
+  // Compare all fields EXCEPT pageIdentity
+  const aComparable: Omit<StateSummary, "pageIdentity"> = {
+    screenId: a.screenId,
+    screenTitle: a.screenTitle,
+    routeName: a.routeName,
+    appPhase: a.appPhase,
+    readiness: a.readiness,
+    blockingSignals: a.blockingSignals,
+    stateConfidence: a.stateConfidence,
+    pageHints: a.pageHints,
+    derivedSignals: a.derivedSignals,
+    visibleTargetCount: a.visibleTargetCount,
+    candidateActions: a.candidateActions,
+    recentFailures: a.recentFailures,
+    topVisibleTexts: a.topVisibleTexts,
+    protectedPage: a.protectedPage,
+    manualHandoff: a.manualHandoff,
+  };
+  const bComparable: Omit<StateSummary, "pageIdentity"> = {
+    screenId: b.screenId,
+    screenTitle: b.screenTitle,
+    routeName: b.routeName,
+    appPhase: b.appPhase,
+    readiness: b.readiness,
+    blockingSignals: b.blockingSignals,
+    stateConfidence: b.stateConfidence,
+    pageHints: b.pageHints,
+    derivedSignals: b.derivedSignals,
+    visibleTargetCount: b.visibleTargetCount,
+    candidateActions: b.candidateActions,
+    recentFailures: b.recentFailures,
+    topVisibleTexts: b.topVisibleTexts,
+    protectedPage: b.protectedPage,
+    manualHandoff: b.manualHandoff,
+  };
+  return JSON.stringify(aComparable) !== JSON.stringify(bComparable);
+}
+
 export function buildStateSummaryFromSignals(params: {
   uiSummary?: InspectUiSummary;
   logSummary?: LogSummary;
@@ -437,16 +488,12 @@ function derivePageIdentity(uiSummary?: InspectUiSummary): import("@mobile-e2e-m
     ["Settings", "设置", "Back", "返回", "‹", "<"].includes(b.text ?? b.contentDesc ?? "")
   );
 
-  // Compute a simple tree hash from visible nodes with text
-  const visibleTextNodes = sampleNodes.filter(n => n.text && n.bounds);
-  const signatures = visibleTextNodes.map(n => `${n.className ?? ""}|${(n.text ?? "").slice(0, 50)}|${n.bounds ?? ""}`);
-  let hash = 0;
-  const content = signatures.join("\n");
-  for (let i = 0; i < content.length; i++) {
-    hash = ((hash << 5) - hash) + content.charCodeAt(i);
-    hash |= 0;
-  }
-  const treeHash = Math.abs(hash).toString(16).padStart(8, "0").slice(0, 16);
+  // Compute tree hash using the shared algorithm from sample nodes.
+  // NOTE: This hash is derived from InspectUiSummary.sampleNodes (a subset
+  // of the full hierarchy) and is NOT cross-comparable with the stability
+  // hash from wait_for_ui_stable, which hashes the full raw snapshot.
+  const signatures = sampleNodeSignatures({ sampleNodes });
+  const treeHash = computeTreeHash(signatures);
 
   return {
     treeHash: treeHash || undefined,
