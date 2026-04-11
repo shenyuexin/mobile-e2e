@@ -234,9 +234,9 @@ export async function runIosToolProbe(): Promise<void> {
 
   const goback = async () => {
     log("→ calling goback");
-    // iOS Settings: the back button is labeled "Settings" and appears at top-left of sub-pages.
-    // Check if we're on a sub-page by looking for the "Settings" back button.
-    // On the main page, there's no "Settings" button — only a "Settings" heading.
+    // iOS Settings: the back button is labeled "Settings" (or "设置" on Chinese) and appears at top-left of sub-pages.
+    // Check if we're on a sub-page by looking for the back button.
+    // On the main page, there's no back button — only a "Settings" heading.
     const checkResult = await invoke("resolve_ui_target", {
       sessionId, platform, runnerProfile, deviceId, appId,
       text: "Settings", limit: 1,
@@ -259,7 +259,29 @@ export async function runIosToolProbe(): Promise<void> {
       }
       return result;
     }
-    log("    already on main page (no Settings back button found), skipping goback");
+    // Try Chinese "设置" back button
+    const checkZhResult = await invoke("resolve_ui_target", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+      text: "设置", limit: 1,
+    });
+    if (checkZhResult.status === "success") {
+      log("    on sub-page (Chinese), tapping 设置 back button");
+      const result = await invoke("tap_element", {
+        sessionId, platform, runnerProfile, deviceId, appId,
+        text: "设置", limit: 1,
+      });
+      await stabilize(2000);
+      const verifyResult = await invoke("wait_for_ui", {
+        sessionId, platform, runnerProfile, deviceId, appId,
+        text: "General", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
+      });
+      if (verifyResult.status !== "success") {
+        log("    WARNING: goback did not return to main page, forcing relaunch");
+        await relaunch();
+      }
+      return result;
+    }
+    log("    already on main page (no Settings/设置 back button found), skipping goback");
     return { status: "success" as ResultStatus };
   };
 
@@ -326,9 +348,10 @@ export async function runIosToolProbe(): Promise<void> {
 
   // ── Step 3: wait_for_ui ───────────────────────────────────────
   logStep("wait_for_ui — 等待 General 可见");
+  // Support both English and Chinese iOS system language
   await tryTextSelector(
     "wait_for_ui", "wait visible by",
-    ["General", "Accessibility"],
+    ["General", "通用", "Accessibility", "辅助功能"],
     (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, timeoutMs: 8000, intervalMs: 500, waitUntil: "visible" }),
   );
 
@@ -336,7 +359,7 @@ export async function runIosToolProbe(): Promise<void> {
   logStep("resolve_ui_target — 解析 General 位置");
   await tryTextSelector(
     "resolve_ui_target", "resolve",
-    ["General", "Accessibility"],
+    ["General", "通用", "Accessibility", "辅助功能"],
     (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, limit: 1 }),
   );
 
@@ -361,7 +384,7 @@ export async function runIosToolProbe(): Promise<void> {
   logStep("resolve_ui_target — 解析 Developer");
   await tryTextSelector(
     "resolve_ui_target", "resolve",
-    ["Developer", "Privacy & Security"],
+    ["Developer", "开发者", "Privacy & Security", "隐私与安全性"],
     (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, limit: 1 }),
   );
 
@@ -430,7 +453,7 @@ export async function runIosToolProbe(): Promise<void> {
     goal: "wait and tap in iOS Settings",
     steps: [
       { intent: "wait for General", actionType: "wait_for_ui", text: "General", timeoutMs: 4000 },
-      { intent: "tap Accessibility", actionType: "tap_element", text: "Accessibility" },
+      { intent: "tap Accessibility", actionType: "tap_element", text: "Accessibility", contentDesc: "Accessibility" },
     ],
   }), "run multi-step task");
 
