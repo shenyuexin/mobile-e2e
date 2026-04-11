@@ -12,6 +12,9 @@ import { createServer } from "../../packages/mcp-server/src/index.ts";
 //   【期望结果】 — 成功后的页面状态
 //
 // 如果工具失败，先核对"预期页面"与实际屏幕是否一致。页面不一致是绝大多数失败的根因。
+//
+// Target: iOS physical device (WDA backend)
+// NOT for simulators — use ios-simulator-tool-probe.ts for those.
 // ═══════════════════════════════════════════════════════════════════
 
 type ResultStatus = "success" | "failed" | "partial";
@@ -121,6 +124,9 @@ async function stabilize(ms = 2000) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// 探针入口
+// ═══════════════════════════════════════════════════════════════════
 export async function runIosToolProbe(): Promise<void> {
   const server = createServer();
   const now = Date.now();
@@ -165,6 +171,7 @@ export async function runIosToolProbe(): Promise<void> {
     for (const text of candidates) {
       const result = await invoke(toolName, buildInput(text));
       last = result;
+      await stabilize(500); // 每次尝试后等待动画稳定
       if (result.status === "success" || result.status === "partial") return push(toolName, result, `${notesPrefix} text=${text}`);
     }
     return push(toolName, last ?? { status: "failed" }, `${notesPrefix} text=${candidates[candidates.length - 1]}`);
@@ -177,10 +184,12 @@ export async function runIosToolProbe(): Promise<void> {
   ): Promise<ToolResultLike> => {
     for (const text of textCandidates) {
       const result = await invoke(toolName, buildInput({ text }));
+      await stabilize(500); // 每次尝试后等待动画稳定
       if (result.status === "success" || result.status === "partial") return push(toolName, result, `${notesPrefix} text=${text}`);
     }
     for (const contentDesc of contentDescCandidates) {
       const result = await invoke(toolName, buildInput({ contentDesc }));
+      await stabilize(500); // 每次尝试后等待动画稳定
       if (result.status === "success" || result.status === "partial") return push(toolName, result, `${notesPrefix} content-desc=${contentDesc}`);
     }
     return push(toolName, { status: "failed" }, `${notesPrefix} text=${textCandidates[textCandidates.length - 1]}`);
@@ -191,30 +200,82 @@ export async function runIosToolProbe(): Promise<void> {
   // 1. scroll_to_top()  — 滚动后回到顶部（不离开 Settings 首页）
   // 2. tap_cancel()     — 搜索页点 Cancel 按钮退出搜索
   // 3. goback()         — app-level back（iOS 不支持 system back）
+  //
+  // 滚动方向说明:
+  //   - direction "up"   = 手指从下往上滑 = 内容向上 = 看到更下面的内容
+  //   - direction "down" = 手指从上往下滑 = 内容向下 = 回到顶部
   // ───────────────────────────────────────────────────────────────
   const scroll_to_top = async () => {
-    await invoke("scroll_only", {
+    log("→ calling scroll_to_top");
+    const result = await invoke("scroll_only", {
       sessionId, platform, runnerProfile, deviceId,
       count: 5, gesture: { direction: "down" }, swipeDurationMs: 400, settleDelayMs: 1000,
     });
-    await stabilize(1000);
+    // 滚动动画需要更长时间稳定，等待所有惯性滚动停止
+    await stabilize(3000);
+    // 验证：等待 General 再次可见（确认回到顶部）
+    await invoke("wait_for_ui", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+      text: "General", timeoutMs: 5000, intervalMs: 1000, waitUntil: "visible",
+    });
+    return result;
   };
 
   const tap_cancel = async () => {
-    await invoke("tap_element", {
+    log("→ calling tap_cancel");
+    const result = await invoke("tap_element", {
       sessionId, platform, runnerProfile, deviceId, appId,
       text: "Cancel", limit: 1,
     });
-    await stabilize(2000);
+    // Cancel 点击后页面转场动画需要等待
+    await stabilize(3000);
+    return result;
   };
 
   const goback = async () => {
-    // iOS doesn't support system-level back, so use app-level back
-    await invoke("navigate_back", {
-      sessionId, platform, runnerProfile, deviceId,
-      target: "app",
+    log("→ calling goback");
+    // iOS Settings: the back button is labeled "Settings" and appears at top-left of sub-pages.
+    // Check if we're on a sub-page by looking for the "Settings" back button.
+    // On the main page, there's no "Settings" button — only a "Settings" heading.
+    const checkResult = await invoke("resolve_ui_target", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+      text: "Settings", limit: 1,
     });
-    await stabilize(1500);
+    if (checkResult.status === "success") {
+      log("    on sub-page, tapping Settings back button");
+      const result = await invoke("tap_element", {
+        sessionId, platform, runnerProfile, deviceId, appId,
+        text: "Settings", limit: 1,
+      });
+      await stabilize(2000);
+      // Verify we actually returned to main page
+      const verifyResult = await invoke("wait_for_ui", {
+        sessionId, platform, runnerProfile, deviceId, appId,
+        text: "General", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
+      });
+      if (verifyResult.status !== "success") {
+        log("    WARNING: goback did not return to main page, forcing relaunch");
+        await relaunch();
+      }
+      return result;
+    }
+    log("    already on main page (no Settings back button found), skipping goback");
+    return { status: "success" as ResultStatus };
+  };
+
+  // ───────────────────────────────────────────────────────────────
+  // 重置到 Settings 首页：terminate+launch 确保干净的首页状态。
+  // ───────────────────────────────────────────────────────────────
+  const relaunch = async () => {
+    log("→ calling relaunch app");
+    await invoke("terminate_app", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+    });
+    await stabilize(500);
+    await invoke("launch_app", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+    });
+    await stabilize(3000);
   };
 
   // ═══════════════════════════════════════════════════════════════
@@ -229,9 +290,33 @@ export async function runIosToolProbe(): Promise<void> {
 
   // ── Step 2 ─────────────────────────────────────────────────────
   logStep("launch_app — 打开 Settings 首页");
+  // 先检测 Settings app 是否已在运行
+  let isAppRunning = false;
+  try {
+    try {
+      const sessionState = await invoke("get_session_state", { sessionId }) as { currentScreen?: { topActivity?: string } };
+      if (sessionState?.currentScreen?.topActivity?.includes("Preferences")) {
+        isAppRunning = true;
+        log(`    检测到 Settings 已在运行 (session topActivity: ${sessionState.currentScreen.topActivity})`);
+      }
+    } catch {
+      // session 未创建或其他错误，继续 cold start
+    }
+  } catch (err) {
+    log(`    无法检测 app 状态，将执行 cold start: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (isAppRunning) {
+    log("    Settings 已在运行，执行 relaunch (force-stop + launch)...");
+    await invoke("terminate_app", {
+      sessionId, platform, runnerProfile, deviceId, appId,
+    });
+    await stabilize(500);
+  }
+
   push("launch_app", await invoke("launch_app", {
     sessionId, platform, runnerProfile, deviceId, appId,
-  }), "open iOS Settings");
+  }), isAppRunning ? "relaunch iOS Settings (was running)" : "launch iOS Settings (cold start)");
 
   await stabilize();
 
@@ -243,7 +328,7 @@ export async function runIosToolProbe(): Promise<void> {
   logStep("wait_for_ui — 等待 General 可见");
   await tryTextSelector(
     "wait_for_ui", "wait visible by",
-    ["General", "通用", "Wi-Fi", "Bluetooth"],
+    ["General", "Accessibility"],
     (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, timeoutMs: 8000, intervalMs: 500, waitUntil: "visible" }),
   );
 
@@ -251,18 +336,21 @@ export async function runIosToolProbe(): Promise<void> {
   logStep("resolve_ui_target — 解析 General 位置");
   await tryTextSelector(
     "resolve_ui_target", "resolve",
-    ["General", "通用", "Bluetooth", "蓝牙"],
+    ["General", "Accessibility"],
     (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, limit: 1 }),
   );
 
-  // ── Step 5: scroll_only + wait_for_ui + resolve_ui_target (iOS) ─
-  logStep("scroll_only — 滑动找 Developer");
-  await invoke("scroll_only", {
+  // ── Step 5: scroll_only + wait_for_ui + resolve_ui_target ────
+  logStep("scroll_only — 滑动 3 次（向下滚找 Developer）");
+  push("scroll_only", await invoke("scroll_only", {
     sessionId, platform, runnerProfile, deviceId,
-    count: 5, gesture: { direction: "up" }, swipeDurationMs: 400, settleDelayMs: 2000,
-  });
+    count: 3, gesture: { direction: "up" }, swipeDurationMs: 500, settleDelayMs: 2000,
+  }), "scroll 3 times (direction=up to see items below)");
 
-  // 验证：wait_for_ui 确认 Developer 可见，再 resolve
+  // 额外等待确保 View 层级完全更新
+  await stabilize(2000);
+
+  // 验证：先 wait_for_ui 确认 Developer 可见，再 resolve
   logStep("wait_for_ui — 等待 Developer 可见");
   const devWaitResult = await invoke("wait_for_ui", {
     sessionId, platform, runnerProfile, deviceId, appId,
@@ -273,46 +361,47 @@ export async function runIosToolProbe(): Promise<void> {
   logStep("resolve_ui_target — 解析 Developer");
   await tryTextSelector(
     "resolve_ui_target", "resolve",
-    ["Developer", "开发者", "Privacy & Security", "隐私"],
+    ["Developer", "Privacy & Security"],
     (text) => ({ sessionId, platform, runnerProfile, deviceId, appId, text, limit: 1 }),
   );
 
   // ── scroll_to_top ────────────────────────────────────────────
+  // 滑动后回到顶部，不离开 Settings 首页
   await scroll_to_top();
 
-  // ── Step 6: tap_element ───────────────────────────────────────
-  logStep("tap_element — 点击 Search");
-  await tryTextOrContentDescSelector(
-    "tap_element", "tap",
-    ["Search", "搜索"],
-    ["Search", "搜索"],
-    (params) => ({ sessionId, platform, runnerProfile, deviceId, appId, ...params, limit: 1 }),
-  );
+  // ── Step 6: tap_element — 点击 General ═══
+  logStep("tap_element — 点击 General");
+  push("tap_element", await invoke("tap_element", {
+    sessionId, platform, runnerProfile, deviceId, appId,
+    text: "General", limit: 1,
+  }), "tap General (after scroll_to_top)");
+  // Page transition animation takes ~1s; wait before goback checks for Settings button
+  await stabilize(2000);
 
-  // ── tap_cancel ───────────────────────────────────────────────
-  await tap_cancel();
+  // ── goback ───────────────────────────────────────────────────
+  // General 子页面需要返回
+  await goback();
 
   // 验证：确保回到 Settings 首页
   await invoke("wait_for_ui", {
     sessionId, platform, runnerProfile, deviceId, appId,
-    text: "General", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
+    text: "General", timeoutMs: 5000, intervalMs: 1500, waitUntil: "visible",
   });
 
   // ── Step 7: type_into_element ─────────────────────────────────
   logStep("type_into_element — 输入 bluetooth");
+  // NOTE: iOS Settings search field is an unlabeled TextField at the top (always visible).
+  // Use className to target it directly.
   push("type_into_element", await invoke("type_into_element", {
     sessionId, platform, runnerProfile, deviceId, appId,
-    className: "XCUIElementTypeSearchField", value: "bluetooth", limit: 1,
-  }), "type into search field");
+    className: "TextField", value: "bluetooth", limit: 1,
+  }), "type into TextField (search field)");
+  // 输入后等待键盘弹出和搜索结果渲染
+  await stabilize(2000);
 
-  // ── tap_cancel ───────────────────────────────────────────────
-  await tap_cancel();
-
-  // 验证：确保回到 Settings 首页
-  await invoke("wait_for_ui", {
-    sessionId, platform, runnerProfile, deviceId, appId,
-    text: "General", timeoutMs: 5000, intervalMs: 500, waitUntil: "visible",
-  });
+  // 清除搜索：重新打开 Settings 回到干净状态
+  log("→ relaunch Settings after search");
+  await relaunch();
 
   // ── Step 8: execute_intent ────────────────────────────────────
   logStep("execute_intent — 点击 General");
@@ -325,11 +414,11 @@ export async function runIosToolProbe(): Promise<void> {
   await goback();
 
   // ── Step 9: perform_action_with_evidence ──────────────────────
-  logStep("perform_action_with_evidence — 点击 Bluetooth");
+  logStep("perform_action_with_evidence — 点击 General");
   const actionResult = push("perform_action_with_evidence", await invoke("perform_action_with_evidence", {
     sessionId, platform, runnerProfile, deviceId, appId, includeDebugSignals: true,
-    action: { actionType: "tap_element", text: "Bluetooth", timeoutMs: 8000, intervalMs: 500, waitUntil: "visible" },
-  }), "tap + evidence");
+    action: { actionType: "tap_element", text: "General", timeoutMs: 8000, intervalMs: 500, waitUntil: "visible" },
+  }), "tap General + evidence");
 
   // ── goback ───────────────────────────────────────────────────
   await goback();
@@ -341,12 +430,12 @@ export async function runIosToolProbe(): Promise<void> {
     goal: "wait and tap in iOS Settings",
     steps: [
       { intent: "wait for General", actionType: "wait_for_ui", text: "General", timeoutMs: 4000 },
-      { intent: "tap Bluetooth", actionType: "tap_element", text: "Bluetooth" },
+      { intent: "tap Accessibility", actionType: "tap_element", text: "Accessibility" },
     ],
   }), "run multi-step task");
 
   // ── goback ───────────────────────────────────────────────────
-  // complete_task 点击 Bluetooth 后会停留在 Bluetooth 子页面，必须先回退
+  // complete_task 点击 Accessibility 后会停留在子页面，必须先回退
   // 否则 recover_to_known_state 会在错误的页面上下文中执行
   await goback();
 
@@ -408,13 +497,15 @@ export async function runIosToolProbe(): Promise<void> {
 
   // ── Step 19: resume_interrupted_action ────────────────────────
   logStep("resume_interrupted_action — 恢复中断操作");
+  // replay_last_stable_path may have navigated to a sub-page; return to main Settings first
+  await goback();
   push("resume_interrupted_action", await invoke("resume_interrupted_action", {
     sessionId, platform, runnerProfile, deviceId, appId,
     checkpoint: {
       actionId: failedActionId ?? `checkpoint-${Date.now()}`,
       sessionId, platform, actionType: "wait_for_ui",
       selector: { text: "General" },
-      params: { text: "General", waitUntil: "visible", timeoutMs: 1500, intervalMs: 300 },
+      params: { text: "General", waitUntil: "visible", timeoutMs: 5000, intervalMs: 500 },
       createdAt: new Date().toISOString(),
     },
   }), "resume synthetic checkpoint");
