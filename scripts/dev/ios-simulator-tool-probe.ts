@@ -242,22 +242,23 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
   const goback = async () => {
     log("→ calling goback");
     // iOS Settings: the back button is labeled "Settings" and appears at top-left of sub-pages.
-    // First check if we're already on the main page (General visible = main page).
-    const checkResult = await invoke("wait_for_ui", {
-      sessionId, platform, runnerProfile, deviceId, appId,
-      text: "General", timeoutMs: 1000, intervalMs: 500, waitUntil: "visible",
-    });
-    if (checkResult.status === "success") {
-      log("    already on main page, skipping goback");
-      return { status: "success" as ResultStatus };
-    }
-    // We're on a sub-page, tap the Settings back button
-    const result = await invoke("tap_element", {
+    // Check if we're on a sub-page by looking for the "Settings" back button.
+    // On the main page, there's no "Settings" button — only a "Settings" heading.
+    const checkResult = await invoke("resolve_ui_target", {
       sessionId, platform, runnerProfile, deviceId, appId,
       text: "Settings", limit: 1,
     });
-    await stabilize(2000);
-    return result;
+    if (checkResult.status === "success") {
+      log("    on sub-page, tapping Settings back button");
+      const result = await invoke("tap_element", {
+        sessionId, platform, runnerProfile, deviceId, appId,
+        text: "Settings", limit: 1,
+      });
+      await stabilize(2000);
+      return result;
+    }
+    log("    already on main page (no Settings back button found), skipping goback");
+    return { status: "success" as ResultStatus };
   };
 
   // ───────────────────────────────────────────────────────────────
@@ -377,13 +378,14 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
   // 滑动后回到顶部，不离开 Settings 首页
   await scroll_to_top();
 
-  // ── Step 6: tap_element —─────────────────────────────────────
+  // ── Step 6: tap_element — 点击 General ═══
   logStep("tap_element — 点击 General");
-  // After scroll_to_top, General is always visible at the top.
   push("tap_element", await invoke("tap_element", {
     sessionId, platform, runnerProfile, deviceId, appId,
     text: "General", limit: 1,
   }), "tap General (after scroll_to_top)");
+  // Page transition animation takes ~1s; wait before goback checks for Settings button
+  await stabilize(2000);
 
   // ── goback ───────────────────────────────────────────────────
   // General 子页面需要返回
