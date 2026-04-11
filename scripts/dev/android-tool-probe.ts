@@ -357,7 +357,6 @@ export async function runAndroidToolProbe(): Promise<void> {
   }), "scroll 3 times");
 
   // 额外等待确保 View 层级完全更新
-  await stabilize(2000);
 
   // 验证：先 wait_for_ui 确认 About phone 可见，再 resolve
   logStep("wait_for_ui — 等待 About phone 可见");
@@ -412,7 +411,6 @@ export async function runAndroidToolProbe(): Promise<void> {
     className: "android.widget.EditText", value: "wifi", limit: 1,
   }), "type into edit text");
   // 输入后等待键盘弹出和搜索结果渲染
-  await stabilize(2000);
 
   // ── tap_cancel ───────────────────────────────────────────────
   // 搜索结果页点击 Cancel 按钮退出搜索，回到 Settings 首页
@@ -469,6 +467,7 @@ export async function runAndroidToolProbe(): Promise<void> {
   push("recover_to_known_state", await invoke("recover_to_known_state", {
     sessionId, platform, runnerProfile, deviceId, appId,
   }), "recover current state");
+
 
   // ── Step 12: replay_last_stable_path ──────────────────────────
   logStep("replay_last_stable_path — 重放成功路径");
