@@ -262,6 +262,7 @@ export type {
   WaitForUiStableData,
   WaitForUiStableInput,
   WaitForUiMode,
+  PageIdentity,
   UiScrollDirection,
   RawRecordedEvent,
   FlowGenerationReport,

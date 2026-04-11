@@ -414,6 +414,50 @@ export function buildStateSummaryFromSignals(params: {
     topVisibleTexts: visibleTexts,
     protectedPage,
     manualHandoff,
+    pageIdentity: derivePageIdentity(params.uiSummary),
+  };
+}
+
+function derivePageIdentity(uiSummary?: InspectUiSummary): import("@mobile-e2e-mcp/contracts").PageIdentity | undefined {
+  if (!uiSummary) return undefined;
+
+  const sampleNodes = uiSummary.sampleNodes ?? [];
+  const headings = sampleNodes.filter(n => n.className?.includes("Heading") || n.className?.includes("StaticText"));
+  const primaryHeading = headings[0]?.text ?? headings[0]?.contentDesc;
+
+  // Detect back button: top-area button with common back labels
+  const topButtons = sampleNodes.filter(n =>
+    n.clickable &&
+    n.bounds && (() => {
+      const m = n.bounds.match(/^\[(\d+),(\d+)\]/);
+      return m ? parseInt(m[2], 10) < 150 : false;
+    })()
+  );
+  const backButton = topButtons.find(b =>
+    ["Settings", "设置", "Back", "返回", "‹", "<"].includes(b.text ?? b.contentDesc ?? "")
+  );
+
+  // Compute a simple tree hash from visible nodes with text
+  const visibleTextNodes = sampleNodes.filter(n => n.text && n.bounds);
+  const signatures = visibleTextNodes.map(n => `${n.className ?? ""}|${(n.text ?? "").slice(0, 50)}|${n.bounds ?? ""}`);
+  let hash = 0;
+  const content = signatures.join("\n");
+  for (let i = 0; i < content.length; i++) {
+    hash = ((hash << 5) - hash) + content.charCodeAt(i);
+    hash |= 0;
+  }
+  const treeHash = Math.abs(hash).toString(16).padStart(8, "0").slice(0, 16);
+
+  return {
+    treeHash: treeHash || undefined,
+    visibleElementCount: uiSummary.totalNodes,
+    hasBackAffordance: !!backButton,
+    backAffordanceLabel: backButton?.text ?? backButton?.contentDesc,
+    primaryHeading: primaryHeading ?? undefined,
+    identitySource: primaryHeading ? "heading" : "tree-heuristic",
+    identityConfidence: primaryHeading ? 0.9 : 0.6,
+    isTopLevel: !backButton,
+    probableParentScreenId: backButton ? "app-main" : undefined,
   };
 }
 

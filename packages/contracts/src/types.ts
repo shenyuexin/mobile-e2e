@@ -287,7 +287,33 @@ export interface StateSummary {
   topVisibleTexts?: string[];
   protectedPage?: ProtectedPageAssessment;
   manualHandoff?: ManualHandoffRecommendation;
+  /** Page identity signals (optional, does not affect existing comparison logic). */
+  pageIdentity?: PageIdentity;
 }
+
+/** Page identity derived from the UI hierarchy. All fields optional to avoid
+ *  breaking existing StateSummary comparison logic. */
+export interface PageIdentity {
+  /** Single-snapshot UI tree hash (not from wait_for_ui_stable stable poll). */
+  treeHash?: string;
+  /** Count of visible elements. */
+  visibleElementCount?: number;
+  /** Whether a back affordance (button or edge swipe) was detected. */
+  hasBackAffordance?: boolean;
+  /** Label on the back button if detected. */
+  backAffordanceLabel?: string;
+  /** Primary heading text if found. */
+  primaryHeading?: string;
+  /** Source of identity derivation. */
+  identitySource?: "heading" | "tree-heuristic" | "unknown";
+  /** Confidence in the page identity (0.0-1.0). */
+  identityConfidence?: number;
+  /** Whether this appears to be a top-level page. */
+  isTopLevel?: boolean;
+  /** Likely parent page identifier. */
+  probableParentScreenId?: string;
+}
+
 export interface EvidenceCompleteness {
   level: EvidenceCompletenessLevel;
   capturedKinds: ExecutionEvidenceKind[];
