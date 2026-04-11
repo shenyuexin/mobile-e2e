@@ -2068,6 +2068,10 @@ export interface NavigateBackInput {
   iosStrategy?: IosBackStrategy;
   /** Optional selector to target a specific back button (iOS app back). */
   selector?: InspectUiQuery;
+  /** Wait for UI to stabilize after back navigation (default: true). */
+  postBackWaitForStable?: boolean;
+  /** Timeout for post-back stabilization check (default: 5000ms). */
+  verificationTimeoutMs?: number;
 }
 
 /** Output data for the navigate_back MCP tool. */
@@ -2090,6 +2094,14 @@ export interface NavigateBackData {
   stateChanged?: boolean | "unknown";
   /** Note about support boundaries (e.g., iOS system back is unsupported). */
   capabilityNote?: string;
+  /** Whether post-back stabilization was verified. */
+  postBackVerified?: boolean;
+  /** Actual time waited for post-back stabilization (ms). */
+  postBackStableAfterMs?: number;
+  /** Page identity after back navigation (if stabilization succeeded). */
+  postBackPageIdentity?: PageIdentity;
+  /** Whether the back action had no effect (already at top level or back button ineffective). */
+  noMaterialChange?: boolean;
 }
 
 /** Stability basis for wait_for_ui_stable. */
