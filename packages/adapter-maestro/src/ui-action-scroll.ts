@@ -6,6 +6,7 @@
  */
 
 import type {
+  InspectUiNode,
   ScrollAndResolveUiTargetData,
   ScrollAndResolveUiTargetInput,
   ScrollOnlyData,
@@ -33,7 +34,9 @@ import {
 import {
   buildAndroidUiDumpCommands,
   captureAndroidUiRuntimeSnapshot,
+  captureIosUiSnapshot,
   executeUiActionCommand,
+  isIosUiSnapshotFailure,
   runUiScrollResolveLoop,
 } from "./ui-runtime.js";
 import { resolveUiRuntimePlatformHooks } from "./ui-runtime-platform.js";
@@ -615,9 +618,27 @@ export async function scrollOnlyWithMaestroTool(
   let swipesPerformed = 0;
   let lastExitCode: number | null = null;
 
+  // Capture current UI hierarchy to get correct viewport bounds for scroll coordinates.
+  // Without this, buildScrollOnlySwipeCoordinates falls back to 1080x1920 defaults
+  // which are out of bounds for iOS simulators (430x932).
+  let viewportNodes: InspectUiNode[] = [];
+  if (platform === "ios") {
+    const snapshot = await captureIosUiSnapshot(
+      repoRoot,
+      deviceId,
+      input.sessionId,
+      runnerProfile,
+      undefined,
+      { sessionId: input.sessionId, platform, runnerProfile, deviceId, text: "" },
+    );
+    if (!isIosUiSnapshotFailure(snapshot)) {
+      viewportNodes = snapshot.nodes;
+    }
+  }
+
   for (let i = 0; i < count; i++) {
     const swipe = buildScrollOnlySwipeCoordinates(
-      [],
+      viewportNodes,
       normalized.direction,
       swipeDurationMs,
       normalized.startRatio,
