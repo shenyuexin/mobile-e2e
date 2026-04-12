@@ -346,3 +346,125 @@ test("navigate_back Android back command failure propagates error", async () => 
   assert.equal(result.data.postBackVerified, false);
   assert.equal(result.data.postBackTreeHash, undefined);
 });
+
+// ─── iOS post-back evidence fields ───────────────────────────────────────
+
+test("navigate_back iOS selector-tap captures pre-back hash BEFORE tap", async () => {
+  const callOrder: string[] = [];
+
+  const hooks: NavigateBackTestHooks = {
+    getScreenSummary: async (input) => {
+      const isPreCall = callOrder.filter(c => c === "getScreenSummary").length === 0;
+      callOrder.push("getScreenSummary");
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: input.sessionId,
+        durationMs: 1,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile: input.runnerProfile,
+          outputPath: "/tmp/test.json",
+          command: [],
+          exitCode: 0,
+          supportLevel: "full",
+          summarySource: "ui_only",
+          screenSummary: {
+            appPhase: isPreCall ? "detail" as const : "catalog" as const,
+            readiness: "ready" as const,
+            blockingSignals: [] as string[],
+            pageIdentity: {
+              treeHash: isPreCall ? "ios-pre-hash" : "ios-post-hash",
+              visibleElementCount: isPreCall ? 10 : 15,
+              hasBackAffordance: !isPreCall,
+              backAffordanceLabel: "Settings",
+              identitySource: "heading" as const,
+              identityConfidence: 0.9,
+              isTopLevel: isPreCall,
+            },
+          },
+        },
+        nextSuggestions: [],
+      };
+    },
+    waitForUiStable: async () => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: "test",
+      durationMs: 100,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile: "phase1",
+        stable: true,
+        polls: 2,
+        stableAfterMs: 300,
+        stableFingerprint: "stability-fingerprint",
+        confidence: 0.95,
+        stabilityBasis: "visible-tree",
+        timeoutMs: 5000,
+        intervalMs: 300,
+        consecutiveStable: 2,
+      },
+      nextSuggestions: [],
+    }),
+    tapBackButton: async () => {
+      callOrder.push("tapBackButton");
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: "test-session",
+        durationMs: 50,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile: "phase1",
+          query: { resourceId: "back-button" },
+          matchCount: 1,
+          resolution: {} as any,
+          matchedNode: {} as any,
+          resolvedBounds: {} as any,
+          resolvedX: 40,
+          resolvedY: 60,
+          command: ["tap", "40", "60"],
+          exitCode: 0,
+          supportLevel: "conditional",
+        },
+        nextSuggestions: [],
+      };
+    },
+  };
+
+  setNavigateBackTestHooksForTesting(hooks);
+
+  const result = await navigateBackWithMaestro({
+    sessionId: "test-session",
+    platform: "ios",
+    deviceId: "ios-sim-1",
+    selector: { resourceId: "back-button" },
+  });
+
+  assert.equal(result.status, "success");
+
+  // Verify call ordering: pre-back state captured BEFORE tap
+  assert.equal(callOrder[0], "getScreenSummary", "pre-back state should be captured first");
+  assert.equal(callOrder[1], "tapBackButton", "back tap should come after pre-back state");
+
+  // Verify preBackTreeHash comes from the pre-back state
+  assert.equal(result.data.preBackTreeHash, "ios-pre-hash");
+
+  // Verify postBackTreeHash comes from the post-back state
+  assert.equal(result.data.postBackTreeHash, "ios-post-hash");
+
+  // Verify pageTreeHashUnchanged is false (different hashes)
+  assert.equal(result.data.pageTreeHashUnchanged, false);
+
+  // Verify postBackPageIdentity derives from StateSummary.pageIdentity
+  assert.ok(result.data.postBackPageIdentity);
+  assert.equal(result.data.postBackPageIdentity?.treeHash, "ios-post-hash");
+  assert.equal(result.data.postBackPageIdentity?.visibleElementCount, 15);
+});
