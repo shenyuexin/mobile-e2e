@@ -32,6 +32,9 @@ examples/rn-tester/
 examples/flutter-samples/
 examples/wordpress-android/
 wordpress-android-launch.png
+# Local PR drafting artifact
+.pr-body.md
+
 # Node / PNPM workspace outputs
 node_modules/
 packages/*/node_modules/
