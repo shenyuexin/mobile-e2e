@@ -1,10 +1,53 @@
 import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
+import type { InspectUiNode } from "@mobile-e2e-mcp/contracts";
 import { buildIosNativeLocatorCandidate, extractIosEditableNodeValue, isIosEditableNode, parseIosInspectNodes } from "./ui-model.js";
 import type { UiResolvedPointVerificationParams, UiResolvedPointVerificationResult, UiRuntimePlatformHooks, UiRuntimeProbeAction, UiTypedPostconditionVerificationParams } from "./ui-runtime-platform.js";
 import { getIosBackendRouter } from "./ios-backend-router.js";
 import { executeUiActionCommand } from "./ui-runtime.js";
 import { buildFailureReason } from "./runtime-shared.js";
+
+/**
+ * Find the deepest node whose bounds contain the given point.
+ * Returns the most specific (smallest area) node at that location.
+ */
+function findNodeAtPoint(nodes: InspectUiNode[], point: { x: number; y: number }): InspectUiNode | undefined {
+  const matchingNodes = nodes.filter((node) => {
+    if (!node.bounds) return false;
+    const bounds = parseBounds(node.bounds);
+    if (!bounds) return false;
+    return (
+      point.x >= bounds.left &&
+      point.x <= bounds.right &&
+      point.y >= bounds.top &&
+      point.y <= bounds.bottom
+    );
+  });
+
+  // Return the smallest node (most specific) that contains the point
+  return matchingNodes.sort((a, b) => {
+    const areaA = boundsArea(a.bounds!);
+    const areaB = boundsArea(b.bounds!);
+    return areaA - areaB;
+  })[0];
+}
+
+function parseBounds(boundsStr: string): { left: number; top: number; right: number; bottom: number } | undefined {
+  const match = boundsStr.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+  if (!match) return undefined;
+  return {
+    left: Number(match[1]),
+    top: Number(match[2]),
+    right: Number(match[3]),
+    bottom: Number(match[4]),
+  };
+}
+
+function boundsArea(boundsStr: string): number {
+  const bounds = parseBounds(boundsStr);
+  if (!bounds) return Infinity;
+  return (bounds.right - bounds.left) * (bounds.bottom - bounds.top);
+}
 
 function escapeYamlDoubleQuoted(value: string): string {
   return value
@@ -138,11 +181,20 @@ export async function verifyResolvedIosPointWithHooks(
 
   const pointNode = parseIosInspectNodes(actionResult.execution.stdout)[0];
   const actual = buildIosNativeLocatorCandidate(pointNode, params.resolvedQuery);
-  const verified = actual?.kind === expected.kind
-    && actual.value === expected.value
-    && actual.text === expected.text
-    && actual.contentDesc === expected.contentDesc
-    && actual.className === expected.className;
+  
+  // Bug fix: The first node is always the Application root, not the node at the resolved point.
+  // We need to find the node whose bounds contain the resolved point.
+  const allNodes = parseIosInspectNodes(actionResult.execution.stdout);
+  const nodeAtPoint = findNodeAtPoint(allNodes, params.resolvedPoint);
+  const actualCandidate = nodeAtPoint
+    ? buildIosNativeLocatorCandidate(nodeAtPoint, params.resolvedQuery)
+    : actual;
+  
+  const verified = actualCandidate?.kind === expected.kind
+    && actualCandidate.value === expected.value
+    && actualCandidate.text === expected.text
+    && actualCandidate.contentDesc === expected.contentDesc
+    && actualCandidate.className === expected.className;
 
   // If the tap succeeded (exitCode 0) but the node doesn't match, the screen likely
   // changed due to navigation. Report it as not verified so the caller can decide
