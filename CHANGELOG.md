@@ -15,7 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 - Refined operator documentation, governance guidance, and architecture references around the release.
-- Release scope includes 14 merged commits between mcp-server-v0.1.12 and the target tag.
+- Release scope includes 15 merged commits between mcp-server-v0.1.12 and the target tag.
 
 ### Fixed
 - Hardened release reliability, runtime guardrails, and end-to-end flow stability on supported platforms.
