@@ -1296,6 +1296,21 @@ export async function navigateBackWithMaestroTool(
       };
     }
 
+    // Capture pre-back state BEFORE dispatching back so the comparison
+    // is genuinely pre vs. post, not post-action-early vs. post-action-stable.
+    const waitForStable = input.postBackWaitForStable !== false;
+    let preBackTreeHash: string | undefined;
+    if (waitForStable) {
+      const { getScreenSummaryWithMaestro } = await import("./session-state.js");
+      const preBackState = await getScreenSummaryWithMaestro({
+        sessionId: input.sessionId,
+        platform: "android",
+        runnerProfile,
+        deviceId,
+      });
+      preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
+    }
+
     const execution = await executeUiActionCommand({
       repoRoot,
       command,
@@ -1306,25 +1321,14 @@ export async function navigateBackWithMaestroTool(
     const isSuccess = exitCode === 0;
 
     // Post-back stabilization (P24-C enhancement for Android)
-    const waitForStable = input.postBackWaitForStable !== false;
     let postBackVerified = false;
     let postBackStableAfterMs: number | undefined;
     let postBackPageIdentity: import("@mobile-e2e-mcp/contracts").PageIdentity | undefined;
-    let preBackTreeHash: string | undefined;
     let postBackTreeHash: string | undefined;
 
-    if (waitForStable && isSuccess && !dryRun) {
+    if (waitForStable && isSuccess) {
       const { getScreenSummaryWithMaestro } = await import("./session-state.js");
       const { waitForUiStableWithMaestro } = await import("./ui-stability.js");
-
-      // Capture pre-back state
-      const preBackState = await getScreenSummaryWithMaestro({
-        sessionId: input.sessionId,
-        platform: "android",
-        runnerProfile,
-        deviceId,
-      });
-      preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
 
       // Wait for UI to stabilize after back
       const stableResult = await waitForUiStableWithMaestro({
@@ -1339,7 +1343,7 @@ export async function navigateBackWithMaestroTool(
         postBackVerified = true;
         postBackStableAfterMs = stableResult.data.stableAfterMs;
 
-        // Compare pre/post state tree hashes.
+        // Capture post-back state and derive page identity.
         // NOTE: matching tree hashes only indicate the visible hierarchy
         // did not change — back could still have dismissed a keyboard,
         // changed readiness, or exited the app. Do NOT infer stateChanged
@@ -1464,6 +1468,22 @@ interface IosBackTapContext {
 async function navigateBackIosWithSelector(
   ctx: IosBackTapContext & { postBackWaitForStable?: boolean; verificationTimeoutMs?: number },
 ): Promise<ToolResult<NavigateBackData>> {
+  // Capture pre-back state BEFORE tapping the back button so the
+  // comparison is genuinely pre vs. post, not post-action-early vs.
+  // post-action-stable.
+  const waitForStable = ctx.postBackWaitForStable !== false;
+  let preBackTreeHash: string | undefined;
+  if (waitForStable && !ctx.dryRun) {
+    const { getScreenSummaryWithMaestro } = await import("./session-state.js");
+    const preBackState = await getScreenSummaryWithMaestro({
+      sessionId: ctx.sessionId,
+      platform: "ios",
+      runnerProfile: ctx.runnerProfile,
+      deviceId: ctx.deviceId,
+    });
+    preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
+  }
+
   const tapResult = await tapElementWithMaestroTool({
     sessionId: ctx.sessionId,
     platform: "ios",
@@ -1476,25 +1496,14 @@ async function navigateBackIosWithSelector(
   const executedStrategy: BackExecutionPath = "ios_selector_tap";
 
   // Post-back stabilization (P24-C enhancement)
-  const waitForStable = ctx.postBackWaitForStable !== false;
   let postBackVerified = false;
   let postBackStableAfterMs: number | undefined;
   let postBackPageIdentity: import("@mobile-e2e-mcp/contracts").PageIdentity | undefined;
-  let preBackTreeHash: string | undefined;
   let postBackTreeHash: string | undefined;
 
   if (waitForStable && tapResult.status === "success" && !ctx.dryRun) {
     const { getScreenSummaryWithMaestro } = await import("./session-state.js");
     const { waitForUiStableWithMaestro } = await import("./ui-stability.js");
-
-    // Capture pre-back state for comparison
-    const preBackState = await getScreenSummaryWithMaestro({
-      sessionId: ctx.sessionId,
-      platform: "ios",
-      runnerProfile: ctx.runnerProfile,
-      deviceId: ctx.deviceId,
-    });
-    preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
 
     // Wait for UI to stabilize after back
     const stableResult = await waitForUiStableWithMaestro({
@@ -1509,7 +1518,7 @@ async function navigateBackIosWithSelector(
       postBackVerified = true;
       postBackStableAfterMs = stableResult.data.stableAfterMs;
 
-      // Compare pre/post state tree hashes.
+      // Capture post-back state and derive page identity.
       // NOTE: matching tree hashes only indicate the visible hierarchy
       // did not change — back tap could still have dismissed a keyboard,
       // changed readiness, or failed to transition. Do NOT infer stateChanged
