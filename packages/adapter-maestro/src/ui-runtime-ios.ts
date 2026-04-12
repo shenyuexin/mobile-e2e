@@ -1,7 +1,7 @@
 import { ACTION_TYPES } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import type { InspectUiNode } from "@mobile-e2e-mcp/contracts";
-import { buildIosNativeLocatorCandidate, extractIosEditableNodeValue, isIosEditableNode, parseIosInspectNodes } from "./ui-model.js";
+import { buildIosNativeLocatorCandidate, extractIosEditableNodeValue, isIosEditableNode, parseIosInspectNodes, parseUiBounds } from "./ui-model.js";
 import type { UiResolvedPointVerificationParams, UiResolvedPointVerificationResult, UiRuntimePlatformHooks, UiRuntimeProbeAction, UiTypedPostconditionVerificationParams } from "./ui-runtime-platform.js";
 import { getIosBackendRouter } from "./ios-backend-router.js";
 import { executeUiActionCommand } from "./ui-runtime.js";
@@ -14,7 +14,7 @@ import { buildFailureReason } from "./runtime-shared.js";
 function findNodeAtPoint(nodes: InspectUiNode[], point: { x: number; y: number }): InspectUiNode | undefined {
   const matchingNodes = nodes.filter((node) => {
     if (!node.bounds) return false;
-    const bounds = parseBounds(node.bounds);
+    const bounds = parseUiBounds(node.bounds);
     if (!bounds) return false;
     return (
       point.x >= bounds.left &&
@@ -25,28 +25,18 @@ function findNodeAtPoint(nodes: InspectUiNode[], point: { x: number; y: number }
   });
 
   // Return the smallest node (most specific) that contains the point
-  return matchingNodes.sort((a, b) => {
-    const areaA = boundsArea(a.bounds!);
-    const areaB = boundsArea(b.bounds!);
-    return areaA - areaB;
-  })[0];
-}
-
-function parseBounds(boundsStr: string): { left: number; top: number; right: number; bottom: number } | undefined {
-  const match = boundsStr.match(/\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
-  if (!match) return undefined;
-  return {
-    left: Number(match[1]),
-    top: Number(match[2]),
-    right: Number(match[3]),
-    bottom: Number(match[4]),
-  };
-}
-
-function boundsArea(boundsStr: string): number {
-  const bounds = parseBounds(boundsStr);
-  if (!bounds) return Infinity;
-  return (bounds.right - bounds.left) * (bounds.bottom - bounds.top);
+  let smallest: InspectUiNode | undefined;
+  let smallestArea = Infinity;
+  for (const node of matchingNodes) {
+    const bounds = parseUiBounds(node.bounds!);
+    if (!bounds) continue;
+    const area = bounds.width * bounds.height;
+    if (area < smallestArea) {
+      smallest = node;
+      smallestArea = area;
+    }
+  }
+  return smallest;
 }
 
 function escapeYamlDoubleQuoted(value: string): string {
@@ -250,7 +240,10 @@ export async function verifyTypedIosPostconditionWithHooks(
     };
   }
 
-  const pointNode = parseIosInspectNodes(actionResult.execution.stdout)[0];
+  // Bug fix: Use findNodeAtPoint instead of nodes[0] to get the actual element at the resolved coordinates.
+  // The first node is always the Application root, which has no editable value.
+  const allNodes = parseIosInspectNodes(actionResult.execution.stdout);
+  const pointNode = findNodeAtPoint(allNodes, params.resolvedPoint) ?? allNodes[0];
   const actual = buildIosNativeLocatorCandidate(pointNode, params.resolvedQuery);
   const expected = buildIosNativeLocatorCandidate(params.resolvedNode, params.resolvedQuery);
   if (!actual || !expected || actual.kind !== expected.kind || actual.value !== expected.value || actual.text !== expected.text || actual.contentDesc !== expected.contentDesc || actual.className !== expected.className) {

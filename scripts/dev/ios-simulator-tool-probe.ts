@@ -364,7 +364,7 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
   // await goback();
 
   // ── Step 5: scroll_only + wait_for_ui + resolve_ui_target ────
-  logStep("scroll_only — 滑动 3 次（向下滚找 Developer）");
+  logStep("scroll_only — 滑动 2 次（向下滚找 Developer）");
   push("scroll_only", await invoke("scroll_only", {
     sessionId, platform, runnerProfile, deviceId,
     count: 2, gesture: { direction: "up" }, swipeDurationMs: 500, settleDelayMs: 1000,

@@ -2536,3 +2536,38 @@ test("navigateBackWithMaestro iOS selector tap preserves command evidence", asyn
   assert.equal(typeof result.data.command, "string");
   assert.match(result.data.command ?? "", /__wda_http__|\/source/i);
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Regression tests for iOS verifyResolvedPoint findNodeAtPoint fix
+// Bug: nodes[0] was always Application root, never the target element
+// Fix: findNodeAtPoint finds the deepest node containing the resolved point
+// ═══════════════════════════════════════════════════════════════════
+
+test("parseUiBounds handles negative and floating-point coordinates", () => {
+  // Standard integer bounds
+  const standard = parseUiBounds("[20,334][410,378]");
+  assert.ok(standard);
+  assert.equal(standard.left, 20);
+  assert.equal(standard.top, 334);
+  assert.equal(standard.right, 410);
+  assert.equal(standard.bottom, 378);
+
+  // Negative coordinates (edge case for future-proofing)
+  const negative = parseUiBounds("[-10,-5][100,200]");
+  assert.ok(negative);
+  assert.equal(negative.left, -10);
+  assert.equal(negative.top, -5);
+
+  // Floating-point coordinates (axe backend may return subpixel values)
+  const floating = parseUiBounds("[20.5,334.75][410.3,378.1]");
+  assert.ok(floating);
+  assert.equal(Math.round(floating.left), 21);
+  assert.equal(Math.round(floating.top), 335);
+});
+
+test("parseUiBounds returns undefined for malformed input", () => {
+  assert.equal(parseUiBounds(undefined), undefined);
+  assert.equal(parseUiBounds(""), undefined);
+  assert.equal(parseUiBounds("invalid"), undefined);
+  assert.equal(parseUiBounds("[20,334]"), undefined); // incomplete
+});

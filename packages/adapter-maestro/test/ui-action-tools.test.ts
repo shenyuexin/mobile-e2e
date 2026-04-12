@@ -444,6 +444,76 @@ test("verifyTypedIosPostconditionWithHooks accepts secure field without echoed v
   assert.equal(verification.reasonCode, REASON_CODES.ok);
 });
 
+// Regression test: verifyTypedIosPostconditionWithHooks must use findNodeAtPoint,
+// not nodes[0]. When the hierarchy has Application root at index 0 and the target
+// TextField as a child, the old code would read the root's value (undefined) and
+// always fail the typed value check.
+test("verifyTypedIosPostconditionWithHooks finds editable node at resolved point, not root", async () => {
+  const verification = await verifyTypedIosPostconditionWithHooks({
+    repoRoot: process.cwd(),
+    deviceId: "ios-sim-1",
+    resolvedNode: {
+      resourceId: "settings-search",
+      className: "TextField",
+      text: "Search",
+      contentDesc: null,
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[20,151][390,187]",
+    },
+    resolvedQuery: { text: "Search" },
+    resolvedPoint: { x: 200, y: 170 },
+    typedValue: "bluetooth",
+    runtimeHooks: {
+      platform: "ios",
+      requiresProbe: true,
+      probeFailureReasonCode: REASON_CODES.configurationError,
+      buildTapCommand: () => ["tap"],
+      buildDescribePointCommand: () => ["describe-point", "200", "170"],
+      buildTypeTextCommand: () => ["type"],
+      buildSwipeCommand: () => ["swipe"],
+      buildHierarchyCapturePreviewCommand: () => ["describe-all"],
+      probeUnavailableSuggestion: () => "probe unavailable",
+      tapDryRunSuggestion: "tap dry",
+      tapFailureSuggestion: "tap failed",
+      typeTextDryRunSuggestion: "type dry",
+      typeTextFailureSuggestion: "type failed",
+    },
+    executeDescribePointCommand: async () => ({
+      command: ["describe-point", "200", "170"],
+      probeExecution: { exitCode: 0, stdout: "ok", stderr: "" },
+      // Hierarchy: Application root at [0], TextField child at [1]
+      execution: {
+        exitCode: 0,
+        stdout: JSON.stringify([
+          {
+            type: "Application",
+            AXLabel: "Settings",
+            AXValue: null,
+            frame: { x: 0, y: 0, width: 430, height: 932 },
+            children: [
+              {
+                identifier: "settings-search",
+                type: "TextField",
+                value: "bluetooth",
+                AXLabel: null,
+                frame: { x: 20, y: 151, width: 370, height: 36 },
+              },
+            ],
+          },
+        ]),
+        stderr: "",
+      },
+    }),
+  });
+
+  // The old bug would return verified=false with reasonCode=actionTypeFailed
+  // because nodes[0] (Application root) has no value, so observedValue=undefined.
+  assert.equal(verification.verified, true, "Should find TextField at resolved point, not use Application root");
+  assert.equal(verification.reasonCode, REASON_CODES.ok);
+});
+
 test("isIosSimulatorOnlyIdbActionError detects simulator-lifecycle protocol failures", () => {
   assert.equal(
     isIosSimulatorOnlyIdbActionError(
