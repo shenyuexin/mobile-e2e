@@ -241,6 +241,8 @@ export interface NavigateBackTestHooks {
   getScreenSummary?: (input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => Promise<ToolResult<GetScreenSummaryData>>;
   waitForUiStable?: (input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string; timeoutMs?: number }) => Promise<ToolResult<WaitForUiStableData>>;
   executeBackCommand?: () => Promise<{ exitCode: number; stderr: string; stdout: string }>;
+  /** iOS: mock the back button tap result. When not set, uses real tapElementWithMaestroTool. */
+  tapBackButton?: () => Promise<ToolResult<import("@mobile-e2e-mcp/contracts").TapElementData>>;
 }
 
 let navigateBackTestHooks: NavigateBackTestHooks | undefined;
@@ -251,6 +253,44 @@ export function setNavigateBackTestHooksForTesting(hooks: NavigateBackTestHooks 
 
 export function resetNavigateBackTestHooksForTesting(): void {
   navigateBackTestHooks = undefined;
+}
+
+/** Normalized outcome of a back action, regardless of source
+ *  (real executeUiActionCommand or test hook executeBackCommand). */
+interface BackActionOutcome {
+  exitCode: number | null;
+  stderr: string;
+}
+
+/** Extract exit code and stderr from either the real execution result
+ *  or the simplified test hook result, without using `as any` probing. */
+function normalizeBackOutcome(
+  result: Awaited<ReturnType<typeof executeUiActionCommand>> | Awaited<ReturnType<NonNullable<NavigateBackTestHooks["executeBackCommand"]>>>,
+): BackActionOutcome {
+  const r = result as Record<string, unknown>;
+  const exec = r.execution as Record<string, unknown> | undefined;
+  if (exec && typeof exec === "object") {
+    return {
+      exitCode: typeof exec.exitCode === "number" ? exec.exitCode : null,
+      stderr: typeof exec.stderr === "string" ? exec.stderr : "",
+    };
+  }
+  return {
+    exitCode: typeof r.exitCode === "number" ? r.exitCode : null,
+    stderr: typeof r.stderr === "string" ? r.stderr : "",
+  };
+}
+
+/** Fallback: call the real getScreenSummaryWithMaestro when no test hook is set. */
+async function navigateBackGetScreenSummary(input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) {
+  const { getScreenSummaryWithMaestro } = await import("./session-state.js");
+  return getScreenSummaryWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId });
+}
+
+/** Fallback: call the real waitForUiStableWithMaestro when no test hook is set. */
+async function navigateBackWaitForUiStable(input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string; timeoutMs?: number }) {
+  const { waitForUiStableWithMaestro } = await import("./ui-stability.js");
+  return waitForUiStableWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId, timeoutMs: input.timeoutMs });
 }
 
 export async function tapWithMaestroTool(
@@ -1324,8 +1364,7 @@ export async function navigateBackWithMaestroTool(
     const waitForStable = input.postBackWaitForStable !== false;
     let preBackTreeHash: string | undefined;
     if (waitForStable) {
-      const getScreenSummary = navigateBackTestHooks?.getScreenSummary
-        ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => import("./session-state.js").then(m => m.getScreenSummaryWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId })));
+      const getScreenSummary = navigateBackTestHooks?.getScreenSummary ?? navigateBackGetScreenSummary;
       const preBackState = await getScreenSummary({
         sessionId: input.sessionId,
         platform: "android",
@@ -1339,11 +1378,8 @@ export async function navigateBackWithMaestroTool(
       ? await navigateBackTestHooks.executeBackCommand()
       : await executeUiActionCommand({ repoRoot, command, requiresProbe: false });
 
-    // Normalize exit code / stderr from either test hook result or UiActionExecutionResult
-    const er = executionResult as any;
-    const exitCode = er.execution?.exitCode ?? er.exitCode ?? null;
-    const errorOutput = er.execution?.stderr ?? er.stderr ?? "";
-    const isSuccess = exitCode === 0;
+    const outcome = normalizeBackOutcome(executionResult);
+    const isSuccess = outcome.exitCode === 0;
 
     // Post-back stabilization (P24-C enhancement for Android)
     let postBackVerified = false;
@@ -1352,10 +1388,8 @@ export async function navigateBackWithMaestroTool(
     let postBackTreeHash: string | undefined;
 
     if (waitForStable && isSuccess) {
-      const getScreenSummary = navigateBackTestHooks?.getScreenSummary
-        ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => import("./session-state.js").then(m => m.getScreenSummaryWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId })));
-      const waitForStableFn = navigateBackTestHooks?.waitForUiStable
-        ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string; timeoutMs?: number }) => import("./ui-stability.js").then(m => m.waitForUiStableWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId, timeoutMs: input.timeoutMs })));
+      const getScreenSummary = navigateBackTestHooks?.getScreenSummary ?? navigateBackGetScreenSummary;
+      const waitForStableFn = navigateBackTestHooks?.waitForUiStable ?? navigateBackWaitForUiStable;
 
       // Wait for UI to stabilize after back
       const stableResult = await waitForStableFn({
@@ -1403,19 +1437,20 @@ export async function navigateBackWithMaestroTool(
         supportLevel: "full",
         fallbackUsed: false,
         command: command.join(" "),
-        exitCode,
+        exitCode: outcome.exitCode,
         stateChanged: "unknown",
         capabilityNote: "KEYEVENT_BACK dispatched. Verify screen transition separately.",
         postBackVerified,
         postBackStableAfterMs,
         postBackPageIdentity,
+        // evidence only; never interpret as stateChanged=false
         pageTreeHashUnchanged,
         preBackTreeHash,
         postBackTreeHash,
       },
       nextSuggestions: isSuccess
         ? ["Verify the expected screen transition using get_session_state or inspect_ui."]
-        : [buildFailureReason(errorOutput, exitCode)],
+        : [buildFailureReason(outcome.stderr, outcome.exitCode)],
     };
   }
 
@@ -1501,8 +1536,7 @@ async function navigateBackIosWithSelector(
   const waitForStable = ctx.postBackWaitForStable !== false;
   let preBackTreeHash: string | undefined;
   if (waitForStable && !ctx.dryRun) {
-    const getScreenSummary = navigateBackTestHooks?.getScreenSummary
-      ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => import("./session-state.js").then(m => m.getScreenSummaryWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId })));
+    const getScreenSummary = navigateBackTestHooks?.getScreenSummary ?? navigateBackGetScreenSummary;
     const preBackState = await getScreenSummary({
       sessionId: ctx.sessionId,
       platform: "ios",
@@ -1512,7 +1546,9 @@ async function navigateBackIosWithSelector(
     preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
   }
 
-  const tapResult = await tapElementWithMaestroTool({
+  const tapResult = navigateBackTestHooks?.tapBackButton
+    ? await navigateBackTestHooks.tapBackButton()
+    : await tapElementWithMaestroTool({
     sessionId: ctx.sessionId,
     platform: "ios",
     deviceId: ctx.deviceId,
@@ -1530,10 +1566,8 @@ async function navigateBackIosWithSelector(
   let postBackTreeHash: string | undefined;
 
   if (waitForStable && tapResult.status === "success" && !ctx.dryRun) {
-    const getScreenSummary = navigateBackTestHooks?.getScreenSummary
-      ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => import("./session-state.js").then(m => m.getScreenSummaryWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId })));
-    const waitForStableFn = navigateBackTestHooks?.waitForUiStable
-      ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string; timeoutMs?: number }) => import("./ui-stability.js").then(m => m.waitForUiStableWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId, timeoutMs: input.timeoutMs })));
+    const getScreenSummary = navigateBackTestHooks?.getScreenSummary ?? navigateBackGetScreenSummary;
+    const waitForStableFn = navigateBackTestHooks?.waitForUiStable ?? navigateBackWaitForUiStable;
 
     // Wait for UI to stabilize after back
     const stableResult = await waitForStableFn({

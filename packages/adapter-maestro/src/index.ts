@@ -452,6 +452,16 @@ export function resetInterruptionGuardTestHooksForTesting(): void {
   resetInterruptionGuardTestHooksForTestingFromActionOrchestrator();
 }
 
+// ─── Test Hooks ─────────────────────────────────────────────────────────
+// Inject mock implementations for testing without live devices.
+// Each set/reset pair affects only the current process and should be
+// cleaned up in afterEach to prevent test leakage.
+//
+// Available hooks:
+// - setOcrFallbackTestHooksForTesting / resetOcrFallbackTestHooksForTesting
+// - setInterruptionGuardTestHooksForTesting / resetInterruptionGuardTestHooksForTesting
+// - setNavigateBackTestHooksForTesting / resetNavigateBackTestHooksForTesting
+
 export function setNavigateBackTestHooksForTesting(hooks: NavigateBackTestHooks | undefined): void {
   setNavigateBackTestHooksForTestingFromUiActionTools(hooks);
 }

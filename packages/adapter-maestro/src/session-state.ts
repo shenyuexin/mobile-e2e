@@ -306,42 +306,25 @@ export function summarizeStateDelta(previous: StateSummary | undefined, current:
  */
 export function hasStateChanged(a: StateSummary, b: StateSummary): boolean {
   if (a === b) return false;
-  // Compare all fields EXCEPT pageIdentity
-  const aComparable: Omit<StateSummary, "pageIdentity"> = {
-    screenId: a.screenId,
-    screenTitle: a.screenTitle,
-    routeName: a.routeName,
-    appPhase: a.appPhase,
-    readiness: a.readiness,
-    blockingSignals: a.blockingSignals,
-    stateConfidence: a.stateConfidence,
-    pageHints: a.pageHints,
-    derivedSignals: a.derivedSignals,
-    visibleTargetCount: a.visibleTargetCount,
-    candidateActions: a.candidateActions,
-    recentFailures: a.recentFailures,
-    topVisibleTexts: a.topVisibleTexts,
-    protectedPage: a.protectedPage,
-    manualHandoff: a.manualHandoff,
-  };
-  const bComparable: Omit<StateSummary, "pageIdentity"> = {
-    screenId: b.screenId,
-    screenTitle: b.screenTitle,
-    routeName: b.routeName,
-    appPhase: b.appPhase,
-    readiness: b.readiness,
-    blockingSignals: b.blockingSignals,
-    stateConfidence: b.stateConfidence,
-    pageHints: b.pageHints,
-    derivedSignals: b.derivedSignals,
-    visibleTargetCount: b.visibleTargetCount,
-    candidateActions: b.candidateActions,
-    recentFailures: b.recentFailures,
-    topVisibleTexts: b.topVisibleTexts,
-    protectedPage: b.protectedPage,
-    manualHandoff: b.manualHandoff,
-  };
-  return JSON.stringify(aComparable) !== JSON.stringify(bComparable);
+  // Explicit field-by-field comparison (excludes pageIdentity).
+  // Avoids JSON.stringify so new fields require conscious decisions.
+  return (
+    a.screenId !== b.screenId ||
+    a.screenTitle !== b.screenTitle ||
+    a.routeName !== b.routeName ||
+    a.appPhase !== b.appPhase ||
+    a.readiness !== b.readiness ||
+    JSON.stringify(a.blockingSignals ?? []) !== JSON.stringify(b.blockingSignals ?? []) ||
+    a.stateConfidence !== b.stateConfidence ||
+    JSON.stringify(a.pageHints ?? []) !== JSON.stringify(b.pageHints ?? []) ||
+    JSON.stringify(a.derivedSignals ?? []) !== JSON.stringify(b.derivedSignals ?? []) ||
+    a.visibleTargetCount !== b.visibleTargetCount ||
+    JSON.stringify(a.candidateActions ?? []) !== JSON.stringify(b.candidateActions ?? []) ||
+    JSON.stringify(a.recentFailures ?? []) !== JSON.stringify(b.recentFailures ?? []) ||
+    JSON.stringify(a.topVisibleTexts ?? []) !== JSON.stringify(b.topVisibleTexts ?? []) ||
+    JSON.stringify(a.protectedPage ?? {}) !== JSON.stringify(b.protectedPage ?? {}) ||
+    JSON.stringify(a.manualHandoff ?? {}) !== JSON.stringify(b.manualHandoff ?? {})
+  );
 }
 
 export function buildStateSummaryFromSignals(params: {

@@ -35,7 +35,9 @@ export function flattenNodeSignatures(
 
 /**
  * Compute a structural hash of the visible UI tree from raw JSON.
- * Delegates to the shared computeTreeHash algorithm.
+ * Uses the same rolling-hash algorithm as `computeTreeHash` in ui-tree-hash.ts
+ * but operates on a different input source (full raw hierarchy snapshot vs.
+ * InspectUiSummary.sampleNodes).
  */
 export function computeStabilityUiTreeHash(rawJson: string): string {
   let parsed: unknown;
