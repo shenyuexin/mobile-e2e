@@ -85,6 +85,7 @@ ios-simulator-smoke:
 | `verifyTypedPostcondition` 同样的 `nodes[0]` bug | iOS 模拟器/真机 | Critical | ✅ 已修复 | 同上 |
 | WDA `/source` 返回单对象，`parseIosInspectNodes` 期望数组 | iOS 真机 | High | ✅ 已修复 | 现在兼容单对象和数组两种格式 |
 | WDA `__wda_http__` 命令无法通过 `executeUiActionCommand` 执行 | iOS 真机 | High | ✅ 已修复 | `executeUiActionCommand` 现在特殊处理 `__wda_http__` 内部协议 |
+| WDA `/source` 返回原始格式未 transform | iOS 真机 | High | ✅ 已修复 | `__wda_http__` handler 现在对 `/source` 应用 `transformWdaSourceRecursive` |
 | `findNodeAtPoint` fallback 到 `allNodes[0]` | iOS 真机 | Low | 安全 | Fail-safe 设计，找不到节点时验证失败而非误通过 |
 | Android 无 `verifyResolvedPoint` 校验 | Android | N/A | 不适用 | Android hooks 不实现此校验，非同类问题 |
 
