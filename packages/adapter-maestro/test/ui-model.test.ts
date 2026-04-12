@@ -2571,3 +2571,67 @@ test("parseUiBounds returns undefined for malformed input", () => {
   assert.equal(parseUiBounds("invalid"), undefined);
   assert.equal(parseUiBounds("[20,334]"), undefined); // incomplete
 });
+
+// Regression: WDA /source returns a single object, not an array.
+// parseIosInspectNodes must handle both formats.
+// Note: WDA data goes through transformWdaSource() which strips XCUIElementType prefix
+// and converts rect→frame, name→AXLabel, etc.
+test("parseIosInspectNodes handles WDA single-object /source format (after transform)", () => {
+  // This is the format AFTER transformWdaSource() processes the raw WDA /source response
+  const transformedWda = JSON.stringify({
+    type: "Application", // XCUIElementTypeApplication → Application
+    AXLabel: "Settings", // name → AXLabel
+    title: "Settings",
+    AXValue: null,
+    enabled: true,
+    frame: { x: 0, y: 0, width: 430, height: 932 }, // rect → frame
+    children: [
+      {
+        type: "Button", // XCUIElementTypeButton → Button
+        AXLabel: "General",
+        title: "General",
+        AXValue: null,
+        enabled: true,
+        frame: { x: 20, y: 334, width: 390, height: 44 },
+        children: [],
+      },
+    ],
+  });
+
+  const nodes = parseIosInspectNodes(transformedWda);
+  // Should parse root + child = 2 nodes
+  assert.ok(nodes.length >= 2, `Expected at least 2 nodes, got ${nodes.length}`);
+
+  const generalNode = nodes.find(n => n.text === "General");
+  assert.ok(generalNode, "Should find General button node");
+  assert.equal(generalNode?.className, "Button");
+});
+
+test("parseIosInspectNodes handles axe/idb array format", () => {
+  const axeOutput = JSON.stringify([
+    {
+      type: "Application",
+      AXLabel: "Settings",
+      AXValue: null,
+      enabled: true,
+      frame: { x: 0, y: 0, width: 430, height: 932 },
+      children: [
+        {
+          type: "Button",
+          AXLabel: "General",
+          AXValue: null,
+          enabled: true,
+          frame: { x: 20, y: 334, width: 390, height: 44 },
+          children: [],
+        },
+      ],
+    },
+  ]);
+
+  const nodes = parseIosInspectNodes(axeOutput);
+  assert.ok(nodes.length >= 2, `Expected at least 2 nodes, got ${nodes.length}`);
+
+  const generalNode = nodes.find(n => n.text === "General");
+  assert.ok(generalNode, "Should find General button node");
+  assert.equal(generalNode?.className, "Button");
+});

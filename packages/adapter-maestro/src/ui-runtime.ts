@@ -365,6 +365,30 @@ export async function executeUiActionCommand(options: {
     }
   }
 
+  // Handle WDA internal commands (__wda_http__) that bypass shell execution.
+  // These are internal HTTP requests to WebDriverAgent on physical devices.
+  if (options.command[0] === "__wda_http__") {
+    const [, deviceId, method, wdaPath, body] = options.command;
+    const baseUrl = process.env.WDA_BASE_URL ?? `http://localhost:8100`;
+    try {
+      const response = await fetch(`${baseUrl}${wdaPath}`, {
+        method,
+        headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
+        body: body && body !== "{}" ? body : undefined,
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) {
+        result.execution = { exitCode: 1, stdout: "", stderr: `WDA ${method} ${wdaPath} returned ${response.status}` };
+      } else {
+        const data = await response.json();
+        result.execution = { exitCode: 0, stdout: JSON.stringify((data as any)?.value ?? data), stderr: "" };
+      }
+    } catch (error) {
+      result.execution = { exitCode: 1, stdout: "", stderr: `WDA request failed: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    return result;
+  }
+
   result.execution = await executeRunner(options.command, options.repoRoot, process.env);
   return result;
 }
