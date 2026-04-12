@@ -1,116 +1,348 @@
 /**
- * Navigate back post-back stabilization tests.
+ * Navigate back tool-level behavioral tests.
  *
- * These tests verify the contract invariants for navigate_back's
- * post-back verification: preBackTreeHash is captured BEFORE back,
- * postBackPageIdentity derives from StateSummary.pageIdentity, and
- * pageTreeHashUnchanged does NOT imply stateChanged=false.
+ * These tests call navigateBackWithMaestro with mocked dependencies
+ * to verify real tool behavior: pre-back state captured before back action,
+ * post-back evidence fields derived from StateSummary.pageIdentity,
+ * and pageTreeHashUnchanged semantics.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasStateChanged } from "../src/session-state.ts";
-import type { PageIdentity, StateSummary } from "@mobile-e2e-mcp/contracts";
+import { afterEach } from "node:test";
+import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
+import {
+  navigateBackWithMaestro,
+  setNavigateBackTestHooksForTesting,
+  resetNavigateBackTestHooksForTesting,
+} from "../src/index.ts";
+import type { NavigateBackTestHooks } from "../src/ui-action-tools.js";
 
-// ─── Contract: pre vs. post ordering ───────────────────────────────────────
-
-test("navigate_back preBackTreeHash must come from BEFORE back action", () => {
-  // This test documents the invariant: preBackTreeHash is captured from
-  // getScreenSummary BEFORE executeUiActionCommand (Android) or
-  // tapElementWithMaestroTool (iOS) runs. The code in ui-action-tools.ts
-  // captures it in this order:
-  //   Android: getScreenSummary → executeUiActionCommand → waitForUiStable → getScreenSummary
-  //   iOS:     getScreenSummary → tapElement → waitForUiStable → getScreenSummary
-  //
-  // If preBackTreeHash were captured AFTER the back action, it would be an
-  // early post-action snapshot, not a genuine pre-back state. This test
-  // documents the invariant so regressions are caught at review time.
-
-  const preBackState: StateSummary & { pageIdentity?: PageIdentity } = {
-    appPhase: "authentication",
-    readiness: "ready",
-    blockingSignals: [],
-    pageIdentity: { treeHash: "pre-abc123", visibleElementCount: 10, identityConfidence: 0.9 },
-  };
-
-  // Simulate: back was pressed, UI stabilized, post-back state captured
-  const postBackState: StateSummary & { pageIdentity?: PageIdentity } = {
-    appPhase: "catalog",
-    readiness: "ready",
-    blockingSignals: [],
-    pageIdentity: { treeHash: "post-def456", visibleElementCount: 15, identityConfidence: 0.9 },
-  };
-
-  const preBackTreeHash = preBackState.pageIdentity?.treeHash;
-  const postBackTreeHash = postBackState.pageIdentity?.treeHash;
-
-  // If preBackTreeHash were captured after back, it would equal or closely
-  // resemble postBackTreeHash. The fact they differ proves the pre-back
-  // snapshot was genuinely captured before the back action.
-  assert.notEqual(preBackTreeHash, postBackTreeHash);
-
-  // The pageTreeHashUnchanged flag would be false (different screens)
-  const pageTreeHashUnchanged = preBackTreeHash === postBackTreeHash;
-  assert.equal(pageTreeHashUnchanged, false);
-
-  // And stateChanged would be true (different appPhase)
-  assert.equal(hasStateChanged(preBackState, postBackState), true);
+// Per-test cleanup: prevents mock state leakage between tests
+afterEach(() => {
+  resetNavigateBackTestHooksForTesting();
 });
 
-test("navigate_back postBackPageIdentity derives from StateSummary.pageIdentity", () => {
-  // This test documents the invariant: postBackPageIdentity comes from
-  // getScreenSummary(...).data.screenSummary?.pageIdentity, NOT from
-  // waitForUiStable(...).data.stableFingerprint. Both use the same rolling-
-  // hash algorithm but have different input sources (sample nodes vs. full
-  // raw JSON), so they are NOT cross-comparable.
-  //
-  // The code in ui-action-tools.ts does:
-  //   postBackPageIdentity = postBackState.data.screenSummary?.pageIdentity;
-  //   postBackTreeHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
-  //
-  // This ensures postBackPageIdentity uses the same sample-node derivation
-  // as preBackTreeHash, making them comparable.
+// ─── Android post-back evidence fields ─────────────────────────────────────
 
-  const mockScreenSummaryPageIdentity: PageIdentity = {
-    treeHash: "sample-node-hash",
-    visibleElementCount: 12,
-    hasBackAffordance: true,
-    backAffordanceLabel: "Settings",
-    identitySource: "heading",
-    identityConfidence: 0.9,
-    isTopLevel: false,
+test("navigate_back Android captures pre-back hash BEFORE back action", async () => {
+  // Track call ordering to prove preBackTreeHash is captured before back
+  const callOrder: string[] = [];
+  let capturedPreBackTreeHash: string | undefined;
+
+  const hooks: NavigateBackTestHooks = {
+    getScreenSummary: async (input) => {
+      if (callOrder.filter(c => c === "getScreenSummary").length === 0) {
+        callOrder.push("getScreenSummary"); // pre-back
+        return {
+          status: "success",
+          reasonCode: REASON_CODES.ok,
+          sessionId: input.sessionId,
+          durationMs: 1,
+          attempts: 1,
+          artifacts: [],
+          data: {
+            dryRun: false,
+            runnerProfile: input.runnerProfile,
+            outputPath: "/tmp/test.json",
+            command: [],
+            exitCode: 0,
+            supportLevel: "full",
+            summarySource: "ui_only",
+            screenSummary: {
+              appPhase: "authentication",
+              readiness: "ready",
+              blockingSignals: [],
+              pageIdentity: {
+                treeHash: "pre-back-hash-abc",
+                visibleElementCount: 10,
+                identityConfidence: 0.9,
+              },
+            },
+          },
+          nextSuggestions: [],
+        };
+      } else {
+        callOrder.push("getScreenSummary"); // post-back
+        return {
+          status: "success",
+          reasonCode: REASON_CODES.ok,
+          sessionId: input.sessionId,
+          durationMs: 1,
+          attempts: 1,
+          artifacts: [],
+          data: {
+            dryRun: false,
+            runnerProfile: input.runnerProfile,
+            outputPath: "/tmp/test.json",
+            command: [],
+            exitCode: 0,
+            supportLevel: "full",
+            summarySource: "ui_only",
+            screenSummary: {
+              appPhase: "catalog",
+              readiness: "ready",
+              blockingSignals: [],
+              pageIdentity: {
+                treeHash: "post-back-hash-def",
+                visibleElementCount: 15,
+                identityConfidence: 0.9,
+              },
+            },
+          },
+          nextSuggestions: [],
+        };
+      }
+    },
+    waitForUiStable: async () => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: "test",
+      durationMs: 100,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile: "phase1",
+        stable: true,
+        polls: 2,
+        stableAfterMs: 300,
+        stableFingerprint: "stability-fingerprint",
+        confidence: 0.95,
+        stabilityBasis: "visible-tree",
+        timeoutMs: 5000,
+        intervalMs: 300,
+        consecutiveStable: 2,
+      },
+      nextSuggestions: [],
+    }),
+    executeBackCommand: async () => {
+      callOrder.push("executeBackCommand");
+      return { exitCode: 0, stderr: "", stdout: "" };
+    },
   };
 
-  const postBackState: StateSummary & { pageIdentity?: PageIdentity } = {
-    appPhase: "catalog",
-    readiness: "ready",
-    blockingSignals: [],
-    pageIdentity: mockScreenSummaryPageIdentity,
-  };
+  setNavigateBackTestHooksForTesting(hooks);
 
-  // postBackPageIdentity should be the same object from screenSummary.pageIdentity
-  const postBackPageIdentity = postBackState.pageIdentity;
-  assert.deepEqual(postBackPageIdentity, mockScreenSummaryPageIdentity);
-  assert.equal(postBackPageIdentity?.treeHash, "sample-node-hash");
+  const result = await navigateBackWithMaestro({
+    sessionId: "test-session",
+    platform: "android",
+    deviceId: "test-device",
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.data.stateChanged, "unknown");
+
+  // Verify call ordering: pre-back state captured BEFORE back action
+  assert.equal(callOrder[0], "getScreenSummary", "pre-back state should be captured first");
+  assert.equal(callOrder[1], "executeBackCommand", "back action should come after pre-back state");
+  assert.equal(callOrder[2], "getScreenSummary", "wait_for_ui_stable calls getScreenSummary internally for pre");
+
+  // Verify preBackTreeHash comes from the pre-back state
+  assert.equal(result.data.preBackTreeHash, "pre-back-hash-abc");
+
+  // Verify postBackTreeHash comes from the post-back state
+  assert.equal(result.data.postBackTreeHash, "post-back-hash-def");
+
+  // Verify pageTreeHashUnchanged is false (different hashes)
+  assert.equal(result.data.pageTreeHashUnchanged, false);
 });
 
-test("navigate_back pageTreeHashUnchanged=true with stateChanged=true is valid", () => {
-  // Edge case: keyboard dismiss or overlay dismissal leaves tree hash
-  // unchanged but material state transitions
-  const preState: StateSummary & { pageIdentity?: PageIdentity } = {
-    appPhase: "authentication",
-    readiness: "ready",
-    blockingSignals: ["dialog_actions"],
-    pageIdentity: { treeHash: "same-hash", visibleElementCount: 8 },
-  };
-  const postState: StateSummary & { pageIdentity?: PageIdentity } = {
-    appPhase: "authentication",
-    readiness: "waiting_ui", // changed
-    blockingSignals: [], // dialog dismissed
-    pageIdentity: { treeHash: "same-hash", visibleElementCount: 6 },
+test("navigate_back Android postBackPageIdentity derives from StateSummary.pageIdentity", async () => {
+  let getScreenSummaryCallCount = 0;
+
+  const hooks: NavigateBackTestHooks = {
+    getScreenSummary: async (input) => {
+      getScreenSummaryCallCount++;
+      const isPreCall = getScreenSummaryCallCount === 1;
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: input.sessionId,
+        durationMs: 1,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile: input.runnerProfile,
+          outputPath: "/tmp/test.json",
+          command: [],
+          exitCode: 0,
+          supportLevel: "full",
+          summarySource: "ui_only",
+          screenSummary: {
+            appPhase: isPreCall ? "authentication" as const : "catalog" as const,
+            readiness: "ready" as const,
+            blockingSignals: [] as string[],
+            pageIdentity: {
+              treeHash: isPreCall ? "pre-hash" : "post-hash",
+              visibleElementCount: isPreCall ? 10 : 15,
+              hasBackAffordance: !isPreCall,
+              backAffordanceLabel: "Settings",
+              identitySource: "heading" as const,
+              identityConfidence: 0.9,
+              isTopLevel: isPreCall,
+            },
+          },
+        },
+        nextSuggestions: [],
+      };
+    },
+    waitForUiStable: async () => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: "test",
+      durationMs: 100,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile: "phase1",
+        stable: true,
+        polls: 2,
+        stableAfterMs: 300,
+        stableFingerprint: "should-not-be-used-for-page-identity",
+        confidence: 0.95,
+        stabilityBasis: "visible-tree",
+        timeoutMs: 5000,
+        intervalMs: 300,
+        consecutiveStable: 2,
+      },
+      nextSuggestions: [],
+    }),
+    executeBackCommand: async () => ({ exitCode: 0, stderr: "", stdout: "" }),
   };
 
-  const pageTreeHashUnchanged = preState.pageIdentity!.treeHash === postState.pageIdentity!.treeHash;
-  assert.equal(pageTreeHashUnchanged, true);
-  assert.equal(hasStateChanged(preState, postState), true);
+  setNavigateBackTestHooksForTesting(hooks);
+
+  const result = await navigateBackWithMaestro({
+    sessionId: "test-session",
+    platform: "android",
+    deviceId: "test-device",
+  });
+
+  assert.equal(result.status, "success");
+
+  // postBackPageIdentity should derive from StateSummary.pageIdentity, NOT from stableFingerprint
+  assert.ok(result.data.postBackPageIdentity, "postBackPageIdentity should be present");
+  assert.equal(result.data.postBackPageIdentity?.treeHash, "post-hash");
+  assert.equal(result.data.postBackPageIdentity?.visibleElementCount, 15);
+  assert.equal(result.data.postBackPageIdentity?.hasBackAffordance, true);
+  assert.equal(result.data.postBackPageIdentity?.backAffordanceLabel, "Settings");
+
+  // stableFingerprint is different from pageIdentity.treeHash — they should NOT match
+  assert.notEqual(result.data.postBackPageIdentity?.treeHash, "should-not-be-used-for-page-identity");
+});
+
+test("navigate_back Android pageTreeHashUnchanged=true when hashes match", async () => {
+  const hooks: NavigateBackTestHooks = {
+    getScreenSummary: async (input) => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: 1,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile: input.runnerProfile,
+        outputPath: "/tmp/test.json",
+        command: [],
+        exitCode: 0,
+        supportLevel: "full",
+        summarySource: "ui_only",
+        screenSummary: {
+          appPhase: "authentication" as const,
+          readiness: "ready" as const,
+          blockingSignals: [] as string[],
+          pageIdentity: {
+            treeHash: "same-hash", // same for both pre and post
+            visibleElementCount: 8,
+            identityConfidence: 0.6,
+          },
+        },
+      },
+      nextSuggestions: [],
+    }),
+    waitForUiStable: async () => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: "test",
+      durationMs: 100,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile: "phase1",
+        stable: true,
+        polls: 2,
+        stableAfterMs: 300,
+        stableFingerprint: "unused",
+        confidence: 0.95,
+        stabilityBasis: "visible-tree",
+        timeoutMs: 5000,
+        intervalMs: 300,
+        consecutiveStable: 2,
+      },
+      nextSuggestions: [],
+    }),
+    executeBackCommand: async () => ({ exitCode: 0, stderr: "", stdout: "" }),
+  };
+
+  setNavigateBackTestHooksForTesting(hooks);
+
+  const result = await navigateBackWithMaestro({
+    sessionId: "test-session",
+    platform: "android",
+    deviceId: "test-device",
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.data.pageTreeHashUnchanged, true);
+  assert.equal(result.data.preBackTreeHash, "same-hash");
+  assert.equal(result.data.postBackTreeHash, "same-hash");
+});
+
+test("navigate_back Android back command failure propagates error", async () => {
+  const hooks: NavigateBackTestHooks = {
+    getScreenSummary: async (input) => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: input.sessionId,
+      durationMs: 1,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile: input.runnerProfile,
+        outputPath: "/tmp/test.json",
+        command: [],
+        exitCode: 0,
+        supportLevel: "full",
+        summarySource: "ui_only",
+        screenSummary: {
+          appPhase: "authentication" as const,
+          readiness: "ready" as const,
+          blockingSignals: [] as string[],
+        },
+      },
+      nextSuggestions: [],
+    }),
+    executeBackCommand: async () => ({ exitCode: 1, stderr: "error: device not found", stdout: "" }),
+  };
+
+  setNavigateBackTestHooksForTesting(hooks);
+
+  const result = await navigateBackWithMaestro({
+    sessionId: "test-session",
+    platform: "android",
+    deviceId: "test-device",
+  });
+
+  assert.equal(result.status, "failed");
+  // Pre-back state was captured but pageIdentity was not present in mock
+  assert.equal(result.data.preBackTreeHash, undefined);
+  // Post-back stabilization skipped on failure
+  assert.equal(result.data.postBackVerified, false);
+  assert.equal(result.data.postBackTreeHash, undefined);
 });
