@@ -69,11 +69,18 @@ runWithOutput(`git tag -a ${tagName} -m "Release ${pkgName} v${version}"`);
 runWithOutput('git push');
 runWithOutput(`git push origin ${tagName}`);
 
+// Verify tag was successfully pushed to remote
+const remoteTagAfterPush = run(`git ls-remote --tags origin ${tagName}`);
+if (!remoteTagAfterPush.includes(tagName)) {
+  throw new Error(`Failed to verify tag ${tagName} on origin. Push may have failed.`);
+}
+
 process.stdout.write(
   [
     '',
     `✅ Prepared and pushed ${pkgName} ${version}`,
     `✅ Created and pushed tag: ${tagName}`,
+    `✅ Verified tag exists on origin`,
     `✅ Refreshed ${repomixOutputPath} and GitNexus index for this release commit`,
     'ℹ️ GitHub Actions will publish to npm on this tag.'
   ].join('\n')
