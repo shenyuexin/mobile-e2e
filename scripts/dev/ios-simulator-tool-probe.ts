@@ -222,7 +222,7 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
     // Swipe down (content moves down, revealing top items)
     const result = await invoke("scroll_only", {
       sessionId, platform, runnerProfile, deviceId,
-      count: 3, gesture: { direction: "down" }, swipeDurationMs: 400, settleDelayMs: 1000,
+      count: 2, gesture: { direction: "down" }, swipeDurationMs: 400, settleDelayMs: 1000,
     });
     // 滚动动画需要更长时间稳定，等待所有惯性滚动停止
     await waitForStable();
@@ -367,8 +367,8 @@ export async function runIosSimulatorToolProbe(): Promise<void> {
   logStep("scroll_only — 滑动 3 次（向下滚找 Developer）");
   push("scroll_only", await invoke("scroll_only", {
     sessionId, platform, runnerProfile, deviceId,
-    count: 3, gesture: { direction: "up" }, swipeDurationMs: 500, settleDelayMs: 2000,
-  }), "scroll 3 times (direction=up to see items below)");
+    count: 2, gesture: { direction: "up" }, swipeDurationMs: 500, settleDelayMs: 1000,
+  }), "scroll 2 times (direction=up to see items below)");
 
   // 额外等待确保 View 层级完全更新
   await waitForStable();
