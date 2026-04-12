@@ -304,7 +304,16 @@
 - 不要把 transport success 当成 business success
 - 不要假设 Android / iOS / simulator / real device 完全对称
 
-## 8. 与其它文档的关系
+## 8. 版本变更
+
+### v0.1.13 — iOS 真机 WDA 支持 + tap_element/type_into_element 验证修复
+
+- **iOS 真机 WebDriverAgent (WDA) 后端**：`tap_element`、`type_into_element`、`resolve_ui_target` 现在支持通过 WDA HTTP API 在 iOS 物理设备上执行。WDA 必须通过 `iproxy 8100 8100 --udid <udid>` 端口转发。
+- **tap_element/type_into_element 验证修复**：`verifyResolvedIosPointWithHooks` 和 `verifyTypedIosPostconditionWithHooks` 此前错误地用 UI 层级根节点（Application）与预期元素比较，导致模拟器/真机上总是返回 `NO_MATCH`。现在使用 `findNodeAtPoint` 在解析坐标处查找最深节点进行验证。
+- **WDA `/source` 格式兼容**：`parseIosInspectNodes` 现在同时支持 axe/idb 的数组格式和 WDA 的单对象格式。WDA 原始 XCUIElementType 格式会通过 `transformWdaElement` 归一化为兼容格式。
+- **调用方式不变**：AI Agent 无需改变任何调用逻辑。`tap_element` 和 `type_into_element` 会根据 session 中的 `runnerProfile`（`native_ios` = 模拟器, `native_ios_real_device` = 真机）自动选择 axe 或 WDA 后端。
+
+## 9. 与其它文档的关系
 
 - 想快速首跑闭环：看 [`golden-path.md`](./golden-path.md)
 - 想做录制、导出、回放：看 [`flow-generation.md`](./flow-generation.md)
