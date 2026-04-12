@@ -30,42 +30,7 @@ import {
   buildFailureReason,
 } from "./runtime-shared.js";
 import { getIosBackendRouter } from "./ios-backend-router.js";
-
-/** Minimal WDA element shape for /source transformation. */
-interface WdaSourceElement {
-  type?: string;
-  name?: string | null;
-  label?: string | null;
-  value?: string | null;
-  rect?: { x: number; y: number; width: number; height: number };
-  isEnabled?: boolean;
-  children?: WdaSourceElement[];
-}
-
-/**
- * Transform a WDA /source element tree to parseIosInspectNodes-compatible format.
- * This mirrors WdaRealDeviceBackend.transformWdaSource() but is available at the
- * runtime level for use by executeUiActionCommand's __wda_http__ handler.
- */
-function transformWdaSourceRecursive(wdaElement: WdaSourceElement): Record<string, unknown> {
-  return {
-    type: wdaElement.type?.replace("XCUIElementType", "") ?? "Unknown",
-    AXLabel: wdaElement.name ?? wdaElement.label ?? null,
-    title: wdaElement.label ?? null,
-    AXValue: wdaElement.value ?? null,
-    frame: wdaElement.rect
-      ? { x: wdaElement.rect.x, y: wdaElement.rect.y, width: wdaElement.rect.width, height: wdaElement.rect.height }
-      : undefined,
-    enabled: wdaElement.isEnabled ?? true,
-    custom_actions: isClickableWdaType(wdaElement.type) ? ["default"] : [],
-    children: (wdaElement.children ?? []).map(child => transformWdaSourceRecursive(child)),
-  };
-}
-
-function isClickableWdaType(type: string | undefined): boolean {
-  const stripped = type?.replace("XCUIElementType", "") ?? "";
-  return ["Button", "Link", "Cell", "Switch", "Slider", "SegmentedControl", "Picker"].includes(stripped);
-}
+import { transformWdaElement, type TransformedElement } from "./ios-backend-wda.js";
 import { WdaRealDeviceBackend } from "./ios-backend-wda.js";
 
 export { resolveIdbCliPath, resolveIdbCompanionPath };
@@ -406,6 +371,13 @@ export async function executeUiActionCommand(options: {
   if (options.command[0] === "__wda_http__") {
     const [, deviceId, method, wdaPath, body] = options.command;
     const baseUrl = process.env.WDA_BASE_URL ?? `http://localhost:8100`;
+
+    // Security: WDA must always be local. Reject user-controlled URLs to prevent SSRF.
+    if (!baseUrl.startsWith("http://localhost") && !baseUrl.startsWith("http://127.0.0.1")) {
+      result.execution = { exitCode: 1, stdout: "", stderr: `WDA_BASE_URL must be http://localhost or http://127.0.0.1, got: ${baseUrl}` };
+      return result;
+    }
+
     try {
       const response = await fetch(`${baseUrl}${wdaPath}`, {
         method,
@@ -421,10 +393,10 @@ export async function executeUiActionCommand(options: {
 
         // WDA /source returns raw XCUIElementType format that must be transformed
         // to the parseIosInspectNodes-compatible format (AXLabel, frame, etc.).
-        // This mirrors captureIosUiSnapshot's transformWdaSource() call.
+        // Uses the canonical transformWdaElement from ios-backend-wda.ts.
         let stdout: string;
         if (wdaPath === "/source" && rawValue && typeof rawValue === "object") {
-          const transformed = transformWdaSourceRecursive(rawValue);
+          const transformed = transformWdaElement(rawValue as any);
           stdout = JSON.stringify(transformed);
         } else {
           stdout = JSON.stringify(rawValue);
