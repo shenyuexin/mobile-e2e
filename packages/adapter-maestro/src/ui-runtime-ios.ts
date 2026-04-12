@@ -169,22 +169,17 @@ export async function verifyResolvedIosPointWithHooks(
     };
   }
 
-  const pointNode = parseIosInspectNodes(actionResult.execution.stdout)[0];
-  const actual = buildIosNativeLocatorCandidate(pointNode, params.resolvedQuery);
-  
-  // Bug fix: The first node is always the Application root, not the node at the resolved point.
-  // We need to find the node whose bounds contain the resolved point.
   const allNodes = parseIosInspectNodes(actionResult.execution.stdout);
   const nodeAtPoint = findNodeAtPoint(allNodes, params.resolvedPoint);
-  const actualCandidate = nodeAtPoint
+  const candidate = nodeAtPoint
     ? buildIosNativeLocatorCandidate(nodeAtPoint, params.resolvedQuery)
-    : actual;
-  
-  const verified = actualCandidate?.kind === expected.kind
-    && actualCandidate.value === expected.value
-    && actualCandidate.text === expected.text
-    && actualCandidate.contentDesc === expected.contentDesc
-    && actualCandidate.className === expected.className;
+    : buildIosNativeLocatorCandidate(allNodes[0], params.resolvedQuery);
+
+  const verified = candidate?.kind === expected.kind
+    && candidate.value === expected.value
+    && candidate.text === expected.text
+    && candidate.contentDesc === expected.contentDesc
+    && candidate.className === expected.className;
 
   // If the tap succeeded (exitCode 0) but the node doesn't match, the screen likely
   // changed due to navigation. Report it as not verified so the caller can decide
