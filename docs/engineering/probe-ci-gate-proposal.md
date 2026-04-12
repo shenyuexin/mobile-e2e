@@ -77,6 +77,17 @@ ios-simulator-smoke:
 **成本**：~10-15 分钟，需要 macOS runner
 **收益**：真实设备上的端到端验证
 
+## 已知问题与修复状态
+
+| 问题 | 平台 | 严重级别 | 状态 | 说明 |
+|------|------|---------|------|------|
+| `verifyResolvedPoint` 用 `nodes[0]` 而非坐标处节点 | iOS 模拟器/真机 | Critical | ✅ 已修复 | `findNodeAtPoint` 查找包含解析坐标的最深节点 |
+| `verifyTypedPostcondition` 同样的 `nodes[0]` bug | iOS 模拟器/真机 | Critical | ✅ 已修复 | 同上 |
+| WDA `/source` 返回单对象，`parseIosInspectNodes` 期望数组 | iOS 真机 | High | ✅ 已修复 | 现在兼容单对象和数组两种格式 |
+| WDA `__wda_http__` 命令无法通过 `executeUiActionCommand` 执行 | iOS 真机 | High | ✅ 已修复 | `executeUiActionCommand` 现在特殊处理 `__wda_http__` 内部协议 |
+| `findNodeAtPoint` fallback 到 `allNodes[0]` | iOS 真机 | Low | 安全 | Fail-safe 设计，找不到节点时验证失败而非误通过 |
+| Android 无 `verifyResolvedPoint` 校验 | Android | N/A | 不适用 | Android hooks 不实现此校验，非同类问题 |
+
 ## 当前测试覆盖状态
 
 | 组件 | 测试数 | 覆盖率 | Probe 脚本 |

@@ -298,7 +298,12 @@ export function parseIosInspectNodes(jsonText: string): InspectUiNode[] {
     return [];
   }
   const nodes: InspectUiNode[] = [];
-  flattenIosInspectNodes(parsed, nodes);
+
+  // Handle both array input (axe/idb format) and single-object input (WDA /source format).
+  // WDA returns a single root element with children, while axe/idb returns an array of
+  // top-level elements. Wrap single objects in an array for consistent processing.
+  const inputArray = Array.isArray(parsed) ? parsed : (parsed && typeof parsed === "object" ? [parsed] : []);
+  flattenIosInspectNodes(inputArray, nodes);
   return nodes;
 }
 
