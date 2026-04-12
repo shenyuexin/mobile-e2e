@@ -263,6 +263,9 @@ import {
   waitForUiWithMaestroTool,
   waitForUiStableWithMaestro as waitForUiStableWithMaestroImpl,
   navigateBackWithMaestroTool,
+  setNavigateBackTestHooksForTesting as setNavigateBackTestHooksForTestingFromUiActionTools,
+  resetNavigateBackTestHooksForTesting as resetNavigateBackTestHooksForTestingFromUiActionTools,
+  type NavigateBackTestHooks,
 } from "./ui-tools.js";
 import { classifyInterruptionFromSignals } from "./interruption-classifier.js";
 import { detectInterruptionFromSummary } from "./interruption-detector.js";
@@ -447,6 +450,14 @@ export function setInterruptionGuardTestHooksForTesting(hooks: InterruptionGuard
 
 export function resetInterruptionGuardTestHooksForTesting(): void {
   resetInterruptionGuardTestHooksForTestingFromActionOrchestrator();
+}
+
+export function setNavigateBackTestHooksForTesting(hooks: NavigateBackTestHooks | undefined): void {
+  setNavigateBackTestHooksForTestingFromUiActionTools(hooks);
+}
+
+export function resetNavigateBackTestHooksForTesting(): void {
+  resetNavigateBackTestHooksForTestingFromUiActionTools();
 }
 
 

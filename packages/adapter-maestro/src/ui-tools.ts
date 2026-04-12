@@ -13,6 +13,9 @@ export {
   scrollOnlyWithMaestroTool,
   scrollAndTapElementWithMaestroTool,
   navigateBackWithMaestroTool,
+  setNavigateBackTestHooksForTesting,
+  resetNavigateBackTestHooksForTesting,
+  type NavigateBackTestHooks,
 } from "./ui-action-tools.js";
 export { waitForUiStableWithMaestro } from "./ui-stability.js";
 export {

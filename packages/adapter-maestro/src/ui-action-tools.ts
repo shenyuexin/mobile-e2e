@@ -230,6 +230,29 @@ export const uiActionToolInternals = {
   verifyResolvedIosPoint: verifyResolvedIosPointWithHooks,
 };
 
+// ─── Navigate Back Test Hooks ─────────────────────────────────────────────
+// Allow tests to inject mock implementations for getScreenSummary,
+// waitForUiStable, and the back action executor so we can verify
+// pre/post state capture ordering and evidence field provenance.
+
+import type { GetScreenSummaryData, WaitForUiStableData } from "@mobile-e2e-mcp/contracts";
+
+export interface NavigateBackTestHooks {
+  getScreenSummary?: (input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => Promise<ToolResult<GetScreenSummaryData>>;
+  waitForUiStable?: (input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string; timeoutMs?: number }) => Promise<ToolResult<WaitForUiStableData>>;
+  executeBackCommand?: () => Promise<{ exitCode: number; stderr: string; stdout: string }>;
+}
+
+let navigateBackTestHooks: NavigateBackTestHooks | undefined;
+
+export function setNavigateBackTestHooksForTesting(hooks: NavigateBackTestHooks | undefined): void {
+  navigateBackTestHooks = hooks;
+}
+
+export function resetNavigateBackTestHooksForTesting(): void {
+  navigateBackTestHooks = undefined;
+}
+
 export async function tapWithMaestroTool(
   input: TapInput,
 ): Promise<ToolResult<TapData>> {
@@ -1301,8 +1324,9 @@ export async function navigateBackWithMaestroTool(
     const waitForStable = input.postBackWaitForStable !== false;
     let preBackTreeHash: string | undefined;
     if (waitForStable) {
-      const { getScreenSummaryWithMaestro } = await import("./session-state.js");
-      const preBackState = await getScreenSummaryWithMaestro({
+      const getScreenSummary = navigateBackTestHooks?.getScreenSummary
+        ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => import("./session-state.js").then(m => m.getScreenSummaryWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId })));
+      const preBackState = await getScreenSummary({
         sessionId: input.sessionId,
         platform: "android",
         runnerProfile,
@@ -1311,13 +1335,14 @@ export async function navigateBackWithMaestroTool(
       preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
     }
 
-    const execution = await executeUiActionCommand({
-      repoRoot,
-      command,
-      requiresProbe: false,
-    });
+    const executionResult = navigateBackTestHooks?.executeBackCommand
+      ? await navigateBackTestHooks.executeBackCommand()
+      : await executeUiActionCommand({ repoRoot, command, requiresProbe: false });
 
-    const exitCode = execution.execution?.exitCode ?? null;
+    // Normalize exit code / stderr from either test hook result or UiActionExecutionResult
+    const er = executionResult as any;
+    const exitCode = er.execution?.exitCode ?? er.exitCode ?? null;
+    const errorOutput = er.execution?.stderr ?? er.stderr ?? "";
     const isSuccess = exitCode === 0;
 
     // Post-back stabilization (P24-C enhancement for Android)
@@ -1327,11 +1352,13 @@ export async function navigateBackWithMaestroTool(
     let postBackTreeHash: string | undefined;
 
     if (waitForStable && isSuccess) {
-      const { getScreenSummaryWithMaestro } = await import("./session-state.js");
-      const { waitForUiStableWithMaestro } = await import("./ui-stability.js");
+      const getScreenSummary = navigateBackTestHooks?.getScreenSummary
+        ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => import("./session-state.js").then(m => m.getScreenSummaryWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId })));
+      const waitForStableFn = navigateBackTestHooks?.waitForUiStable
+        ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string; timeoutMs?: number }) => import("./ui-stability.js").then(m => m.waitForUiStableWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId, timeoutMs: input.timeoutMs })));
 
       // Wait for UI to stabilize after back
-      const stableResult = await waitForUiStableWithMaestro({
+      const stableResult = await waitForStableFn({
         sessionId: input.sessionId,
         platform: "android",
         runnerProfile,
@@ -1348,7 +1375,7 @@ export async function navigateBackWithMaestroTool(
         // did not change — back could still have dismissed a keyboard,
         // changed readiness, or exited the app. Do NOT infer stateChanged
         // from this alone; let the caller decide.
-        const postBackState = await getScreenSummaryWithMaestro({
+        const postBackState = await getScreenSummary({
           sessionId: input.sessionId,
           platform: "android",
           runnerProfile,
@@ -1388,7 +1415,7 @@ export async function navigateBackWithMaestroTool(
       },
       nextSuggestions: isSuccess
         ? ["Verify the expected screen transition using get_session_state or inspect_ui."]
-        : [buildFailureReason(execution.execution?.stderr ?? "", execution.execution?.exitCode ?? null)],
+        : [buildFailureReason(errorOutput, exitCode)],
     };
   }
 
@@ -1474,8 +1501,9 @@ async function navigateBackIosWithSelector(
   const waitForStable = ctx.postBackWaitForStable !== false;
   let preBackTreeHash: string | undefined;
   if (waitForStable && !ctx.dryRun) {
-    const { getScreenSummaryWithMaestro } = await import("./session-state.js");
-    const preBackState = await getScreenSummaryWithMaestro({
+    const getScreenSummary = navigateBackTestHooks?.getScreenSummary
+      ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => import("./session-state.js").then(m => m.getScreenSummaryWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId })));
+    const preBackState = await getScreenSummary({
       sessionId: ctx.sessionId,
       platform: "ios",
       runnerProfile: ctx.runnerProfile,
@@ -1502,11 +1530,13 @@ async function navigateBackIosWithSelector(
   let postBackTreeHash: string | undefined;
 
   if (waitForStable && tapResult.status === "success" && !ctx.dryRun) {
-    const { getScreenSummaryWithMaestro } = await import("./session-state.js");
-    const { waitForUiStableWithMaestro } = await import("./ui-stability.js");
+    const getScreenSummary = navigateBackTestHooks?.getScreenSummary
+      ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => import("./session-state.js").then(m => m.getScreenSummaryWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId })));
+    const waitForStableFn = navigateBackTestHooks?.waitForUiStable
+      ?? ((input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string; timeoutMs?: number }) => import("./ui-stability.js").then(m => m.waitForUiStableWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId, timeoutMs: input.timeoutMs })));
 
     // Wait for UI to stabilize after back
-    const stableResult = await waitForUiStableWithMaestro({
+    const stableResult = await waitForStableFn({
       sessionId: ctx.sessionId,
       platform: "ios",
       runnerProfile: ctx.runnerProfile,
@@ -1523,7 +1553,7 @@ async function navigateBackIosWithSelector(
       // did not change — back tap could still have dismissed a keyboard,
       // changed readiness, or failed to transition. Do NOT infer stateChanged
       // from this alone; let the caller decide.
-      const postBackState = await getScreenSummaryWithMaestro({
+      const postBackState = await getScreenSummary({
         sessionId: ctx.sessionId,
         platform: "ios",
         runnerProfile: ctx.runnerProfile,
