@@ -1338,9 +1338,6 @@ export async function navigateBackWithMaestroTool(
       if (stableResult.status === "success") {
         postBackVerified = true;
         postBackStableAfterMs = stableResult.data.stableAfterMs;
-        postBackPageIdentity = stableResult.data.stableFingerprint
-          ? { treeHash: stableResult.data.stableFingerprint }
-          : undefined;
 
         // Compare pre/post state tree hashes.
         // NOTE: matching tree hashes only indicate the visible hierarchy
@@ -1354,6 +1351,7 @@ export async function navigateBackWithMaestroTool(
           deviceId,
         });
         postBackTreeHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
+        postBackPageIdentity = postBackState.data.screenSummary?.pageIdentity;
       }
     }
 
@@ -1510,9 +1508,6 @@ async function navigateBackIosWithSelector(
     if (stableResult.status === "success") {
       postBackVerified = true;
       postBackStableAfterMs = stableResult.data.stableAfterMs;
-      postBackPageIdentity = stableResult.data.stableFingerprint
-        ? { treeHash: stableResult.data.stableFingerprint }
-        : undefined;
 
       // Compare pre/post state tree hashes.
       // NOTE: matching tree hashes only indicate the visible hierarchy
@@ -1526,6 +1521,7 @@ async function navigateBackIosWithSelector(
         deviceId: ctx.deviceId,
       });
       postBackTreeHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
+      postBackPageIdentity = postBackState.data.screenSummary?.pageIdentity;
     }
   }
 

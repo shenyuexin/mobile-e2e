@@ -211,3 +211,51 @@ test("sampleNodeSignatures filters nodes without text or bounds", () => {
   assert.equal(sigs.length, 1);
   assert.ok(sigs[0].includes("Hello"));
 });
+
+// ─── Navigate back contract: pageTreeHashUnchanged ≠ stateChanged=false ──
+
+test("pageTreeHashUnchanged does NOT imply no state change (back navigation contract)", () => {
+  // Simulate: user pressed back, but only the keyboard dismissed (same page tree hash)
+  // Material state changed because readiness transitioned
+  const preState = {
+    appPhase: "authentication" as const,
+    readiness: "ready" as const,
+    blockingSignals: [] as string[],
+    pageIdentity: { treeHash: "abc123", visibleElementCount: 5 },
+  };
+  const postState = {
+    appPhase: "authentication" as const,
+    readiness: "waiting_ui" as const, // keyboard dismissed, now waiting for input
+    blockingSignals: [] as string[],
+    pageIdentity: { treeHash: "abc123", visibleElementCount: 5 }, // same tree hash!
+  };
+
+  // pageTreeHashUnchanged would be true
+  const pageTreeHashUnchanged = preState.pageIdentity.treeHash === postState.pageIdentity.treeHash;
+  assert.equal(pageTreeHashUnchanged, true);
+
+  // But state DID change (readiness transition)
+  assert.equal(hasStateChanged(preState, postState), true);
+});
+
+test("navigate_back: different screen but same tree hash is possible", () => {
+  // Two different screens could produce the same hash (collision) or
+  // keyboard dismiss / overlay dismiss could leave tree hash unchanged
+  // while material state transitions
+  const preState = {
+    appPhase: "detail" as const,
+    readiness: "ready" as const,
+    blockingSignals: ["dialog_actions"] as string[],
+    pageIdentity: { treeHash: "def789", visibleElementCount: 8 },
+  };
+  const postState = {
+    appPhase: "catalog" as const, // different page entirely
+    readiness: "ready" as const,
+    blockingSignals: [] as string[], // dialog dismissed
+    pageIdentity: { treeHash: "def789", visibleElementCount: 12 }, // unlikely but possible collision
+  };
+
+  const pageTreeHashUnchanged = preState.pageIdentity.treeHash === postState.pageIdentity.treeHash;
+  assert.equal(pageTreeHashUnchanged, true);
+  assert.equal(hasStateChanged(preState, postState), true); // different appPhase + blockingSignals!
+});
