@@ -20,7 +20,7 @@ interface WdaElement {
 }
 
 // Transformed format compatible with parseIosInspectNodes (via flattenIosInspectNodes)
-interface TransformedElement {
+export interface TransformedElement {
   type: string;
   AXLabel: string | null;
   title: string | null;
@@ -29,6 +29,30 @@ interface TransformedElement {
   enabled: boolean;
   custom_actions: string[];
   children: TransformedElement[];
+}
+
+/** Transform a single WDA element to parseIosInspectNodes-compatible format. */
+export function transformWdaElement(wdaElement: WdaElement): TransformedElement {
+  return {
+    type: wdaElement.type?.replace("XCUIElementType", "") ?? "Unknown",
+    AXLabel: wdaElement.name ?? wdaElement.label ?? null,
+    title: wdaElement.label ?? null,
+    AXValue: wdaElement.value ?? null,
+    frame: wdaElement.rect ? {
+      x: wdaElement.rect.x,
+      y: wdaElement.rect.y,
+      width: wdaElement.rect.width,
+      height: wdaElement.rect.height,
+    } : undefined,
+    enabled: wdaElement.isEnabled ?? true,
+    custom_actions: isClickableWdaType(wdaElement.type) ? ["default"] : [],
+    children: (wdaElement.children ?? []).map(child => transformWdaElement(child)),
+  };
+}
+
+function isClickableWdaType(type: string | undefined): boolean {
+  const stripped = type?.replace("XCUIElementType", "") ?? "";
+  return ["Button", "Link", "Cell", "Switch", "Slider", "SegmentedControl", "Picker"].includes(stripped);
 }
 
 export interface WdaExecutionResult {
@@ -136,28 +160,8 @@ export class WdaRealDeviceBackend implements IosExecutionBackend {
   }
 
   // Transform WDA /source JSON → parseIosInspectNodes compatible format
-  // Oracle Review finding: WDA uses XCUIElementType prefix, name/label fields, rect instead of frame
   transformWdaSource(wdaElement: WdaElement): TransformedElement {
-    return {
-      type: wdaElement.type?.replace("XCUIElementType", "") ?? "Unknown",
-      AXLabel: wdaElement.name ?? wdaElement.label ?? null,
-      title: wdaElement.label ?? null,
-      AXValue: wdaElement.value ?? null,
-      frame: wdaElement.rect ? {
-        x: wdaElement.rect.x,
-        y: wdaElement.rect.y,
-        width: wdaElement.rect.width,
-        height: wdaElement.rect.height,
-      } : undefined,
-      enabled: wdaElement.isEnabled ?? true,
-      custom_actions: this.isClickableType(wdaElement.type) ? ["default"] : [],
-      children: (wdaElement.children ?? []).map(child => this.transformWdaSource(child)),
-    };
-  }
-
-  private isClickableType(type: string | undefined): boolean {
-    const stripped = type?.replace("XCUIElementType", "") ?? "";
-    return ["Button", "Link", "Cell", "Switch", "Slider", "SegmentedControl", "Picker"].includes(stripped);
+    return transformWdaElement(wdaElement);
   }
 
   buildFailureSuggestion(action: string, _deviceId: string): string {
