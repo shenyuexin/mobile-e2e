@@ -64,11 +64,30 @@ on:
 
 concurrency:
   group: real-device-acceptance-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
+  check-runner-health:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 5
+    outputs:
+      runner-ready: ${{ steps.health.outputs.ready }}
+    steps:
+      - name: Runner health check
+        id: health
+        run: |
+          echo "Checking runner health..."
+          echo "macOS version: $(sw_vers -productVersion)"
+          echo "Node: $(node --version 2>/dev/null || echo 'not found')"
+          echo "pnpm: $(pnpm --version 2>/dev/null || echo 'not found')"
+          echo "Xcode: $(xcode-select -p 2>/dev/null || echo 'not found')"
+          echo "✓ Runner is online"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
   dry-run-baseline:
+    needs: check-runner-health
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -85,6 +104,7 @@ jobs:
   real-run-matrix:
     needs: dry-run-baseline
     runs-on: [self-hosted, macOS]
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
         with:

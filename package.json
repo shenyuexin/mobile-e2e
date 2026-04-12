@@ -47,6 +47,8 @@
     "release:mcp:patch": "pnpm --filter @shenyuexin/mobile-e2e-mcp run release:patch",
     "release:mcp:prepare-tag": "tsx scripts/release/prepare-mcp-release.ts",
     "release:mcp:version": "tsx scripts/release/prepare-mcp-release.ts --version",
+    "release:mcp:checklist": "tsx scripts/release/release-checklist.ts",
+    "release:mcp:checklist:dry-run": "tsx scripts/release/release-checklist.ts --dry-run",
     "validate:architecture-guardrails": "tsx scripts/validate-architecture-guardrails.ts",
     "validate:tool-output-contracts": "tsx scripts/validate-tool-output-contracts.ts"
   },
