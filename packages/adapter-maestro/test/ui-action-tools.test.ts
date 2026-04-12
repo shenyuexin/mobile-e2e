@@ -259,6 +259,72 @@ test("verifyResolvedIosPoint keeps identifier-backed match when describe-point a
   assert.deepEqual(verification.command, ["describe-point", "120", "340"]);
 });
 
+// Regression: verifyResolvedIosPoint must use findNodeAtPoint, not nodes[0].
+// When the hierarchy has Application root at index 0 and the target Button as a child,
+// the old code would compare the root (no identifier, no text) against the expected
+// button and always return noMatch.
+test("verifyResolvedIosPoint finds target node at resolved point, not Application root", async () => {
+  const verification = await uiActionToolInternals.verifyResolvedIosPoint({
+    repoRoot: process.cwd(),
+    deviceId: "ios-sim-1",
+    resolvedNode: {
+      resourceId: "com.apple.settings.general",
+      className: "Button",
+      text: "General",
+      contentDesc: "General",
+      clickable: true,
+      enabled: true,
+      scrollable: false,
+      bounds: "[20,334][410,378]",
+    },
+    resolvedQuery: { text: "General" },
+    resolvedPoint: { x: 215, y: 356 },
+    runtimeHooks: {
+      platform: "ios",
+      requiresProbe: true,
+      probeFailureReasonCode: REASON_CODES.configurationError,
+      buildTapCommand: () => ["tap"],
+      buildDescribePointCommand: () => ["describe-point", "215", "356"],
+      buildTypeTextCommand: () => ["type"],
+      buildSwipeCommand: () => ["swipe"],
+      buildHierarchyCapturePreviewCommand: () => ["describe-all"],
+      probeUnavailableSuggestion: () => "probe unavailable",
+      tapDryRunSuggestion: "tap dry",
+      tapFailureSuggestion: "tap failed",
+      typeTextDryRunSuggestion: "type dry",
+      typeTextFailureSuggestion: "type failed",
+    },
+    executeDescribePointCommand: async () => ({
+      command: ["describe-point", "215", "356"],
+      probeExecution: { exitCode: 0, stdout: "ok", stderr: "" },
+      // Hierarchy: Application root at [0], Button child at [1]
+      execution: {
+        exitCode: 0,
+        stdout: JSON.stringify([
+          {
+            type: "Application",
+            AXLabel: "Settings",
+            AXValue: null,
+            frame: { x: 0, y: 0, width: 430, height: 932 },
+            children: [
+              {
+                identifier: "com.apple.settings.general",
+                type: "Button",
+                AXLabel: "General",
+                frame: { x: 20, y: 334, width: 390, height: 44 },
+              },
+            ],
+          },
+        ]),
+        stderr: "",
+      },
+    }),
+  });
+
+  assert.equal(verification.verified, true, "Should find Button at resolved point, not use Application root");
+  assert.equal(verification.reasonCode, REASON_CODES.ok);
+});
+
 test("verifyResolvedIosPoint reports mismatch when describe-point returns different identifier", async () => {
   const verification = await uiActionToolInternals.verifyResolvedIosPoint({
     repoRoot: process.cwd(),
