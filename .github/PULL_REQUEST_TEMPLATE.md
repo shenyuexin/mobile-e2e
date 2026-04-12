@@ -1,3 +1,18 @@
+<!--
+  AI AGENT NOTE — PR BODY WORKFLOW (DO NOT SKIP)
+  ═══════════════════════════════════════════════
+  1. Copy this template:  cp .github/PULL_REQUEST_TEMPLATE.md .pr-body.md
+  2. Fill in ALL fields below (replace every placeholder with actual content).
+  3. Validate locally:    pnpm validate:pr-gate .pr-body.md
+  4. Push branch:          git push -u origin <branch-name>
+  5. Create PR:            gh pr create --base main --head <branch> --body-file .pr-body.md
+     (If PR already exists: gh pr edit <NUMBER> --body-file .pr-body.md)
+
+  ⚠️  NEVER use `gh pr create --body "..."` — the CI gate validates .pr-body.md.
+  ⚠️  .pr-body.md is a local artifact — do NOT commit it to the repo.
+  ⚠️  All Capability impact fields are mandatory for guarded-path PRs.
+-->
+
 ## Summary
 
 - What problem does this PR solve?
@@ -84,3 +99,6 @@ The following remain **reviewer-only** checks:
 3. Validate locally: `pnpm validate:pr-gate .pr-body.md`
 4. Push: the pre-push hook will re-validate `.pr-body.md` automatically
 5. Create PR: `gh pr create --body-file .pr-body.md`
+
+> ⚠️ **Do NOT** use `gh pr create --body "..."` — the CI capability gate validates `.pr-body.md` fields.
+> ⚠️ `.pr-body.md` is a **local artifact** — never commit it to the repository.
