@@ -34,8 +34,9 @@
   "devDependencies": {
     "@mobile-e2e-mcp/adapter-maestro": "workspace:*",
     "@mobile-e2e-mcp/adapter-vision": "workspace:*",
-    "@mobile-e2e-mcp/core": "workspace:*",
     "@mobile-e2e-mcp/contracts": "workspace:*",
+    "@mobile-e2e-mcp/core": "workspace:*",
+    "@mobile-e2e-mcp/explorer": "workspace:*",
     "tsup": "^8.5.0"
   },
   "scripts": {

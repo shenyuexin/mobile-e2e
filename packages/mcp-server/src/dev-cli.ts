@@ -3,6 +3,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { applyContextAlias } from "./cli/context-resolver.js";
 import { executePreset } from "./cli/preset-runner.js";
+import { executeExplore } from "./cli/explore-runner.js";
 import type { CliOptions, PresetName } from "./cli/types.js";
 import { createServer } from "./index.js";
 
@@ -64,6 +65,13 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let tap = false;
   let tapElement = false;
   let terminateApp = false;
+  let explore = false;
+  let exploreMode: string | undefined;
+  let exploreNoPrompt = false;
+  let exploreConfig: string | undefined;
+  let exploreOutput: string | undefined;
+  let exploreCompare: string | undefined;
+  let exploreMaxDepth: number | undefined;
   let durationMs: number | undefined;
   let resetStrategy: ResetAppStateStrategy | undefined;
   let bitrateMbps: number | undefined;
@@ -230,6 +238,13 @@ export function parseCliArgs(argv: string[]): CliOptions {
     else if (arg === "--settle-delay-ms" && nextValue) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 0) settleDelayMs = Math.floor(parsed); index += 1; }
     else if (arg === "--no-context-alias") { useContextAlias = false; }
     else if (arg === "--preset-name" && nextValue && ["quick_debug_ios", "quick_e2e_android", "crash_triage_android"].includes(nextValue)) { presetName = nextValue as PresetName; index += 1; }
+    else if (arg === "explore") { explore = true; }
+    else if (arg === "--mode" && explore) { exploreMode = nextValue; index += 1; }
+    else if (arg === "--no-prompt") { exploreNoPrompt = true; }
+    else if (arg === "--config" && nextValue && explore) { exploreConfig = nextValue; index += 1; }
+    else if (arg === "--output" && nextValue && explore) { exploreOutput = nextValue; index += 1; }
+    else if (arg === "--compare" && nextValue && explore) { exploreCompare = nextValue; index += 1; }
+    else if (arg === "--max-depth" && nextValue && explore) { const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed > 0) exploreMaxDepth = Math.floor(parsed); index += 1; }
   }
 
   return {
@@ -341,6 +356,13 @@ export function parseCliArgs(argv: string[]): CliOptions {
     platformProvided,
     useContextAlias,
     presetName,
+    explore,
+    exploreMode,
+    exploreNoPrompt,
+    exploreConfig,
+    exploreOutput,
+    exploreCompare,
+    exploreMaxDepth,
   };
 }
 
@@ -361,6 +383,11 @@ export async function main(): Promise<void> {
     if (presetResult.status === "failed") {
       process.exitCode = 1;
     }
+    return;
+  }
+
+  if (cliOptions.explore) {
+    await executeExplore(server, cliOptions);
     return;
   }
 

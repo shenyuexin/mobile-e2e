@@ -1,0 +1,63 @@
+{
+  "note": "Toggle cell example from Camera settings page, iOS 26.0 Simulator",
+  "source": "inspect_ui on com.apple.Preferences > Camera",
+  "sessionId": "session-1776061377689",
+  "date": "2026-04-13",
+  "toggleElements": [
+    {
+      "label": "Grid",
+      "state": "Off",
+      "rawValue": "0",
+      "className": "CheckBox",
+      "clickable": false,
+      "enabled": true,
+      "contentDesc": "Grid",
+      "bounds": "[20,587.33][410,638.33]",
+      "rowElement": true
+    },
+    {
+      "label": "Grid",
+      "state": "Off",
+      "rawValue": "0",
+      "className": "CheckBox",
+      "clickable": false,
+      "enabled": true,
+      "contentDesc": "Grid",
+      "bounds": "[339,597.33][390,628.33]",
+      "switchElement": true
+    },
+    {
+      "label": "View Outside the Frame",
+      "state": "On",
+      "rawValue": "1",
+      "className": "CheckBox",
+      "clickable": false,
+      "enabled": true,
+      "contentDesc": "View Outside the Frame",
+      "bounds": "[20,740.33][410,791.33]",
+      "rowElement": true
+    },
+    {
+      "label": "View Outside the Frame",
+      "state": "On",
+      "rawValue": "1",
+      "className": "CheckBox",
+      "clickable": false,
+      "enabled": true,
+      "contentDesc": "View Outside the Frame",
+      "bounds": "[339,750.33][390,781.33]",
+      "switchElement": true
+    }
+  ],
+  "buttonWithToggleValue": {
+    "label": "Live Speech",
+    "className": "Button",
+    "text": "Off",
+    "contentDesc": "Live Speech",
+    "clickable": true,
+    "AXValue": "Off",
+    "source": "Accessibility > SPEECH section",
+    "note": "This is a Button (not CheckBox) with AXValue 'Off'. Tapping it likely toggles the state."
+  },
+  "detection_logic": "A node is a toggle if: (1) className === 'CheckBox' && !clickable, OR (2) className === 'Button' && (AXValue === 'On' || AXValue === 'Off')"
+}

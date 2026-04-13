@@ -1,0 +1,449 @@
+/**
+ * Element filtering and prioritization for the explorer engine.
+ *
+ * Incorporates spike findings from docs/spike/toggle-detection.md:
+ * - iOS 26.0 uses `Button` (not `Cell`) for all navigable rows
+ * - Toggle switches use `CheckBox` className with `clickable: false`
+ * - Section headings are `Heading` type with UPPERCASE text
+ * - Home-screen sections have stable `AXUniqueId` in format `com.apple.settings.{name}`
+ *
+ * SPEC §4.4 — Toggle detection and destructive element filtering.
+ */
+
+import type {
+  UiHierarchy,
+  ClickableTarget,
+  ElementSelector,
+  ExplorerConfig,
+  DestructiveActionPolicy,
+} from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Type classification sets (iOS 26.0 spike data)
+// ---------------------------------------------------------------------------
+
+/**
+ * Element types considered interactive/navigable.
+ *
+ * iOS 26.0 spike finding: `Button` is the primary navigable type
+ * (not `Cell` as older specs assumed). `Cell` is included for backward
+ * compatibility with older iOS versions and Android.
+ *
+ * Cross-platform note: Android className values are fully-qualified
+ * (e.g., `android.widget.Button`). Use `shortClassName()` to normalize.
+ */
+const INTERACTIVE_TYPES = new Set([
+  "Button",
+  "Cell",
+  "ListItem",
+  "Link",
+  "Image",
+  // Android fully-qualified class names
+  "android.widget.Button",
+  "android.widget.ListView",
+  "android.widget.AdapterView",
+  "android.widget.ImageButton",
+]);
+
+/**
+ * Element types that are toggle switches.
+ *
+ * iOS 26.0 spike finding: toggles use `CheckBox` className with
+ * `clickable: false`, NOT `Switch` as the spec originally assumed.
+ *
+ * Cross-platform note: Android className values are fully-qualified.
+ */
+const TOGGLE_TYPES = new Set([
+  "Switch",
+  "Toggle",
+  "CheckBox",
+  // Android fully-qualified class names
+  "android.widget.Switch",
+  "android.widget.CheckBox",
+  "android.widget.CompoundButton",
+  "android.widget.ToggleButton",
+]);
+
+/** Element types that accept text input. */
+const TEXT_INPUT_TYPES = new Set([
+  "TextField",
+  "SecureTextField",
+  "TextView",
+  "SearchField",
+  // Android fully-qualified class names
+  "android.widget.EditText",
+  "android.widget.AutoCompleteTextView",
+  "android.widget.MultiAutoCompleteTextView",
+]);
+
+/** Element types that are never interactive. */
+const NON_INTERACTIVE_TYPES = new Set([
+  "StaticText",
+  "Separator",
+  "ActivityIndicator",
+  "ProgressBar",
+  "ScrollView",
+  "Group",
+  "GenericElement",
+  "Heading",
+  "Application",
+  // Android fully-qualified class names
+  "android.widget.TextView",
+  "android.widget.ImageView",
+  "android.view.View",
+  "android.view.ViewGroup",
+  "android.widget.FrameLayout",
+  "android.widget.LinearLayout",
+  "android.widget.RelativeLayout",
+  "android.widget.ScrollView",
+  "androidx.recyclerview.widget.RecyclerView",
+  "android.widget.Space",
+]);
+
+/** Patterns for destructive operation labels (SPEC §4.4, R1-#1). */
+const DESTRUCTIVE_PATTERNS = [
+  /delete\s*(account|data|all)?/i,
+  /remove\s*(account|data)?/i,
+  /reset\s*(all\s*)?settings?/i,
+  /clear\s*(all\s*)?(data|cache|storage)/i,
+  /sign\s*out/i,
+  /log\s*out/i,
+  /logoff/i,
+  /erase\s*(all)?/i,
+  /factory\s*reset/i,
+  /uninstall/i,
+  /offload\s*app/i,
+];
+
+// ---------------------------------------------------------------------------
+// Classification functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if an element is a toggle switch that should be excluded.
+ *
+ * iOS 26.0 spike data: CheckBox with clickable=false is the primary toggle pattern.
+ * Also handles Button-style toggles with AXValue "On"/"Off".
+ *
+ * SPEC §4.4 — toggles must be excluded from clickable elements.
+ */
+export function isToggle(el: UiHierarchy): boolean {
+  // Primary: CheckBox className with non-clickable (iOS 26.0 pattern)
+  if (el.className === "CheckBox" && !el.clickable) {
+    return true;
+  }
+
+  // Type-based check
+  if (TOGGLE_TYPES.has(el.elementType ?? "") || TOGGLE_TYPES.has(el.className ?? "")) {
+    return true;
+  }
+
+  // Accessibility traits
+  if (
+    el.accessibilityTraits?.includes("toggleButton") ||
+    el.accessibilityTraits?.includes("switch") ||
+    el.accessibilityRole === "toggle" ||
+    el.accessibilityRole === "switch"
+  ) {
+    return true;
+  }
+
+  // Button-style toggles with On/Off AXValue (e.g., "Live Speech" in Accessibility)
+  if (
+    el.className === "Button" &&
+    (el.AXValue === "On" ||
+      el.AXValue === "Off" ||
+      el.AXValue === "on" ||
+      el.AXValue === "off")
+  ) {
+    return true;
+  }
+
+  // CheckBox with text values "0" (off) or "1" (on) — iOS 26.0 toggle pattern
+  if (
+    el.className === "CheckBox" &&
+    (el.text === "0" || el.text === "1")
+  ) {
+    return true;
+  }
+
+  // Android: Switch/CheckBox with `checked` property (from uiautomator dump)
+  const cn = el.className ?? "";
+  if (
+    (cn.includes("Switch") || cn.includes("CheckBox") || cn.includes("ToggleButton") || cn.includes("CompoundButton")) &&
+    el.checked !== undefined
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check if an element is a text input field.
+ */
+export function isTextInput(el: UiHierarchy): boolean {
+  if (TEXT_INPUT_TYPES.has(el.elementType ?? "") || TEXT_INPUT_TYPES.has(el.className ?? "")) {
+    return true;
+  }
+  if (el.accessibilityTraits?.includes("allowsDirectInteraction")) {
+    return true;
+  }
+  // Search fields are text inputs
+  if (
+    el.accessibilityRole === "searchField" ||
+    el.className === "TextField" ||
+    el.className === "SearchField"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Check if an element is non-interactive (static text, images, separators, etc.).
+ */
+export function isNonInteractive(el: UiHierarchy): boolean {
+  // StaticText without link trait
+  if (
+    (el.elementType === "StaticText" || el.className === "StaticText") &&
+    !el.accessibilityTraits?.includes("link") &&
+    el.accessibilityRole !== "link"
+  ) {
+    return true;
+  }
+
+  // Image without button trait
+  if (
+    (el.elementType === "Image" || el.className === "Image") &&
+    !el.accessibilityTraits?.includes("button") &&
+    el.accessibilityRole !== "button"
+  ) {
+    return true;
+  }
+
+  // Heading elements (section headers) — non-navigable
+  if (
+    el.elementType === "Heading" ||
+    el.className === "Heading" ||
+    el.accessibilityRole === "heading"
+  ) {
+    return true;
+  }
+
+  // Generic layout containers
+  if (
+    NON_INTERACTIVE_TYPES.has(el.elementType ?? "") ||
+    NON_INTERACTIVE_TYPES.has(el.className ?? "")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check if an element is destructive (delete, reset, sign out, etc.).
+ * SPEC §4.4, R1-#1.
+ */
+export function isDestructive(
+  el: UiHierarchy,
+  policy: DestructiveActionPolicy,
+): boolean {
+  if (policy === "allow") return false;
+
+  const label = getElementLabel(el).toLowerCase();
+  return DESTRUCTIVE_PATTERNS.some((pattern) => pattern.test(label));
+}
+
+/**
+ * Check if an element is interactive (navigable/clickable).
+ */
+export function isInteractive(el: UiHierarchy): boolean {
+  if (el.elementType && INTERACTIVE_TYPES.has(el.elementType)) return true;
+  if (el.className && INTERACTIVE_TYPES.has(el.className)) return true;
+  if (
+    el.accessibilityTraits?.some(
+      (t) => t === "button" || t === "link" || t === "playsSound",
+    )
+  ) {
+    return true;
+  }
+  if (el.accessibilityRole === "button" || el.accessibilityRole === "link") {
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Tree traversal
+// ---------------------------------------------------------------------------
+
+/**
+ * Flatten a UI hierarchy tree into a flat array of all nodes.
+ */
+export function flattenTree(node: UiHierarchy, result: UiHierarchy[] = []): UiHierarchy[] {
+  result.push(node);
+  if (node.children) {
+    for (const child of node.children) {
+      flattenTree(child, result);
+    }
+  }
+  return result;
+}
+
+/**
+ * Collect all visible text from a UI tree.
+ */
+export function collectVisibleTexts(
+  node: UiHierarchy,
+  result: string[] = [],
+): string[] {
+  if (node.visibleTexts) {
+    result.push(...node.visibleTexts);
+  }
+  if (node.text && !isDecorative(node)) {
+    result.push(node.text);
+  }
+  if (node.contentDesc && !isDecorative(node)) {
+    result.push(node.contentDesc);
+  }
+  if (node.children) {
+    for (const child of node.children) {
+      collectVisibleTexts(child, result);
+    }
+  }
+  return result;
+}
+
+/** Check if a node is decorative/structural rather than content. */
+function isDecorative(node: UiHierarchy): boolean {
+  // Exclude system bars, status indicators, separators
+  if (node.elementType === "Separator" || node.className === "Separator") {
+    return true;
+  }
+  if (node.accessibilityTraits?.includes("notEnabled")) {
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Get a human-readable label for a UI element.
+ * Uses fallback chain: contentDesc > accessibilityLabel > text > visibleTexts > className.
+ */
+export function getElementLabel(el: UiHierarchy): string {
+  return (
+    el.contentDesc ||
+    el.accessibilityLabel ||
+    el.label ||
+    el.text ||
+    el.visibleTexts?.[0] ||
+    el.className ||
+    el.elementType ||
+    "unknown"
+  );
+}
+
+/**
+ * Find all clickable elements in a UI tree, excluding toggles, text inputs,
+ * non-interactive elements, and (optionally) destructive elements.
+ *
+ * SPEC §4.2 — requires config for destructive element filtering.
+ */
+export function findClickableElements(
+  uiTree: UiHierarchy,
+  config: ExplorerConfig,
+): ClickableTarget[] {
+  const allElements = flattenTree(uiTree);
+  return allElements
+    .filter((el) => {
+      // Must be interactive
+      if (!isInteractive(el)) return false;
+      // Exclude toggles (SPEC §4.4)
+      if (isToggle(el)) return false;
+      // Exclude text inputs
+      if (isTextInput(el)) return false;
+      // Exclude non-interactive
+      if (isNonInteractive(el)) return false;
+      // Exclude destructive elements based on policy (SPEC §4.4, R1-#1)
+      if (isDestructive(el, config.destructiveActionPolicy)) return false;
+      return true;
+    })
+    .map((el) => toClickableTarget(el));
+}
+
+/**
+ * Convert a UiHierarchy node to a ClickableTarget.
+ */
+export function toClickableTarget(el: UiHierarchy): ClickableTarget {
+  return {
+    label: getElementLabel(el),
+    selector: buildSelector(el),
+    elementType: el.elementType ?? el.className ?? "Unknown",
+  };
+}
+
+/**
+ * Build an element selector with priority ordering:
+ * accessibilityId > resourceId > text > position.
+ */
+export function buildSelector(el: UiHierarchy): ElementSelector {
+  // Priority 1: AXUniqueId / accessibility ID (most stable)
+  if (el.AXUniqueId) {
+    return { accessibilityId: el.AXUniqueId };
+  }
+  if (el.accessibilityLabel) {
+    return { accessibilityId: el.accessibilityLabel };
+  }
+
+  // Priority 2: Android resource ID
+  if (el.resourceId) {
+    return { resourceId: el.resourceId };
+  }
+
+  // Priority 3: Visible text content
+  const text = el.contentDesc || el.label || el.text || el.visibleTexts?.[0];
+  if (text) {
+    return { text, elementType: el.elementType ?? el.className };
+  }
+
+  // Priority 4: Coordinate-based fallback
+  if (el.frame) {
+    return {
+      position: { x: el.frame.x, y: el.frame.y },
+      elementType: el.elementType ?? el.className,
+    };
+  }
+
+  // Last resort: use className/elementType as text (will likely fail resolve)
+  return { text: el.className ?? el.elementType ?? "unknown" };
+}
+
+/**
+ * Prioritize elements for exploration order.
+ * Higher priority score = explored first.
+ *
+ * Current implementation: flat priority (all elements score 10).
+ * Future: could prioritize based on position, size, or semantic importance.
+ */
+export function prioritizeElements(
+  elements: ClickableTarget[],
+): ClickableTarget[] {
+  return [...elements].map((el) => ({
+    ...el,
+    priority: el.priority ?? priorityScore(el),
+  }));
+}
+
+/**
+ * Calculate priority score for an element.
+ * Default: 10 for all elements (flat priority).
+ */
+export function priorityScore(_el: ClickableTarget): number {
+  return 10;
+}
