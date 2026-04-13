@@ -36,7 +36,7 @@ export {
   createMcpAdapter,
   unwrapResult,
 } from "./mcp-adapter.js";
-export type { McpToolInterface, InvokableServer } from "./mcp-adapter.js";
+export type { McpToolInterface, InvokableServer, SessionContext } from "./mcp-adapter.js";
 
 // Element filtering and prioritization
 export {
