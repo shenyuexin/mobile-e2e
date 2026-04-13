@@ -90,15 +90,15 @@ function parseUiTree(data: Record<string, unknown>): UiHierarchy {
   if (typeof data.content === "string") {
     try {
       const parsed = JSON.parse(data.content);
-      return normalizeToUiHierarchy(parsed);
+      return normalizeParsedContent(parsed);
     } catch {
       // Fall through to wrapper
     }
   }
 
-  // If content is already an object, use it directly
-  if (typeof data.content === "object" && data.content !== null) {
-    return normalizeToUiHierarchy(data.content as Record<string, unknown>);
+  // If content is already parsed, normalize it
+  if (data.content !== undefined && data.content !== null) {
+    return normalizeParsedContent(data.content);
   }
 
   // Fallback: wrap the entire data as a root node
@@ -110,6 +110,40 @@ function parseUiTree(data: Record<string, unknown>): UiHierarchy {
     children: [],
     ...data,
   } as UiHierarchy;
+}
+
+/**
+ * Normalize parsed JSON content from inspect_ui.
+ * Handles both array (axe output) and object (Android output) formats.
+ */
+function normalizeParsedContent(content: unknown): UiHierarchy {
+  // axe (iOS) returns an array of root nodes
+  if (Array.isArray(content)) {
+    // Wrap array in a synthetic root node
+    return {
+      className: "Root",
+      clickable: false,
+      enabled: true,
+      scrollable: false,
+      children: content
+        .filter((c) => typeof c === "object" && c !== null)
+        .map((c) => normalizeToUiHierarchy(c as Record<string, unknown>)),
+    };
+  }
+
+  // Android returns a single object
+  if (typeof content === "object" && content !== null) {
+    return normalizeToUiHierarchy(content as Record<string, unknown>);
+  }
+
+  // Fallback
+  return {
+    className: "Root",
+    clickable: false,
+    enabled: true,
+    scrollable: false,
+    children: [],
+  };
 }
 
 /**
@@ -125,7 +159,7 @@ function normalizeToUiHierarchy(
         .map((c) => normalizeToUiHierarchy(c as Record<string, unknown>))
     : [];
 
-  // Parse bounds string "[x1,y1][x2,y2]" into frame object
+  // Parse bounds string "[x1,y1][x2,y2]" or iOS AXFrame "{{x,y},{w,h}}"
   let frame: UiHierarchy["frame"];
   if (typeof node.bounds === "string") {
     const match = node.bounds.match(/\[([\d.]+),([\d.]+)\]\[([\d.]+),([\d.]+)\]/);
@@ -139,31 +173,95 @@ function normalizeToUiHierarchy(
     }
   }
 
+  // iOS axe backend uses AXFrame: "{{x,y},{w,h}}"
+  if (!frame && typeof node.AXFrame === "string") {
+    const match = node.AXFrame.match(/\{\{([\d.]+),([\d.]+)\},\{([\d.]+),([\d.]+)\}\}/);
+    if (match) {
+      frame = {
+        x: parseFloat(match[1]),
+        y: parseFloat(match[2]),
+        width: parseFloat(match[3]),
+        height: parseFloat(match[4]),
+      };
+    }
+  }
+
+  // Also use nested frame object if present (axe provides both AXFrame and frame)
+  if (!frame && typeof node.frame === "object" && node.frame !== null) {
+    const f = node.frame as Record<string, unknown>;
+    frame = {
+      x: typeof f.x === "number" ? f.x : 0,
+      y: typeof f.y === "number" ? f.y : 0,
+      width: typeof f.width === "number" ? f.width : 0,
+      height: typeof f.height === "number" ? f.height : 0,
+    };
+  }
+
+  // iOS axe field mapping: type -> className, AXLabel -> text/accessibilityLabel
+  const className =
+    typeof node.className === "string" ? node.className :
+    typeof node.type === "string" ? node.type :
+    typeof node.role === "string" ? node.role :
+    undefined;
+
+  const text =
+    typeof node.text === "string" ? node.text :
+    typeof node.AXLabel === "string" ? node.AXLabel :
+    typeof node.AXValue === "string" ? node.AXValue :
+    undefined;
+
+  const contentDesc =
+    typeof node.contentDesc === "string" ? node.contentDesc :
+    typeof node.AXUniqueId === "string" ? node.AXUniqueId :
+    undefined;
+
+  // iOS: enabled is usually true, clickable inferred from role/type
+  const isButtonLike =
+    className?.includes("Button") ||
+    className?.includes("Link") ||
+    className?.includes("Cell") ||
+    className?.includes("Image") ||
+    node.role === "AXButton" ||
+    node.role === "AXLink" ||
+    node.role === "AXStaticText";
+
+  // axe doesn't set clickable — infer from role/type
+  const clickable =
+    node.clickable === true ||
+    isButtonLike ||
+    className?.includes("TextField") ||
+    node.role === "AXTextField";
+
   return {
     index: typeof node.index === "number" ? node.index : undefined,
     depth: typeof node.depth === "number" ? node.depth : undefined,
-    text: typeof node.text === "string" ? node.text : undefined,
+    text,
     resourceId: typeof node.resourceId === "string" ? node.resourceId : undefined,
-    className: typeof node.className === "string" ? node.className : undefined,
+    className,
     packageName: typeof node.packageName === "string" ? node.packageName : undefined,
-    contentDesc: typeof node.contentDesc === "string" ? node.contentDesc : undefined,
-    clickable: node.clickable === true,
+    contentDesc,
+    clickable,
     enabled: node.enabled !== false,
     scrollable: node.scrollable === true,
     bounds: typeof node.bounds === "string" ? node.bounds : undefined,
+    frame,
     children,
     accessibilityLabel:
-      typeof node.accessibilityLabel === "string" ? node.accessibilityLabel : undefined,
+      typeof node.accessibilityLabel === "string" ? node.accessibilityLabel :
+      typeof node.AXLabel === "string" ? node.AXLabel :
+      undefined,
     accessibilityTraits: Array.isArray(node.accessibilityTraits)
       ? node.accessibilityTraits as string[]
       : undefined,
     accessibilityRole:
-      typeof node.accessibilityRole === "string" ? node.accessibilityRole : undefined,
+      typeof node.accessibilityRole === "string" ? node.accessibilityRole :
+      typeof node.role === "string" ? node.role :
+      typeof node.role_description === "string" ? node.role_description :
+      undefined,
     visibleTexts:
       typeof node.text === "string" ? [node.text] : Array.isArray(node.visibleTexts)
         ? node.visibleTexts as string[]
         : undefined,
-    frame,
     AXUniqueId: typeof node.AXUniqueId === "string" ? node.AXUniqueId : undefined,
     AXValue: typeof node.AXValue === "string" ? node.AXValue : undefined,
     elementType: typeof node.elementType === "string" ? node.elementType : (typeof node.className === "string" ? node.className : undefined),

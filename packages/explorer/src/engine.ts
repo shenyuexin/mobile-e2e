@@ -278,6 +278,8 @@ export async function explore(
   const initialSnapshot = await snapshotter.captureSnapshot(config);
   visited.register({ alreadyVisited: false }, initialSnapshot, []);
   stack[0].state = { screenId: initialSnapshot.screenId };
+  // Populate home page's clickable elements
+  stack[0].elements = prioritizeElements(initialSnapshot.clickableElements);
 
   const startTime = Date.now();
 
@@ -330,7 +332,8 @@ export async function explore(
     }
 
     // Step 1: Snapshot (only on first visit, elementIndex === 0)
-    if (frame.elementIndex === 0) {
+    // Skip for depth=0 home page — already snapshotted before the loop
+    if (frame.elementIndex === 0 && frame.depth > 0) {
       const snapshot = await snapshotter.captureSnapshot(config);
       const dedupResult = await visited.dedup(snapshot);
       if (dedupResult.alreadyVisited) {

@@ -7,7 +7,7 @@
  * works with plain types. Never inspect ToolResult fields outside this module.
  */
 
-import type { ToolResult } from "@mobile-e2e-mcp/contracts";
+import type { ToolResult, Platform, RunnerProfile } from "@mobile-e2e-mcp/contracts";
 import type {
   InspectUiData,
   TapElementData,
@@ -19,6 +19,19 @@ import type {
   ResetAppStateData,
   RequestManualHandoffData,
 } from "@mobile-e2e-mcp/contracts";
+
+/**
+ * Session context required by all MCP tools.
+ *
+ * The explorer engine should not need to know about these — they are injected
+ * at the adapter boundary based on the ExplorerConfig.
+ */
+export interface SessionContext {
+  sessionId: string;
+  platform: Platform;
+  runnerProfile: RunnerProfile;
+  deviceId?: string;
+}
 
 /**
  * Type-safe interface for MCP tools consumed by the explorer engine.
@@ -53,30 +66,56 @@ export interface InvokableServer {
 /**
  * Create an adapter bound to the given server instance.
  *
+ * All MCP tool calls include sessionId, platform, runnerProfile, and deviceId
+ * as required by the contracts.
+ *
  * In CLI mode: server = new MobileE2EMcpServer(registry).
  * In test mode: pass a mock implementation.
  */
-export function createMcpAdapter(server: InvokableServer): McpToolInterface {
+export function createMcpAdapter(
+  server: InvokableServer,
+  ctx: SessionContext,
+): McpToolInterface {
   const invoke = server.invoke.bind(server);
+
+  // Base params included in every tool call
+  const baseInput = () => ({
+    sessionId: ctx.sessionId,
+    platform: ctx.platform,
+    runnerProfile: ctx.runnerProfile,
+    deviceId: ctx.deviceId,
+  });
+
   return {
     launchApp: (args) =>
-      invoke("launch_app", args) as Promise<ToolResult<LaunchAppData>>,
+      invoke("launch_app", { ...baseInput(), appId: args.appId }) as Promise<ToolResult<LaunchAppData>>,
     waitForUiStable: (args) =>
-      invoke("wait_for_ui_stable", args) as Promise<ToolResult<WaitForUiStableData>>,
+      invoke("wait_for_ui_stable", {
+        ...baseInput(),
+        timeoutMs: args.timeoutMs,
+        intervalMs: 300,
+        consecutiveStable: 2,
+      }) as Promise<ToolResult<WaitForUiStableData>>,
     inspectUi: () =>
-      invoke("inspect_ui", {}) as Promise<ToolResult<InspectUiData>>,
+      invoke("inspect_ui", { ...baseInput() }) as Promise<ToolResult<InspectUiData>>,
     tapElement: (args) =>
-      invoke("tap_element", args) as Promise<ToolResult<TapElementData>>,
+      invoke("tap_element", { ...baseInput(), ...args }) as Promise<ToolResult<TapElementData>>,
     navigateBack: () =>
-      invoke("navigate_back", {}) as Promise<ToolResult<NavigateBackData>>,
+      invoke("navigate_back", {
+        ...baseInput(),
+        target: "app" as const,
+        // iOS needs a selector for app-level back.
+        // Try common back button patterns: "Settings", "Back", or a left-chevron icon.
+        selector: { text: "Settings" },
+      }) as Promise<ToolResult<NavigateBackData>>,
     takeScreenshot: () =>
-      invoke("take_screenshot", {}) as Promise<ToolResult<ScreenshotData>>,
+      invoke("take_screenshot", { ...baseInput() }) as Promise<ToolResult<ScreenshotData>>,
     recoverToKnownState: () =>
-      invoke("recover_to_known_state", {}) as Promise<ToolResult<RecoverToKnownStateData>>,
+      invoke("recover_to_known_state", { ...baseInput() }) as Promise<ToolResult<RecoverToKnownStateData>>,
     resetAppState: (args) =>
-      invoke("reset_app_state", args) as Promise<ToolResult<ResetAppStateData>>,
+      invoke("reset_app_state", { ...baseInput(), appId: args.appId }) as Promise<ToolResult<ResetAppStateData>>,
     requestManualHandoff: () =>
-      invoke("request_manual_handoff", {}) as Promise<ToolResult<RequestManualHandoffData>>,
+      invoke("request_manual_handoff", { ...baseInput() }) as Promise<ToolResult<RequestManualHandoffData>>,
   };
 }
 
