@@ -53,6 +53,20 @@ export interface CliOptions {
   tap: boolean;
   tapElement: boolean;
   terminateApp: boolean;
+  /** Explore subcommand flag. */
+  explore: boolean;
+  /** Explore subcommand: exploration mode. */
+  exploreMode?: string;
+  /** Explore subcommand: skip interactive interview. */
+  exploreNoPrompt: boolean;
+  /** Explore subcommand: path to config file. */
+  exploreConfig?: string;
+  /** Explore subcommand: output directory for reports. */
+  exploreOutput?: string;
+  /** Explore subcommand: run ID to compare against. */
+  exploreCompare?: string;
+  /** Explore subcommand: maximum exploration depth. */
+  exploreMaxDepth?: number;
   durationMs?: number;
   resetStrategy?: ResetAppStateStrategy;
   bitrateMbps?: number;

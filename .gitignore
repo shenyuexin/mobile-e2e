@@ -85,6 +85,10 @@ coverage/
 # Claude Code local config (replaced by generic .agent/)
 .claude/
 
+# AI agent local configs / skill caches
+.agent/
+.agents/
+
 # Codex local config (Codex uses global ~/.agents/)
 .codex/
 
