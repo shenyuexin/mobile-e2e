@@ -26,7 +26,7 @@ import type {
   Action,
   PageSnapshot,
 } from "./types.js";
-import { PageRegistry } from "./page-registry.js";
+import { PageRegistry, hashUiStructure } from "./page-registry.js";
 import { createSnapshotter, createTapExecutor, generateScreenId } from "./snapshot.js";
 import { prioritizeElements } from "./element-prioritizer.js";
 import { createBacktracker } from "./backtrack.js";
@@ -285,11 +285,30 @@ export async function explore(
       console.log(`  clickable: "${el.label.slice(0, 40)}" (${el.elementType})`);
     }
   }
+  
+  // Record the target app identity for app switching detection.
+  // iOS uses AXLabel (display name like "Settings"), Android uses bundle ID.
+  // This comparison works universally because we compare the extracted identity
+  // from the UI tree, not the config.appId (which may differ in format).
+  const targetAppId = initialSnapshot.appId ?? config.appId;
+  console.log(`[ENGINE] Target app identity: ${targetAppId}`);
+  
+  // Track current app identity — updated on each navigation.
+  // App switch handling only triggers when this value changes.
+  let currentAppId = targetAppId;
+  
   visited.register({ alreadyVisited: false }, initialSnapshot, []);
   backtracker.registerPage(initialSnapshot.screenId, initialSnapshot.uiTree);
-  stack[0].state = { screenId: initialSnapshot.screenId, screenTitle: initialSnapshot.screenTitle };
+  stack[0].state = {
+    screenId: initialSnapshot.screenId,
+    screenTitle: initialSnapshot.screenTitle,
+    structureHash: hashUiStructure(initialSnapshot.uiTree),
+  };
   // Populate home page's clickable elements
   stack[0].elements = prioritizeElements(initialSnapshot.clickableElements);
+  // Set app identity for the home frame
+  stack[0].appId = targetAppId;
+  stack[0].isExternalApp = false; // Home page is always the target app
 
   const startTime = Date.now();
 
@@ -304,12 +323,20 @@ export async function explore(
 
     // Step 0: Navigate to this frame's page if needed (R2-A: backtrack recovery)
     if (frame.depth > 0 && frame.state.screenId) {
-      const onExpectedPage = await backtracker.isOnExpectedPage(frame.state.screenId);
+      const onExpectedPage = await backtracker.isOnExpectedPage(
+        frame.state.screenId,
+        frame.state.screenTitle,
+        frame.state.structureHash,
+      );
       if (!onExpectedPage) {
         // Try one more navigate_back to recover
         const navBackResult = await backtracker.navigateBack(frame.parentTitle);
         if (navBackResult) {
-          const recoveryCheck = await backtracker.isOnExpectedPage(frame.state.screenId);
+          const recoveryCheck = await backtracker.isOnExpectedPage(
+            frame.state.screenId,
+            frame.state.screenTitle,
+            frame.state.structureHash,
+          );
           if (!recoveryCheck) {
             failed.record({
               pageScreenId: "unknown",
@@ -356,7 +383,11 @@ export async function explore(
       visited.register(dedupResult, snapshot, frame.path);
       backtracker.registerPage(snapshot.screenId, snapshot.uiTree);
       frame.elements = prioritizeElements(snapshot.clickableElements);
-      frame.state = { screenId: snapshot.screenId, screenTitle: snapshot.screenTitle };
+      frame.state = {
+        screenId: snapshot.screenId,
+        screenTitle: snapshot.screenTitle,
+        structureHash: hashUiStructure(snapshot.uiTree),
+      };
       frame.parentTitle = snapshot.screenTitle ?? frame.parentTitle;
       recordPageSuccess(circuitBreaker); // reset per-page counter for new page
     }
@@ -370,7 +401,22 @@ export async function explore(
         // If not, increment consecutive failed pages
         // (tracked via circuit breaker state)
       }
-      if (frame.depth > 0) {
+      
+      // Handle return from external app pages (can't use navigate_back across apps)
+      if (frame.isExternalApp) {
+        console.log(`[APP-SWITCH] Returning to target app ${config.appId} via launchApp...`);
+        try {
+          await mcp.launchApp({ appId: config.appId });
+          await mcp.waitForUiStable({ timeoutMs: 5000 });
+          // Update current app identity since we're back in target app
+          currentAppId = targetAppId;
+          console.log(`[APP-SWITCH] Returned to ${currentAppId}`);
+        } catch (err) {
+          console.log(`[APP-SWITCH] launchApp failed, falling back to navigateBack: ${err}`);
+          await backtracker.navigateBack(frame.parentTitle);
+        }
+      } else if (frame.depth > 0) {
+        // Normal in-app backtrack
         await backtracker.navigateBack(frame.parentTitle);
       }
       continue;
@@ -421,8 +467,69 @@ export async function explore(
     }
 
     if (elementResult.success) {
-      // R5-B fix: tapAndWait does NOT return nextState. Capture a new snapshot instead.
+      // For external links, wait for app switch then detect it
+      const isExternalLink = element.isExternalLink ?? false;
+
+      if (isExternalLink) {
+        console.log(`[EXTERNAL-LINK] Tapped "${element.label}" — waiting 3s for potential app switch...`);
+        await mcp.waitForUiStable({ timeoutMs: 3000 });
+
+        // Capture snapshot to detect app switching
+        const nextStateSnapshot = await snapshotter.captureSnapshot(config);
+
+        // Check if app actually switched by comparing with CURRENT app identity
+        const isAppSwitched = nextStateSnapshot.appId !== undefined &&
+                              nextStateSnapshot.appId !== currentAppId;
+
+        if (isAppSwitched) {
+          console.log(`[APP-SWITCH] Detected: ${currentAppId} -> ${nextStateSnapshot.appId}`);
+          currentAppId = nextStateSnapshot.appId; // Update current app identity
+        } else {
+          console.log(`[EXTERNAL-LINK] No app switch detected (stayed in ${nextStateSnapshot.appId})`);
+        }
+
+        // Mark as external app if we're not in target app
+        const isExternalApp = nextStateSnapshot.appId !== undefined && 
+                              nextStateSnapshot.appId !== targetAppId;
+        nextStateSnapshot.isExternalApp = isExternalApp;
+        nextStateSnapshot.appId = nextStateSnapshot.appId ?? `external:${element.label}`;
+
+        console.log(`[EXTERNAL-LINK] Exploring ${isExternalApp ? 'external' : 'internal'} app page: ${nextStateSnapshot.screenTitle || '(unknown)'}`);
+
+        // Validate we navigated somewhere
+        resetCircuit(circuitBreaker);
+
+        const externalMaxDepth = config.externalLinkMaxDepth ?? 1;
+        stack.push({
+          state: {
+            screenId: nextStateSnapshot.screenId,
+            screenTitle: nextStateSnapshot.screenTitle,
+            structureHash: hashUiStructure(nextStateSnapshot.uiTree),
+          } as PageState,
+          depth: isExternalApp ? externalMaxDepth : frame.depth + 1,
+          path: [...frame.path, element.label],
+          elementIndex: 0,
+          elements: [],
+          parentTitle: frame.state.screenTitle ?? frame.parentTitle,
+          appId: nextStateSnapshot.appId,
+          isExternalApp,
+        });
+
+        continue; // Don't do further nav validation for external links
+      }
+
+      // Normal in-app navigation
       const nextStateSnapshot = await snapshotter.captureSnapshot(config);
+
+      // Check for app switching via appId change (non-link elements that open external apps)
+      const isAppSwitched = nextStateSnapshot.appId !== undefined &&
+                            nextStateSnapshot.appId !== currentAppId;
+      if (isAppSwitched) {
+        console.log(
+          `[APP-SWITCH] Detected: ${currentAppId} -> ${nextStateSnapshot.appId} (via "${element.label}")`,
+        );
+        currentAppId = nextStateSnapshot.appId; // Update current app identity
+      }
 
       // Validate navigation (R1-#2, R3-G)
       const navValidation = validateNavigation(
@@ -433,7 +540,7 @@ export async function explore(
         { screenId: frame.state.screenId ?? "" },
       );
 
-      if (!navValidation.navigated) {
+      if (!navValidation.navigated && !isAppSwitched) {
         if (navValidation.shouldDismissDialog) {
           // TODO: implement handleSystemDialog
           // For now, log and skip
@@ -451,20 +558,46 @@ export async function explore(
         continue; // element didn't lead anywhere — try next sibling
       }
 
+      // Check for app switching (US-002) — mark as external if not in target app
+      const isExternalApp = isAppSwitched || 
+        (nextStateSnapshot.appId !== undefined && nextStateSnapshot.appId !== targetAppId);
+      if (isExternalApp) {
+        console.log(
+          `[APP-SWITCH] In external app: ${nextStateSnapshot.appId} (via "${element.label}")`,
+        );
+        nextStateSnapshot.isExternalApp = true;
+      }
+
       // Successful navigation — reset circuit breaker
       resetCircuit(circuitBreaker);
 
+      // Determine child depth: external apps limited to config.externalLinkMaxDepth (default: 1)
+      const externalMaxDepth = config.externalLinkMaxDepth ?? 1;
+      const childDepth = isExternalApp
+        ? externalMaxDepth
+        : frame.depth + 1;
+
       // Push child frame for immediate exploration in next iteration
       stack.push({
-        state: { screenId: nextStateSnapshot.screenId, screenTitle: nextStateSnapshot.screenTitle } as PageState,
-        depth: frame.depth + 1,
+        state: {
+          screenId: nextStateSnapshot.screenId,
+          screenTitle: nextStateSnapshot.screenTitle,
+          structureHash: hashUiStructure(nextStateSnapshot.uiTree),
+        } as PageState,
+        depth: childDepth,
         path: [...frame.path, element.label],
         elementIndex: 0,
         elements: [],
         // Child's parent is the current frame's page title (iOS back button shows parent title)
         parentTitle: frame.state.screenTitle ?? frame.parentTitle,
+        // Track app identity for app switching detection
+        appId: nextStateSnapshot.appId ?? config.appId,
+        isExternalApp: isAppSwitched,
       });
-      // Don't backtrack here — the child will backtrack when it's done.
+      
+      // For external app pages, after exploration we'll use launchApp to return
+      // (handled in the backtrack step below via isExternalApp flag)
+      // Don't backtrack here — the child will handle return when it's done.
     }
     // If element failed, continue the while loop to try next sibling.
     // No backtrack needed — we're still on the parent page (failed tap didn't navigate).

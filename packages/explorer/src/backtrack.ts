@@ -49,14 +49,19 @@ export function createBacktracker(mcp: McpToolInterface) {
     /**
      * Validate that we're on the expected page after backtracking.
      *
-     * Uses a two-tier approach:
-     * 1. Exact screenId match (fast path)
-     * 2. Structural hash match against registered pages (fuzzy fallback)
+     * Uses a multi-tier approach for robust validation:
+     * 1. Exact screenId match (fast path, text-based)
+     * 2. Screen title + structural hash match (stable, ignores dynamic text)
+     * 3. Structural hash alone (fallback for pages without titles)
      *
      * SPEC §4.1 — prevents infinite loops from failed backtracking.
+     * iOS fix: iOS Settings pages often have dynamic text (timestamps, loading),
+     * so structural hash is more reliable for page identity.
      */
     async isOnExpectedPage(
       expectedScreenId: string,
+      expectedScreenTitle?: string,
+      expectedStructureHash?: string,
     ): Promise<boolean> {
       const inspectResult = await mcp.inspectUi();
       if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
@@ -68,19 +73,66 @@ export function createBacktracker(mcp: McpToolInterface) {
 
       const currentScreenId = generateScreenId(uiTree);
 
-      // Fast path: exact match
+      // Tier 1: exact text-based match (fast path)
       if (currentScreenId === expectedScreenId) return true;
 
-      // Fuzzy fallback: compare structure hashes
-      const expectedStructure = knownPages.get(expectedScreenId);
-      if (expectedStructure) {
+      // Tier 2: screen title + structural hash (stable for pages with dynamic text)
+      if (expectedScreenTitle && expectedStructureHash) {
+        const currentTitle = extractScreenTitleFromUiTree(uiTree);
         const currentStructure = hashUiStructure(uiTree);
-        return currentStructure === expectedStructure;
+        if (currentTitle === expectedScreenTitle && currentStructure === expectedStructureHash) {
+          return true;
+        }
+      }
+
+      // Tier 3: structural hash alone (fallback)
+      if (expectedStructureHash) {
+        const currentStructure = hashUiStructure(uiTree);
+        if (currentStructure === expectedStructureHash) {
+          return true;
+        }
       }
 
       return false;
     },
   };
+}
+
+/**
+ * Extract screen title from UI tree (mirrors snapshot.ts extractScreenTitle).
+ */
+function extractScreenTitleFromUiTree(uiTree: UiHierarchy): string | undefined {
+  function flatten(node: UiHierarchy, result: UiHierarchy[] = []): UiHierarchy[] {
+    result.push(node);
+    if (node.children) {
+      for (const child of node.children) {
+        flatten(child, result);
+      }
+    }
+    return result;
+  }
+  
+  const allElements = flatten(uiTree);
+  
+  // Priority 1: First Heading
+  for (const el of allElements) {
+    if (el.className === "Heading" || el.elementType === "Heading") {
+      const label = el.contentDesc || el.text || el.accessibilityLabel;
+      if (label && label.length > 0) return label;
+    }
+  }
+  
+  // Priority 2: First substantial StaticText
+  for (const el of allElements) {
+    if (el.className === "StaticText" || el.elementType === "StaticText") {
+      const label = el.contentDesc || el.text || el.accessibilityLabel;
+      if (label && label.length > 2 && label.length < 50) {
+        return label.split(" ").slice(0, 3).join(" ");
+      }
+    }
+  }
+  
+  return undefined;
 }
 
 /**
