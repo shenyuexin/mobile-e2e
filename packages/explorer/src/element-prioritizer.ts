@@ -100,20 +100,92 @@ const NON_INTERACTIVE_TYPES = new Set([
   "android.widget.Space",
 ]);
 
-/** Patterns for destructive operation labels (SPEC §4.4, R1-#1). */
+/** Patterns for destructive operation labels (SPEC §4.4, R1-#1).
+ * 
+ * These patterns are GENERIC — they apply to ANY app, not just Settings.
+ * Covers: delete, remove, reset, clear, sign out, logout, erase, factory reset,
+ * uninstall, offload, transfer/restore, restart, clear data.
+ */
 const DESTRUCTIVE_PATTERNS = [
-  /delete\s*(account|data|all)?/i,
-  /remove\s*(account|data)?/i,
-  /reset\s*(all\s*)?settings?/i,
-  /clear\s*(all\s*)?(data|cache|storage)/i,
+  // Delete/remove operations
+  /delete\s*(account|data|all|history|messages?|photos?|videos?|files?|app)?/i,
+  /remove\s*(account|data|all|history)?/i,
+  /erase\s*(all\s*)?(content|data|everything|device)?/i,
+  
+  // Reset/restart operations
+  /reset\s*(all\s*)?(settings?|network|keyboard|dictionary|location|privacy|warnings|advertising|home\s*layout)?/i,
+  /reset\s*to\s*(default|original|factory)/i,
+  /factory\s*reset/i,
+  /restart\s*(device|app|phone)?/i,
+  /reboot\s*(device)?/i,
+  
+  // Transfer/restore operations (iOS: Transfer or Reset iPhone)
+  /transfer\s*(or\s*reset)?/i,
+  /restore\s*(from\s*backup)?/i,
+  
+  // Clear operations
+  /clear\s*(all\s*)?(data|cache|storage|history|cookies?|search)?/i,
+  
+  // Sign out/logout
   /sign\s*out/i,
   /log\s*out/i,
   /logoff/i,
-  /erase\s*(all)?/i,
-  /factory\s*reset/i,
+  /sign\s*off/i,
+  
+  // Uninstall/offload
   /uninstall/i,
-  /offload\s*app/i,
+  /offload\s*(app|everything)?/i,
+  /delete\s*app/i,
 ];
+
+/** Patterns for external link labels (likely to open Safari or other external apps).
+ * 
+ * These patterns are GENERIC — they apply to ANY app, not just Settings.
+ * Covers: learn more, more info, visit website, open in, documentation,
+ * support page, terms of service, privacy policy.
+ * 
+ * Config note: External link depth is controlled by config.externalLinkMaxDepth (default: 1).
+ */
+const EXTERNAL_LINK_PATTERNS = [
+  /learn\s*more/i,
+  /more\s*info/i,
+  /more\s*information/i,
+  /visit\s*(website|page|link)?/i,
+  /open\s*(in|with)/i,
+  /documentation/i,
+  /support\s*page/i,
+  /terms\s*(of\s*service)?/i,
+  /privacy\s*(policy)?/i,
+  /help\s*page/i,
+  /user\s*guide/i,
+  /manual/i,
+];
+
+/**
+ * Check if an element is likely an external link (opens another app).
+ * 
+ * Uses two signals:
+ * 1. Element type is "Link" or "AXLink"
+ * 2. Label matches one of the EXTERNAL_LINK_PATTERNS
+ * 
+ * Returns true if both signals are present, or if label strongly matches.
+ */
+export function isExternalLinkCandidate(el: UiHierarchy): boolean {
+  const label = el.text || el.accessibilityLabel || el.contentDesc || el.label || '';
+  const elementType = el.elementType || el.className || '';
+  const isLinkType = elementType.toLowerCase().includes('link');
+  
+  // Check if label matches external link patterns
+  const labelMatch = EXTERNAL_LINK_PATTERNS.some(pattern => pattern.test(label));
+  
+  // Strong match: Link type + external label
+  if (isLinkType && labelMatch) return true;
+  
+  // Moderate match: very explicit external label (e.g., "Open in Safari")
+  if (/open\s*in|launch|external|browser/i.test(label)) return true;
+  
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Classification functions
@@ -417,6 +489,7 @@ export function toClickableTarget(el: UiHierarchy): ClickableTarget {
     label: getElementLabel(el),
     selector: buildSelector(el),
     elementType: el.elementType ?? el.className ?? "Unknown",
+    isExternalLink: isExternalLinkCandidate(el),
   };
 }
 

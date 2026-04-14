@@ -61,6 +61,13 @@ export function createSnapshotter(mcp: McpToolInterface) {
       // Find clickable elements (needs config for destructive filtering)
       const clickableElements = findClickableElements(uiTree, config);
 
+      // Extract app identity from UI tree (for app switching detection)
+      const appId = extractAppId(uiTree) ?? config.appId;
+      // Note: isExternalApp is determined in the engine by comparing
+      // against the initial page's appId, NOT config.appId.
+      // This is because iOS uses AXLabel (display name) not bundle ID.
+      const isExternalApp = false; // Engine will override based on targetAppId comparison
+
       return {
         screenId: generateScreenId(uiTree),
         screenTitle: extractScreenTitle(uiTree),
@@ -73,6 +80,8 @@ export function createSnapshotter(mcp: McpToolInterface) {
         depth: 0,
         loadTimeMs: Date.now() - tapStart,
         stabilityScore: 1.0,
+        appId,
+        isExternalApp,
       };
     },
 
@@ -329,6 +338,52 @@ function flattenTreeFast(node: UiHierarchy, result: UiHierarchy[] = []): UiHiera
     }
   }
   return result;
+}
+
+/**
+ * Extract the bundle ID / app identifier from the UI tree.
+ * 
+ * iOS axe backend provides:
+ * - `AXLabel`: app display name ("Settings", "Safari")
+ * - `pid`: process ID (unique per app process)
+ * 
+ * Android axe backend provides:
+ * - `packageName`: bundle ID ("com.android.settings")
+ * 
+ * Strategy:
+ * 1. Prefer packageName/bundleIdentifier (Android)
+ * 2. For iOS, use AXLabel as app display name
+ * 3. Always include pid for precise process-level identity
+ * 
+ * Returns the extracted app identifier, or undefined if not found.
+ */
+export function extractAppId(uiTree: UiHierarchy): string | undefined {
+  // Root node should be an Application or similar top-level element
+  const allElements = flattenTreeFast(uiTree);
+
+  // Find the Application node (usually the first or root element)
+  for (const el of allElements) {
+    if (el.className === "Application" || el.elementType === "Application") {
+      // Android: packageName
+      const packageName = el.packageName
+        || (el as any).bundleIdentifier
+        || (el as any).bundleId
+        || (el as any).bundle;
+
+      // iOS: AXLabel is normalized to accessibilityLabel by normalizeToUiHierarchy
+      const axLabel = el.accessibilityLabel;
+
+      // Process ID (unique per app process, works on both iOS and Android)
+      const pid = (el as any).pid;
+
+      // Build composite app ID: prefer package name, fallback to AXLabel, then pid
+      const appId = packageName || axLabel || (pid ? `pid:${pid}` : undefined);
+
+      return appId;
+    }
+  }
+
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------

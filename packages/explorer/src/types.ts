@@ -83,6 +83,13 @@ export interface ExplorerConfig {
   appId: string;
   /** Base output directory for reports. */
   reportDir: string;
+  /** Maximum depth for external app exploration (default: 1).
+   * 
+   * When an external link (e.g., "Learn more") opens another app like Safari,
+   * this limits how deep the explorer goes in the external app.
+   * Configurable so users can increase it later if needed.
+   */
+  externalLinkMaxDepth?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,10 +161,12 @@ export interface ClickableTarget {
   label: string;
   /** Selector for targeting the element. */
   selector: ElementSelector;
-  /** Element type (e.g., "Button", "Cell", "CheckBox"). */
+  /** Element type (e.g., "Button", "Cell", "CheckBox", "Link"). */
   elementType: string;
   /** Priority score for exploration ordering (higher = explore first). */
   priority?: number;
+  /** Whether this element is likely to open an external app (e.g., "Learn more" links). */
+  isExternalLink?: boolean;
 }
 
 /**
@@ -189,6 +198,10 @@ export interface PageSnapshot {
   loadTimeMs: number;
   /** Stability score from wait_for_ui_stable (1.0 = fully stable). */
   stabilityScore: number;
+  /** Bundle ID of the app that owns this screen (for app switching detection). */
+  appId?: string;
+  /** Whether this screen belongs to an external app (e.g., Safari opened from link). */
+  isExternalApp?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -213,10 +226,12 @@ export interface DedupResult {
 
 /** Opaque state held in a frame for page-change validation. */
 export interface PageState {
-  /** Screen ID for page identity checks. */
+  /** Screen ID for page identity checks (text-based hash). */
   screenId?: string;
   /** Human-readable screen title for iOS back button targeting. */
   screenTitle?: string;
+  /** Structural hash of the UI tree (stable across dynamic text changes). */
+  structureHash?: string;
 }
 
 /**
@@ -239,6 +254,10 @@ export interface Frame {
   elements: ClickableTarget[];
   /** Parent page title — used as iOS back button text. */
   parentTitle?: string;
+  /** Bundle ID of the app that owns this page (for app switching detection). */
+  appId?: string;
+  /** Whether this page belongs to an external app (skip back navigation). */
+  isExternalApp?: boolean;
 }
 
 /** Registry of visited pages with dedup capability. */
