@@ -136,10 +136,10 @@ export interface UiHierarchy {
 
 /** Selector for targeting a UI element. */
 export interface ElementSelector {
-  /** Accessibility ID / label. */
-  accessibilityId?: string;
-  /** Android resource ID. */
+  /** Resource ID / AXUniqueId (most stable, works on both iOS and Android). */
   resourceId?: string;
+  /** Content description / accessibilityLabel. */
+  contentDesc?: string;
   /** Visible text content. */
   text?: string;
   /** Element type/class name. */
@@ -215,6 +215,8 @@ export interface DedupResult {
 export interface PageState {
   /** Screen ID for page identity checks. */
   screenId?: string;
+  /** Human-readable screen title for iOS back button targeting. */
+  screenTitle?: string;
 }
 
 /**
@@ -235,6 +237,8 @@ export interface Frame {
   elementIndex: number;
   /** Pre-computed clickable elements on this page (prioritized). */
   elements: ClickableTarget[];
+  /** Parent page title — used as iOS back button text. */
+  parentTitle?: string;
 }
 
 /** Registry of visited pages with dedup capability. */

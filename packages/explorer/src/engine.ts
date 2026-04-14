@@ -276,8 +276,18 @@ export async function explore(
 
   // Initial snapshot
   const initialSnapshot = await snapshotter.captureSnapshot(config);
+  console.log(`[ENGINE] Home page: screenId=${initialSnapshot.screenId}, screenTitle="${initialSnapshot.screenTitle || '(empty)'}", clickable=${initialSnapshot.clickableElements.length}`);
+  if (initialSnapshot.clickableElements.length > 0) {
+    const first = initialSnapshot.clickableElements[0];
+    console.log(`[ENGINE] First element: label="${first.label}", elementType="${first.elementType}"`);
+    // Print all clickable element labels
+    for (const el of initialSnapshot.clickableElements.slice(0, 15)) {
+      console.log(`  clickable: "${el.label.slice(0, 40)}" (${el.elementType})`);
+    }
+  }
   visited.register({ alreadyVisited: false }, initialSnapshot, []);
-  stack[0].state = { screenId: initialSnapshot.screenId };
+  backtracker.registerPage(initialSnapshot.screenId, initialSnapshot.uiTree);
+  stack[0].state = { screenId: initialSnapshot.screenId, screenTitle: initialSnapshot.screenTitle };
   // Populate home page's clickable elements
   stack[0].elements = prioritizeElements(initialSnapshot.clickableElements);
 
@@ -297,7 +307,7 @@ export async function explore(
       const onExpectedPage = await backtracker.isOnExpectedPage(frame.state.screenId);
       if (!onExpectedPage) {
         // Try one more navigate_back to recover
-        const navBackResult = await backtracker.navigateBack();
+        const navBackResult = await backtracker.navigateBack(frame.parentTitle);
         if (navBackResult) {
           const recoveryCheck = await backtracker.isOnExpectedPage(frame.state.screenId);
           if (!recoveryCheck) {
@@ -339,13 +349,15 @@ export async function explore(
       if (dedupResult.alreadyVisited) {
         stack.pop();
         if (frame.depth > 0) {
-          await backtracker.navigateBack();
+          await backtracker.navigateBack(frame.parentTitle);
         }
         continue;
       }
       visited.register(dedupResult, snapshot, frame.path);
+      backtracker.registerPage(snapshot.screenId, snapshot.uiTree);
       frame.elements = prioritizeElements(snapshot.clickableElements);
-      frame.state = { screenId: snapshot.screenId };
+      frame.state = { screenId: snapshot.screenId, screenTitle: snapshot.screenTitle };
+      frame.parentTitle = snapshot.screenTitle ?? frame.parentTitle;
       recordPageSuccess(circuitBreaker); // reset per-page counter for new page
     }
 
@@ -359,7 +371,7 @@ export async function explore(
         // (tracked via circuit breaker state)
       }
       if (frame.depth > 0) {
-        await backtracker.navigateBack();
+        await backtracker.navigateBack(frame.parentTitle);
       }
       continue;
     }
@@ -444,11 +456,13 @@ export async function explore(
 
       // Push child frame for immediate exploration in next iteration
       stack.push({
-        state: { screenId: nextStateSnapshot.screenId } as PageState,
+        state: { screenId: nextStateSnapshot.screenId, screenTitle: nextStateSnapshot.screenTitle } as PageState,
         depth: frame.depth + 1,
         path: [...frame.path, element.label],
         elementIndex: 0,
         elements: [],
+        // Child's parent is the current frame's page title (iOS back button shows parent title)
+        parentTitle: frame.state.screenTitle ?? frame.parentTitle,
       });
       // Don't backtrack here — the child will backtrack when it's done.
     }
