@@ -492,8 +492,10 @@ export async function explore(
                               nextStateSnapshot.appId !== currentAppId;
 
         if (isAppSwitched) {
-          console.log(`[APP-SWITCH] Detected: ${currentAppId} -> ${nextStateSnapshot.appId}`);
-          currentAppId = nextStateSnapshot.appId; // Update current app identity
+          console.log(`[APP-SWITCH] In external app — immediately launching target app to return...`);
+          await mcp.launchApp({ appId: config.appId });
+          await mcp.waitForUiStable({ timeoutMs: 8000 });
+          currentAppId = targetAppId; // ← Correct: back to target app
         } else {
           console.log(`[EXTERNAL-LINK] No app switch detected (stayed in ${nextStateSnapshot.appId})`);
         }
@@ -504,28 +506,14 @@ export async function explore(
         nextStateSnapshot.isExternalApp = isExternalApp;
         nextStateSnapshot.appId = nextStateSnapshot.appId ?? `external:${element.label}`;
 
-        console.log(`[EXTERNAL-LINK] Exploring ${isExternalApp ? 'external' : 'internal'} app page: ${nextStateSnapshot.screenTitle || '(unknown)'}`);
+        console.log(`[EXTERNAL-LINK] External link detected. Returning immediately...`);
 
-        // Validate we navigated somewhere
-        resetCircuit(circuitBreaker);
+        // Record this external link visit in the report
+        visited.register({ alreadyVisited: false }, nextStateSnapshot, [...frame.path, element.label]);
 
-        const externalMaxDepth = config.externalLinkMaxDepth ?? 1;
-        stack.push({
-          state: {
-            screenId: nextStateSnapshot.screenId,
-            screenTitle: nextStateSnapshot.screenTitle,
-            structureHash: hashUiStructure(nextStateSnapshot.uiTree),
-          } as PageState,
-          depth: isExternalApp ? externalMaxDepth : frame.depth + 1,
-          path: [...frame.path, element.label],
-          elementIndex: 0,
-          elements: [],
-          parentTitle: frame.state.screenTitle ?? frame.parentTitle,
-          appId: nextStateSnapshot.appId,
-          isExternalApp,
-        });
-
-        continue; // Don't do further nav validation for external links
+        // Do NOT push child frame for external app.
+        // Just continue from the current frame — it will pop naturally.
+        console.log(`[EXTERNAL-LINK] External link recorded, continuing from current frame`);
       }
 
       // Normal in-app navigation
@@ -538,7 +526,7 @@ export async function explore(
         console.log(
           `[APP-SWITCH] Detected: ${currentAppId} -> ${nextStateSnapshot.appId} (via "${element.label}")`,
         );
-        currentAppId = nextStateSnapshot.appId; // Update current app identity
+        currentAppId = nextStateSnapshot.appId ?? currentAppId; // Update current app identity
       }
 
       // Validate navigation (R1-#2, R3-G)
