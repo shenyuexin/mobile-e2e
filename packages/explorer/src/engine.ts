@@ -322,6 +322,8 @@ export async function explore(
     const frame = stack[stack.length - 1]; // PEEK (don't pop)
 
     // Step 0: Navigate to this frame's page if needed (R2-A: backtrack recovery)
+    // Lenient mode for iOS: pages often have dynamic content that changes structural hash.
+    // Instead of failing hard, try to recover but continue if recovery is unreliable.
     if (frame.depth > 0 && frame.state.screenId) {
       const onExpectedPage = await backtracker.isOnExpectedPage(
         frame.state.screenId,
@@ -338,32 +340,22 @@ export async function explore(
             frame.state.structureHash,
           );
           if (!recoveryCheck) {
-            failed.record({
-              pageScreenId: "unknown",
-              elementLabel: "backtrack",
-              failureType: "BACKTRACK_MISMATCH",
-              retryCount: 0,
-              errorMessage:
-                "backtrack-recovery-failed: cannot reach expected parent page",
-              depth: frame.depth,
-              path: frame.path,
-            });
-            stack.pop();
-            continue;
+            // iOS: structural hash may change due to dynamic content (suggestions, timestamps)
+            // Instead of failing hard, log warning and try to continue
+            console.log(
+              `[BACKTRACK-WARN] Recovery check failed for "${frame.state.screenTitle || frame.parentTitle}", continuing anyway`,
+            );
+            // Don't pop the frame - continue exploring from current page
+            // Record as warning, not failure
           }
         } else {
           // navigate_back itself failed
-          failed.record({
-            pageScreenId: "unknown",
-            elementLabel: "backtrack",
-            failureType: "BACKTRACK_MISMATCH",
-            retryCount: 0,
-            errorMessage: "navigate_back tool failed during backtrack recovery",
-            depth: frame.depth,
-            path: frame.path,
-          });
-          stack.pop();
-          continue;
+          // iOS: navigate_back may fail if page structure changed
+          // Instead of failing hard, log warning and continue
+          console.log(
+            `[BACKTRACK-WARN] navigate_back failed for "${frame.parentTitle}", continuing anyway`,
+          );
+          // Don't pop the frame - continue exploring from current page
         }
       }
     }
@@ -410,7 +402,25 @@ export async function explore(
           await mcp.waitForUiStable({ timeoutMs: 5000 });
           // Update current app identity since we're back in target app
           currentAppId = targetAppId;
-          console.log(`[APP-SWITCH] Returned to ${currentAppId}`);
+          console.log(`[APP-SWITCH] Returned to ${currentAppId} — launchApp preserves app state`);
+          
+          // Capture new snapshot to see what page we're on
+          const returnSnapshot = await snapshotter.captureSnapshot(config);
+          console.log(`[APP-SWITCH] Current page after return: ${returnSnapshot.screenTitle || '(unknown)'}`);
+          
+          // Re-register this page in backtracker with current structure
+          backtracker.registerPage(returnSnapshot.screenId, returnSnapshot.uiTree);
+          
+          // Update frame state to match current page
+          frame.state = {
+            screenId: returnSnapshot.screenId,
+            screenTitle: returnSnapshot.screenTitle,
+            structureHash: hashUiStructure(returnSnapshot.uiTree),
+          };
+          
+          // Mark frame as no longer external
+          frame.isExternalApp = false;
+          frame.appId = returnSnapshot.appId ?? config.appId;
         } catch (err) {
           console.log(`[APP-SWITCH] launchApp failed, falling back to navigateBack: ${err}`);
           await backtracker.navigateBack(frame.parentTitle);
