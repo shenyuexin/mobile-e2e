@@ -372,9 +372,41 @@ export function findClickableElements(
       if (isNonInteractive(el)) return false;
       // Exclude destructive elements based on policy (SPEC §4.4, R1-#1)
       if (isDestructive(el, config.destructiveActionPolicy)) return false;
+      // Exclude search trigger buttons (open search mode, not a navigable page)
+      if (isSearchTrigger(el)) return false;
       return true;
     })
     .map((el) => toClickableTarget(el));
+}
+
+/**
+ * Detect search trigger buttons — elements that open search mode instead of navigating to a page.
+ *
+ * These open an in-place search overlay, not a new screen. Back navigation from search mode
+ * requires tapping "Cancel", not the standard app-level back button.
+ *
+ * Detection: Button with AXSearchField subrole sibling, or text/label containing "Search".
+ */
+function isSearchTrigger(el: UiHierarchy): boolean {
+  const label = (el.text || el.accessibilityLabel || el.contentDesc || "").toLowerCase();
+
+  // Direct match: label is "search"
+  if (label === "search" && (el.className === "Button" || el.accessibilityRole === "AXButton")) {
+    return true;
+  }
+
+  // Fallback: button with search-related identifiers
+  // Some iOS versions don't set AXLabel on the search button
+  if (el.className === "Button" || el.accessibilityRole === "AXButton") {
+    // Check contentDesc or accessibilityLabel for search hints
+    const allText = [el.text, el.accessibilityLabel, el.contentDesc, el.elementType]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (allText.includes("search")) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -390,24 +422,30 @@ export function toClickableTarget(el: UiHierarchy): ClickableTarget {
 
 /**
  * Build an element selector with priority ordering:
- * accessibilityId > resourceId > text > position.
+ * resourceId (AXUniqueId) > accessibilityLabel > text > position.
+ * 
+ * iOS note: AXUniqueId is normalized to resourceId by the iOS backend,
+ * NOT to contentDesc. Use resourceId for stable iOS element matching.
  */
 export function buildSelector(el: UiHierarchy): ElementSelector {
-  // Priority 1: AXUniqueId / accessibility ID (most stable)
+  // Priority 1: AXUniqueId / resourceId (most stable, works on both iOS and Android)
   if (el.AXUniqueId) {
-    return { accessibilityId: el.AXUniqueId };
+    return { resourceId: el.AXUniqueId };
   }
-  if (el.accessibilityLabel) {
-    return { accessibilityId: el.accessibilityLabel };
-  }
-
-  // Priority 2: Android resource ID
   if (el.resourceId) {
     return { resourceId: el.resourceId };
   }
+  
+  // Priority 2: accessibility label / content description
+  if (el.accessibilityLabel) {
+    return { contentDesc: el.accessibilityLabel };
+  }
+  if (el.contentDesc) {
+    return { contentDesc: el.contentDesc };
+  }
 
   // Priority 3: Visible text content
-  const text = el.contentDesc || el.label || el.text || el.visibleTexts?.[0];
+  const text = el.label || el.text || el.visibleTexts?.[0];
   if (text) {
     return { text, elementType: el.elementType ?? el.className };
   }

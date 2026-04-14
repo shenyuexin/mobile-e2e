@@ -3,20 +3,16 @@
  *
  * Handles app launch and optional handoff wait based on the configured
  * auth strategy.
+ *
+ * IMPORTANT: For iOS, terminate + relaunch to ensure a clean home page.
+ * launch_app alone just brings the app to foreground, which may leave it in
+ * search mode, a sub-page, or a system dialog state from a previous session.
  */
 
 import type { ExplorerConfig, McpToolInterface } from "./types.js";
 
 /**
  * Run auth pre-flight checks.
- *
- * - 'already-logged-in': launch app and verify it's running
- * - 'auto-login': launch app (credentials would be used in a full impl)
- * - 'handoff': launch app and wait for user to complete login
- * - 'skip-auth': no-op (app launched by engine)
- *
- * For Phase 1, this simply launches the app and optionally prints
- * a handoff message.
  */
 export async function checkAuth(
   config: Pick<ExplorerConfig, "auth" | "appId">,
@@ -25,11 +21,19 @@ export async function checkAuth(
   const auth = config.auth;
 
   if (auth.type === "skip-auth") {
-    // No auth needed — engine will launch
     return { success: true };
   }
 
-  // Launch the app for all other auth types
+  // Terminate first to ensure clean state
+  try {
+    await mcp.resetAppState({ appId: config.appId });
+    // Give the OS time to fully terminate the process
+    await new Promise(r => setTimeout(r, 3000));
+  } catch {
+    // Non-fatal
+  }
+
+  // Launch the app
   const launchResult = await mcp.launchApp({ appId: config.appId });
   if (launchResult.status !== "success" && launchResult.status !== "partial") {
     return {

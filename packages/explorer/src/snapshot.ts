@@ -364,11 +364,13 @@ export function createTapExecutor(mcp: McpToolInterface) {
         // Build the query for tap_element
         const selector = element.selector;
         const tapArgs: Record<string, unknown> = {};
-        if (selector.accessibilityId) {
-          tapArgs.contentDesc = selector.accessibilityId;
-        }
+        // resourceId is supported on both iOS (AXUniqueId) and Android
         if (selector.resourceId) {
           tapArgs.resourceId = selector.resourceId;
+        }
+        // contentDesc maps to accessibilityLabel on iOS, content-desc on Android
+        if (selector.contentDesc) {
+          tapArgs.contentDesc = selector.contentDesc;
         }
         if (selector.text) {
           tapArgs.text = selector.text;

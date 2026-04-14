@@ -20,12 +20,7 @@ import type {
   RequestManualHandoffData,
 } from "@mobile-e2e-mcp/contracts";
 
-/**
- * Session context required by all MCP tools.
- *
- * The explorer engine should not need to know about these — they are injected
- * at the adapter boundary based on the ExplorerConfig.
- */
+/** Session context required by all MCP tools. */
 export interface SessionContext {
   sessionId: string;
   platform: Platform;
@@ -33,10 +28,13 @@ export interface SessionContext {
   deviceId?: string;
 }
 
-/**
- * Type-safe interface for MCP tools consumed by the explorer engine.
- * All methods return ToolResult<TData> which must be unwrapped via unwrapResult().
- */
+/** Args for navigateBack. */
+export interface NavigateBackArgs {
+  /** Title of the parent page — used as iOS back button text. */
+  parentPageTitle?: string;
+}
+
+/** Type-safe interface for MCP tools consumed by the explorer engine. */
 export interface McpToolInterface {
   launchApp(args: { appId: string }): Promise<ToolResult<LaunchAppData>>;
   waitForUiStable(args: { timeoutMs: number }): Promise<ToolResult<WaitForUiStableData>>;
@@ -49,28 +47,26 @@ export interface McpToolInterface {
     clickable?: boolean;
     limit?: number;
   }): Promise<ToolResult<TapElementData>>;
-  navigateBack(): Promise<ToolResult<NavigateBackData>>;
+  navigateBack(args?: NavigateBackArgs): Promise<ToolResult<NavigateBackData>>;
   takeScreenshot(): Promise<ToolResult<ScreenshotData>>;
   recoverToKnownState(): Promise<ToolResult<RecoverToKnownStateData>>;
   resetAppState(args: { appId: string }): Promise<ToolResult<ResetAppStateData>>;
   requestManualHandoff(): Promise<ToolResult<RequestManualHandoffData>>;
 }
 
-/**
- * Shape of an object that has an invoke method (MobileE2EMcpServer).
- */
+/** Shape of an object that has an invoke method (MobileE2EMcpServer). */
 export interface InvokableServer {
   invoke<TName extends string>(name: TName, input: unknown): Promise<ToolResult<unknown>>;
 }
 
 /**
- * Create an adapter bound to the given server instance.
+ * Navigate back for the explorer.
  *
- * All MCP tool calls include sessionId, platform, runnerProfile, and deviceId
- * as required by the contracts.
+ * For iOS: uses the parentPageTitle as the back button selector text.
+ * iOS back buttons always show the parent page's title — this is standard
+ * iOS behavior and works for any app, not just Settings.
  *
- * In CLI mode: server = new MobileE2EMcpServer(registry).
- * In test mode: pass a mock implementation.
+ * For Android: delegates to standard KEYEVENT_BACK.
  */
 export function createMcpAdapter(
   server: InvokableServer,
@@ -78,7 +74,6 @@ export function createMcpAdapter(
 ): McpToolInterface {
   const invoke = server.invoke.bind(server);
 
-  // Base params included in every tool call
   const baseInput = () => ({
     sessionId: ctx.sessionId,
     platform: ctx.platform,
@@ -100,14 +95,15 @@ export function createMcpAdapter(
       invoke("inspect_ui", { ...baseInput() }) as Promise<ToolResult<InspectUiData>>,
     tapElement: (args) =>
       invoke("tap_element", { ...baseInput(), ...args }) as Promise<ToolResult<TapElementData>>,
-    navigateBack: () =>
-      invoke("navigate_back", {
+    navigateBack: (args?) => {
+      const parentTitle = args?.parentPageTitle;
+      const selector = parentTitle ? { text: parentTitle } : undefined;
+      return invoke("navigate_back", {
         ...baseInput(),
         target: "app" as const,
-        // iOS needs a selector for app-level back.
-        // Try common back button patterns: "Settings", "Back", or a left-chevron icon.
-        selector: { text: "Settings" },
-      }) as Promise<ToolResult<NavigateBackData>>,
+        ...(selector && { selector }),
+      }) as Promise<ToolResult<NavigateBackData>>;
+    },
     takeScreenshot: () =>
       invoke("take_screenshot", { ...baseInput() }) as Promise<ToolResult<ScreenshotData>>,
     recoverToKnownState: () =>
@@ -121,8 +117,6 @@ export function createMcpAdapter(
 
 /**
  * Unwrap a ToolResult into either the data or an Error.
- *
- * Use this at adapter boundaries only — do NOT check ToolResult fields elsewhere in the engine.
  */
 export function unwrapResult<T>(result: ToolResult<T>): T {
   if (result.status === "success" || result.status === "partial") {
