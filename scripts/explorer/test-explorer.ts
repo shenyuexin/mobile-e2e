@@ -7,11 +7,11 @@
  * then runs the explorer.
  */
 
-import { createServer } from "../packages/mcp-server/src/index.js";
-import { explore } from "../packages/explorer/src/cli.js";
+import { createServer } from "../../packages/mcp-server/src/index.js";
+import { explore } from "../../packages/explorer/src/cli.js";
 
 const mode = process.argv[2] === "full" ? "full" : "smoke";
-const outputDir = mode === "full" ? "/tmp/explorer-test-full" : "/tmp/explorer-test-smoke";
+const outputDir = mode === "full" ? "artifacts/explorer/full" : "artifacts/explorer/smoke";
 const maxDepth = mode === "full" ? "8" : "5";
 const timeoutMs = mode === "full" ? "600000" : "300000";
 
