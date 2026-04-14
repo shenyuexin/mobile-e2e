@@ -17,6 +17,23 @@ export function createBacktracker(mcp: McpToolInterface) {
   // Cache of known screenId -> structureHash mappings
   const knownPages = new Map<string, string>();
 
+  const isSuccessfulBackResult = (result: Awaited<ReturnType<McpToolInterface["navigateBack"]>>): boolean => {
+    if (result.status !== "success" && result.status !== "partial") {
+      return false;
+    }
+
+    const data = (result.data ?? {}) as unknown as Record<string, unknown>;
+    if (data.stateChanged === false) {
+      return false;
+    }
+
+    if (data.pageTreeHashUnchanged === true) {
+      return false;
+    }
+
+    return true;
+  };
+
   return {
     /**
      * Register a page's structure hash for later fuzzy matching.
@@ -32,18 +49,36 @@ export function createBacktracker(mcp: McpToolInterface) {
      * @returns true if back navigation succeeded and UI stabilized.
      */
     async navigateBack(parentTitle?: string): Promise<boolean> {
-      const result = await mcp.navigateBack({ parentPageTitle: parentTitle });
-      if (result.status !== "success" && result.status !== "partial") {
-        return false;
+      const candidateTitles = parentTitle && parentTitle !== "Back"
+        ? [parentTitle, "Back"]
+        : [parentTitle];
+
+      const waitForSettle = async (): Promise<boolean> => {
+        const settleResult = await mcp.waitForUiStable({ timeoutMs: 3000 });
+        return settleResult.status === "success" || settleResult.status === "partial";
+      };
+
+      for (const candidateTitle of candidateTitles) {
+        const result = await mcp.navigateBack({ parentPageTitle: candidateTitle });
+        if (!isSuccessfulBackResult(result)) {
+          continue;
+        }
+
+        if (!(await waitForSettle())) {
+          return false;
+        }
+
+        return true;
       }
 
-      // Wait for UI to stabilize after back navigation
-      const settleResult = await mcp.waitForUiStable({ timeoutMs: 5000 });
-      if (settleResult.status !== "success" && settleResult.status !== "partial") {
-        return false;
+      // Some iOS Settings pages expose a generic "Back" button that works with
+      // tap_element but not via navigate_back selector routing.
+      const genericBackTap = await mcp.tapElement({ contentDesc: "Back" });
+      if (genericBackTap.status === "success" || genericBackTap.status === "partial") {
+        return waitForSettle();
       }
 
-      return true;
+      return false;
     },
 
     /**

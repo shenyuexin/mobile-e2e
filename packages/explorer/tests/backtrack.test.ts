@@ -20,6 +20,10 @@ function createMockMcp(options: {
   navigateBackStatus: "success" | "failed";
   waitForUiStableStatus: "success" | "failed";
   inspectUiContent?: Record<string, unknown>;
+  navigateBackStatuses?: Array<"success" | "failed">;
+  navigateBackDataList?: Array<Record<string, unknown>>;
+  onNavigateBack?: (title: string | undefined) => void;
+  tapElementStatus?: "success" | "failed";
 }): McpToolInterface {
   const mockResult = (status: "success" | "failed"): ToolResult<unknown> => ({
     status: status === "success" ? "success" : "failed",
@@ -41,9 +45,17 @@ function createMockMcp(options: {
       result.data = { content: options.inspectUiContent ?? {} } as unknown as typeof result.data;
       return result;
     },
-    tapElement: async () => mockResult("success") as ToolResult<any>,
-    navigateBack: async () =>
-      mockResult(options.navigateBackStatus) as ToolResult<any>,
+    tapElement: async () => mockResult(options.tapElementStatus ?? "failed") as ToolResult<any>,
+    navigateBack: async (args) => {
+      options.onNavigateBack?.(args?.parentPageTitle);
+      const nextStatus = options.navigateBackStatuses?.shift() ?? options.navigateBackStatus;
+      const result = mockResult(nextStatus) as ToolResult<any>;
+      const data = options.navigateBackDataList?.shift();
+      if (data) {
+        result.data = data;
+      }
+      return result;
+    },
     takeScreenshot: async () => mockResult("success") as ToolResult<any>,
     recoverToKnownState: async () => mockResult("success") as ToolResult<any>,
     resetAppState: async () => mockResult("success") as ToolResult<any>,
@@ -90,6 +102,44 @@ describe("navigateBack — failure paths", () => {
     const result = await backtracker.navigateBack();
     assert.equal(result, false);
   });
+
+  it("retries with generic Back when titled iOS back fails", async () => {
+    const { createBacktracker } = await import("../src/backtrack.js");
+    const attemptedTitles: Array<string | undefined> = [];
+    const mcp = createMockMcp({
+      navigateBackStatus: "failed",
+      navigateBackStatuses: ["failed", "success"],
+      waitForUiStableStatus: "success",
+      onNavigateBack: (title) => attemptedTitles.push(title),
+    });
+    const backtracker = createBacktracker(mcp);
+
+    const result = await backtracker.navigateBack("General");
+
+    assert.equal(result, true);
+    assert.deepEqual(attemptedTitles, ["General", "Back"]);
+  });
+
+  it("treats success-with-unchanged-page as failed back navigation", async () => {
+    const { createBacktracker } = await import("../src/backtrack.js");
+    const attemptedTitles: Array<string | undefined> = [];
+    const mcp = createMockMcp({
+      navigateBackStatus: "success",
+      navigateBackStatuses: ["success", "success"],
+      navigateBackDataList: [
+        { stateChanged: false, pageTreeHashUnchanged: true },
+        { stateChanged: true, pageTreeHashUnchanged: false },
+      ],
+      waitForUiStableStatus: "success",
+      onNavigateBack: (title) => attemptedTitles.push(title),
+    });
+    const backtracker = createBacktracker(mcp);
+
+    const result = await backtracker.navigateBack("General");
+
+    assert.equal(result, true);
+    assert.deepEqual(attemptedTitles, ["General", "Back"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -104,6 +154,9 @@ describe("isOnExpectedPage", () => {
       waitForUiStableStatus: "success",
       inspectUiContent: {
         className: "Application",
+        clickable: false,
+        enabled: true,
+        scrollable: false,
         children: [
           { className: "StaticText", text: "General", clickable: false, enabled: true, scrollable: false, children: [] },
         ],
@@ -111,17 +164,17 @@ describe("isOnExpectedPage", () => {
     });
     const backtracker = createBacktracker(mcp);
     // We need to compute the expected hash — import it
-    const { hashVisibleTexts } = await import("../src/page-registry.js");
-    const expectedHash = hashVisibleTexts({
+    const { hashUiStructure } = await import("../src/page-registry.js");
+    const expectedStructureHash = hashUiStructure({
       className: "Application",
-      children: [
-        { className: "StaticText", text: "General", clickable: false, enabled: true, scrollable: false, children: [] },
-      ],
       clickable: false,
       enabled: true,
       scrollable: false,
+      children: [
+        { className: "StaticText", text: "General", clickable: false, enabled: true, scrollable: false, children: [] },
+      ],
     });
-    const result = await backtracker.isOnExpectedPage(expectedHash);
+    const result = await backtracker.isOnExpectedPage("nonexistent-hash", "General", expectedStructureHash);
     assert.equal(result, true);
   });
 

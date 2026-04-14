@@ -446,6 +446,8 @@ export function findClickableElements(
       if (isDestructive(el, config.destructiveActionPolicy)) return false;
       // Exclude search trigger buttons (open search mode, not a navigable page)
       if (isSearchTrigger(el)) return false;
+      // TEMP: Skip Apple Account to prioritize General exploration
+      if ((el.resourceId || '').includes('primaryAppleAccount')) return false;
       return true;
     })
     .map((el) => toClickableTarget(el));
@@ -457,25 +459,23 @@ export function findClickableElements(
  * These open an in-place search overlay, not a new screen. Back navigation from search mode
  * requires tapping "Cancel", not the standard app-level back button.
  *
- * Detection: Button with AXSearchField subrole sibling, or text/label containing "Search".
+ * Detection: Button with "search" or "dictate" label (iOS Dictate button opens search overlay).
  */
 function isSearchTrigger(el: UiHierarchy): boolean {
   const label = (el.text || el.accessibilityLabel || el.contentDesc || "").toLowerCase();
 
-  // Direct match: label is "search"
-  if (label === "search" && (el.className === "Button" || el.accessibilityRole === "AXButton")) {
+  // Direct match: label is "search" or "dictate"
+  if ((label === "search" || label === "dictate") && (el.className === "Button" || el.accessibilityRole === "AXButton")) {
     return true;
   }
 
   // Fallback: button with search-related identifiers
-  // Some iOS versions don't set AXLabel on the search button
   if (el.className === "Button" || el.accessibilityRole === "AXButton") {
-    // Check contentDesc or accessibilityLabel for search hints
     const allText = [el.text, el.accessibilityLabel, el.contentDesc, el.elementType]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    if (allText.includes("search")) return true;
+    if (allText.includes("search") || allText.includes("dictate")) return true;
   }
 
   return false;

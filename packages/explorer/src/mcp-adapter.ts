@@ -97,7 +97,11 @@ export function createMcpAdapter(
       invoke("tap_element", { ...baseInput(), ...args }) as Promise<ToolResult<TapElementData>>,
     navigateBack: (args?) => {
       const parentTitle = args?.parentPageTitle;
-      const selector = parentTitle ? { text: parentTitle } : undefined;
+      const selector = parentTitle
+        ? ctx.platform === "ios"
+          ? { contentDesc: parentTitle }
+          : { text: parentTitle }
+        : undefined;
       return invoke("navigate_back", {
         ...baseInput(),
         target: "app" as const,

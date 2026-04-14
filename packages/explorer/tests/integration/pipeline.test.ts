@@ -9,7 +9,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { tmpdir } from "os";
 import { join } from "path";
-import { rmSync, mkdirSync, existsSync } from "fs";
+import { rmSync, mkdirSync, existsSync, readdirSync } from "fs";
 import type { ExplorerConfig, McpToolInterface } from "../../src/types.js";
 import type { ToolResult } from "@mobile-e2e-mcp/contracts";
 import { buildDefaultConfig } from "../../src/config.js";
@@ -122,6 +122,15 @@ describe("Pipeline integration", () => {
 
     // Verify output files exist
     assert.ok(existsSync(join(dir, "index.json")));
+    const runDirs = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    assert.equal(runDirs.length, 1);
+    const runDir = join(dir, runDirs[0]!);
+    assert.ok(existsSync(join(runDir, "summary.json")));
+    assert.ok(existsSync(join(runDir, "report.md")));
+    assert.ok(existsSync(join(runDir, "graph.mmd")));
+    assert.ok(existsSync(join(runDir, "tree.txt")));
 
     rmSync(dir, { recursive: true, force: true });
   });
