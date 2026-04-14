@@ -459,7 +459,7 @@ export function createTapExecutor(mcp: McpToolInterface) {
         // Wait for UI to stabilize after the tap
         // Timing baseline: wait_for_ui_stable takes ~1.4s on iOS 26.0
         const settleTimeoutMs = Math.min(
-          10000,
+          5000,
           Math.max(0, overallTimeoutMs - (Date.now() - tapStart)),
         );
 

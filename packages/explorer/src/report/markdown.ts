@@ -74,7 +74,7 @@ export function generateMarkdown(
 
   // Page map reference
   content += `## Page Map\n\n`;
-  content += `See [graph.mmd](./graph.mmd)\n\n`;
+  content += `See [graph.mmd](./graph.mmd) and [tree.txt](./tree.txt)\n\n`;
 
   // Module breakdown
   content += `## Module Breakdown\n\n`;

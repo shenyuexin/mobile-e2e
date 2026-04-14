@@ -12,6 +12,7 @@ import { inferModules } from './modules.js';
 import { generateSummaryJson, generateRunId, type RunIndexEntry } from './summary.js';
 import { generateMarkdown } from './markdown.js';
 import { generateMermaidGraph, generateMermaidGraphLargeApp, isLargeApp } from './mermaid.js';
+import { generateAsciiTree } from './ascii.js';
 import { updateIndex } from './index-manager.js';
 
 /** Options for report generation. */
@@ -74,6 +75,10 @@ export async function generateReport(
   }
   writeFileSync(join(runDir, 'graph.mmd'), graph, 'utf-8');
 
+  // Generate tree.txt
+  const asciiTree = generateAsciiTree(pages);
+  writeFileSync(join(runDir, 'tree.txt'), asciiTree, 'utf-8');
+
   // Save config snapshot
   writeFileSync(join(runDir, 'config.json'), JSON.stringify(config, null, 2), 'utf-8');
 
@@ -107,5 +112,6 @@ export { generateSummaryJson, generateRunId, countUniquePaths } from './summary.
 export type { RunSummary, RunIndexEntry } from './summary.js';
 export { generateMarkdown } from './markdown.js';
 export { generateMermaidGraph, generateMermaidGraphLargeApp, escapeMermaidLabel, isLargeApp } from './mermaid.js';
+export { generateAsciiTree } from './ascii.js';
 export { updateIndex, loadIndex, findRunById, computeDiff } from './index-manager.js';
 export type { RunIndex, RunDiff } from './index-manager.js';

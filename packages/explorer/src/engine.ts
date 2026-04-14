@@ -255,7 +255,7 @@ export async function explore(
     };
   }
 
-  const stableResult = await mcp.waitForUiStable({ timeoutMs: 10000 });
+  const stableResult = await mcp.waitForUiStable({ timeoutMs: 5000 });
   if (stableResult.status !== "success" && stableResult.status !== "partial") {
     failed.record({
       pageScreenId: "post-launch",
@@ -320,6 +320,10 @@ export async function explore(
     !isCircuitOpen(circuitBreaker)
   ) {
     const frame = stack[stack.length - 1]; // PEEK (don't pop)
+    console.log(`[FRAME] stack=${stack.length}, depth=${frame.depth}, cursor=${frame.elementIndex}/${frame.elements.length}, title="${frame.state.screenTitle || '(none)'}"`);
+    if (frame.elementIndex < frame.elements.length) {
+      console.log(`[FRAME] Next element to tap: "${frame.elements[frame.elementIndex].label.slice(0, 50)}"`);
+    }
 
     // Step 0: Navigate to this frame's page if needed (R2-A: backtrack recovery)
     // Lenient mode for iOS: pages often have dynamic content that changes structural hash.
@@ -331,31 +335,63 @@ export async function explore(
         frame.state.structureHash,
       );
       if (!onExpectedPage) {
-        // Try one more navigate_back to recover
-        const navBackResult = await backtracker.navigateBack(frame.parentTitle);
-        if (navBackResult) {
-          const recoveryCheck = await backtracker.isOnExpectedPage(
+        // Try navigating back repeatedly until we reach the expected page
+        let navAttempts = 0;
+        let recovered = false;
+        while (navAttempts < 8 && !recovered) {
+          navAttempts++;
+          // For iOS child pages, the back button label is usually the expected
+          // parent page title, not the current page title.
+          const currentSnap = await snapshotter.captureSnapshot(config);
+          const backTitle =
+            frame.state.screenTitle ||
+            frame.parentTitle ||
+            currentSnap.screenTitle;
+          
+          const navBackResult = await backtracker.navigateBack(backTitle);
+          if (!navBackResult) {
+            console.log(`[BACKTRACK-WARN] navigateBack("${backTitle}") attempt ${navAttempts} failed`);
+            break;
+          }
+
+          recovered = await backtracker.isOnExpectedPage(
             frame.state.screenId,
             frame.state.screenTitle,
             frame.state.structureHash,
           );
-          if (!recoveryCheck) {
-            // iOS: structural hash may change due to dynamic content (suggestions, timestamps)
-            // Instead of failing hard, log warning and try to continue
-            console.log(
-              `[BACKTRACK-WARN] Recovery check failed for "${frame.state.screenTitle || frame.parentTitle}", continuing anyway`,
-            );
-            // Don't pop the frame - continue exploring from current page
-            // Record as warning, not failure
+          if (recovered) {
+            console.log(`[BACKTRACK-OK] Recovered to "${frame.state.screenTitle}" after ${navAttempts} attempt(s)`);
+          } else {
+            // Debug: what page are we actually on?
+            const debugSnap = await snapshotter.captureSnapshot(config);
+            console.log(`[BACKTRACK-WARN] Attempt ${navAttempts}: expected "${frame.state.screenTitle}", actually on "${debugSnap.screenTitle}"`);
+            
+            // If we're already on the parent page, pop this frame — no need to recover
+            const parentTitleTrimmed = (frame.parentTitle || '').trim();
+            console.log(`[BACKTRACK-CHECK] debugSnap="${debugSnap.screenTitle}", parentTitle="${parentTitleTrimmed}", home="${initialSnapshot.screenTitle}"`);
+            if (debugSnap.screenTitle === parentTitleTrimmed || debugSnap.screenTitle === initialSnapshot.screenTitle) {
+              console.log(`[BACKTRACK-POP] Already on parent/higher page "${debugSnap.screenTitle}" — popping frame`);
+              stack.pop();
+              recovered = true;
+              break;
+            }
           }
-        } else {
-          // navigate_back itself failed
-          // iOS: navigate_back may fail if page structure changed
-          // Instead of failing hard, log warning and continue
+        }
+        if (!recovered) {
+          failed.record({
+            pageScreenId: frame.state.screenId ?? "unknown",
+            elementLabel: frame.state.screenTitle ?? frame.parentTitle ?? "resume-frame",
+            failureType: "BACKTRACK_MISMATCH",
+            retryCount: navAttempts,
+            errorMessage: `Could not recover visible UI to frame "${frame.state.screenTitle || frame.parentTitle || "unknown"}"`,
+            depth: frame.depth,
+            path: frame.path,
+          });
           console.log(
-            `[BACKTRACK-WARN] navigate_back failed for "${frame.parentTitle}", continuing anyway`,
+            `[BACKTRACK-WARN] Could not recover to "${frame.state.screenTitle || frame.parentTitle}" after ${navAttempts} attempts — popping stale frame`,
           );
-          // Don't pop the frame - continue exploring from current page
+          stack.pop();
+          continue;
         }
       }
     }
@@ -388,6 +424,11 @@ export async function explore(
     if (frame.elementIndex >= frame.elements.length) {
       // All elements explored — pop and backtrack
       stack.pop();
+      console.log(`[POP] Frame "${frame.state.screenTitle || '(none)'}" all ${frame.elements.length} elements explored. Stack now: ${stack.length}`);
+      if (stack.length > 0) {
+        const newFrame = stack[stack.length - 1];
+        console.log(`[POP] Next frame: depth=${newFrame.depth}, cursor=${newFrame.elementIndex}/${newFrame.elements.length}, title="${newFrame.state.screenTitle || '(none)'}"`);
+      }
       if (frame.elements.length > 0) {
         // Check if this page had any successful navigations
         // If not, increment consecutive failed pages
@@ -399,7 +440,7 @@ export async function explore(
         console.log(`[APP-SWITCH] Returning to target app ${config.appId} via launchApp...`);
         try {
           await mcp.launchApp({ appId: config.appId });
-          await mcp.waitForUiStable({ timeoutMs: 5000 });
+          await mcp.waitForUiStable({ timeoutMs: 3000 });
           // Update current app identity since we're back in target app
           currentAppId = targetAppId;
           console.log(`[APP-SWITCH] Returned to ${currentAppId} — launchApp preserves app state`);
@@ -434,6 +475,7 @@ export async function explore(
 
     const element = frame.elements[frame.elementIndex];
     frame.elementIndex++; // advance cursor (even if this one fails)
+    console.log(`[TAP-ELEMENT] "${element.label.slice(0, 40)}" selector=${JSON.stringify(element.selector)}`);
 
     // Retry loop for this element
     let elementRetries = 0;
@@ -481,11 +523,12 @@ export async function explore(
       const isExternalLink = element.isExternalLink ?? false;
 
       if (isExternalLink) {
-        console.log(`[EXTERNAL-LINK] Tapped "${element.label}" — waiting 3s for potential app switch...`);
-        await mcp.waitForUiStable({ timeoutMs: 3000 });
+        console.log(`[EXTERNAL-LINK] Tapped "${element.label}" — waiting 2s for potential app switch...`);
+        await mcp.waitForUiStable({ timeoutMs: 2000 });
 
         // Capture snapshot to detect app switching
         const nextStateSnapshot = await snapshotter.captureSnapshot(config);
+        console.log(`[TAP-SUCCESS] "${element.label.slice(0, 40)}" → page: "${nextStateSnapshot.screenTitle}"`);
 
         // Check if app actually switched by comparing with CURRENT app identity
         const isAppSwitched = nextStateSnapshot.appId !== undefined &&
@@ -494,7 +537,7 @@ export async function explore(
         if (isAppSwitched) {
           console.log(`[APP-SWITCH] In external app — immediately launching target app to return...`);
           await mcp.launchApp({ appId: config.appId });
-          await mcp.waitForUiStable({ timeoutMs: 8000 });
+          await mcp.waitForUiStable({ timeoutMs: 2000 });
           currentAppId = targetAppId; // ← Correct: back to target app
         } else {
           console.log(`[EXTERNAL-LINK] No app switch detected (stayed in ${nextStateSnapshot.appId})`);
@@ -514,10 +557,16 @@ export async function explore(
         // Do NOT push child frame for external app.
         // Just continue from the current frame — it will pop naturally.
         console.log(`[EXTERNAL-LINK] External link recorded, continuing from current frame`);
+        console.log(`[EXTERNAL-LINK] Current frame after: title="${frame.state.screenTitle}", elements=${frame.elements.length}, cursor=${frame.elementIndex}/${frame.elements.length}`);
+        // Log remaining elements
+        for (let i = frame.elementIndex; i < frame.elements.length; i++) {
+          console.log(`[EXTERNAL-LINK] Remaining element[${i}]: "${frame.elements[i].label.slice(0, 40)}"`);
+        }
       }
 
       // Normal in-app navigation
       const nextStateSnapshot = await snapshotter.captureSnapshot(config);
+      console.log(`[TAP-SUCCESS] "${element.label.slice(0, 40)}" → page: "${nextStateSnapshot.screenTitle}"`);
 
       // Check for app switching via appId change (non-link elements that open external apps)
       const isAppSwitched = nextStateSnapshot.appId !== undefined &&
@@ -576,6 +625,7 @@ export async function explore(
         : frame.depth + 1;
 
       // Push child frame for immediate exploration in next iteration
+      console.log(`[FRAME-PUSH] Creating child frame for "${nextStateSnapshot.screenTitle}", parentTitle="${frame.state.screenTitle ?? frame.parentTitle}", parentFrameTitle="${frame.state.screenTitle}"`);
       stack.push({
         state: {
           screenId: nextStateSnapshot.screenId,
