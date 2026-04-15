@@ -134,6 +134,7 @@ export async function runExplore(
       partial: explorationResult.aborted ?? false,
       abortReason: explorationResult.abortReason,
       durationMs,
+      sampling: explorationResult.sampling,
     });
     const reportPath = `${config.reportDir}/index.json`;
     console.log(`[RUNNER]   Report written to ${config.reportDir}/`);

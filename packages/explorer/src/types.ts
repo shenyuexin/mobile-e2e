@@ -11,6 +11,35 @@ import type { McpToolInterface } from "./mcp-adapter.js";
 // §3.1 Configuration Schema
 // ---------------------------------------------------------------------------
 
+/** Match criteria for a sampling rule. */
+export interface SamplingRuleMatch {
+  /** Full path prefix to match (e.g. ["General", "Fonts", "System Fonts"]). */
+  pathPrefix?: string[];
+  /** Screen title to match (exact). */
+  screenTitle?: string;
+  /** Screen ID to match (exact). */
+  screenId?: string;
+}
+
+/** Strategy for sampling high-fanout collection pages. */
+export type SamplingStrategy = "representative-child";
+
+/** A sampling rule for high-fanout repeated collection pages. */
+export interface SamplingRule {
+  /** How to match this rule against the current page. */
+  match: SamplingRuleMatch;
+  /** Explorer mode(s) this rule applies to. */
+  mode?: ExplorationMode;
+  /** Sampling strategy to use when matched. */
+  strategy: SamplingStrategy;
+  /** Max children to validate as representatives (default: 1). */
+  maxChildrenToValidate?: number;
+  /** Stop after the first successful child navigation. */
+  stopAfterFirstSuccessfulNavigation?: boolean;
+  /** Action labels to exclude (e.g. ["Download"]). */
+  excludeActions?: string[];
+}
+
 /** Credentials for auto-login auth mode. */
 export interface TestCredentials {
   /** Accessibility ID or selector for the username/identifier field. */
@@ -83,6 +112,8 @@ export interface ExplorerConfig {
   appId: string;
   /** Base output directory for reports. */
   reportDir: string;
+  /** Sampling rules for high-fanout collection pages (smoke mode). */
+  samplingRules?: SamplingRule[];
   /** Maximum depth for external app exploration (default: 1).
    * 
    * When an external link (e.g., "Learn more") opens another app like Safari,
@@ -319,6 +350,13 @@ export interface ExplorationResult {
   aborted?: boolean;
   /** Reason for abortion (if aborted). */
   abortReason?: string;
+  /** Sampling metadata for high-fanout collection pages. */
+  sampling?: {
+    /** Pages where sampling was applied (screenId set). */
+    appliedPages: string[];
+    /** Total children skipped due to sampling. */
+    skippedChildren: number;
+  };
 }
 
 /** Failure log collection. */

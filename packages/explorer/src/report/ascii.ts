@@ -1,4 +1,5 @@
 import type { PageEntry } from '../types.js';
+import { derivePageLink } from './hierarchy.js';
 
 /** Generate an ASCII tree representation of the explored page structure. */
 export function generateAsciiTree(pages: PageEntry[]): string {
@@ -17,14 +18,16 @@ export function generateAsciiTree(pages: PageEntry[]): string {
   const roots: PageEntry[] = [];
 
   for (const page of pages) {
-    if (!page.arrivedFrom || !pagesByScreenId.has(page.arrivedFrom)) {
+    const link = derivePageLink(page, pages);
+
+    if (!link.parentScreenId || !pagesByScreenId.has(link.parentScreenId)) {
       roots.push(page);
       continue;
     }
 
-    const siblings = childrenByParent.get(page.arrivedFrom) ?? [];
+    const siblings = childrenByParent.get(link.parentScreenId) ?? [];
     siblings.push(page);
-    childrenByParent.set(page.arrivedFrom, siblings);
+    childrenByParent.set(link.parentScreenId, siblings);
   }
 
   const lines: string[] = [];

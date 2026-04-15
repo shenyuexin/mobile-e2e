@@ -25,6 +25,11 @@ export interface ReportOpts {
   durationMs: number;
   /** ISO timestamp when exploration started. */
   startedAt?: string;
+  /** Sampling metadata for high-fanout collection pages. */
+  sampling?: {
+    appliedPages: string[];
+    skippedChildren: number;
+  };
 }
 
 /**

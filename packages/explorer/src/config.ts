@@ -7,7 +7,25 @@
 import { readFileSync, writeFileSync, existsSync, statSync } from "fs";
 import { homedir, platform } from "os";
 import { join } from "path";
-import type { AuthConfig, DestructiveActionPolicy, ExplorerConfig, ExplorerPlatform, FailureStrategy, ExplorationMode } from "./types.js";
+import type { AuthConfig, DestructiveActionPolicy, ExplorerConfig, ExplorerPlatform, FailureStrategy, ExplorationMode, SamplingRule } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Default sampling rules for high-fanout collection pages (smoke mode).
+// SPEC: explorer-high-fanout-list-sampling
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_SAMPLING_RULES: SamplingRule[] = [
+  {
+    match: {
+      pathPrefix: ["General", "Fonts", "System Fonts"],
+    },
+    mode: "smoke",
+    strategy: "representative-child",
+    maxChildrenToValidate: 1,
+    stopAfterFirstSuccessfulNavigation: true,
+    excludeActions: ["Download"],
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Interview question definitions
@@ -144,6 +162,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
   const maxPages = overrides.maxPages ?? 200;
   const timeoutMs = overrides.timeoutMs ?? 300_000;
   const reportDir = overrides.reportDir ?? "./explorer-reports";
+  const samplingRules = overrides.samplingRules ?? DEFAULT_SAMPLING_RULES;
 
   return {
     mode,
@@ -157,6 +176,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
     destructiveActionPolicy,
     appId,
     reportDir,
+    samplingRules,
   };
 }
 

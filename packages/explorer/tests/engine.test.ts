@@ -142,4 +142,141 @@ describe("explore engine recovery", () => {
       true,
     );
   });
+
+  it("preserves parentTitle so DFS can continue siblings after sampled back flow", async () => {
+    const pages = {
+      Settings: makePage("Settings", ["General"]),
+      General: makePage("General", ["Fonts", "Keyboard"]),
+      Fonts: makePage("Fonts", ["Back"]),
+      Keyboard: makePage("Keyboard", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+    const backLog: Array<{ page: string; target?: string }> = [];
+
+    const mcp: McpToolInterface = {
+      launchApp: async () => okResult({}),
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "General") {
+          currentPage = "General";
+        } else if (currentPage === "General" && label === "Fonts") {
+          currentPage = "Fonts";
+        } else if (currentPage === "Fonts" && label === "Back") {
+          currentPage = "General";
+        } else if (currentPage === "General" && label === "Keyboard") {
+          currentPage = "Keyboard";
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async (args) => {
+        backLog.push({ page: currentPage, target: args?.parentPageTitle });
+        const target = args?.parentPageTitle;
+
+        if (currentPage === "General" && target === "Fonts") {
+          currentPage = "Fonts";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Fonts" && target === "General") {
+          currentPage = "General";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "General" && target === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true } as any);
+        }
+
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    };
+
+    const result = await explore(createMockConfig(), mcp);
+
+    assert.equal(
+      tapLog.some((entry) => entry.page === "General" && entry.label === "Keyboard"),
+      true,
+    );
+    assert.equal(
+      backLog.some((entry) => entry.page === "Fonts" && entry.target === "General"),
+      true,
+    );
+    assert.equal(
+      result.failed.getEntries().some((entry) => entry.failureType === "BACKTRACK_MISMATCH"),
+      false,
+    );
+  });
+
+  it("does not execute stale child taps after BACKTRACK-POP", async () => {
+    const pages = {
+      Settings: makePage("Settings", ["General"]),
+      General: makePage("General", ["About", "Keyboard"]),
+      About: makePage("About", ["Back", "iOS Version"]),
+      Keyboard: makePage("Keyboard", []),
+      "iOS Version": makePage("iOS Version", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const mcp: McpToolInterface = {
+      launchApp: async () => okResult({}),
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "General") {
+          currentPage = "General";
+        } else if (currentPage === "General" && label === "About") {
+          currentPage = "About";
+        } else if (currentPage === "About" && label === "Back") {
+          currentPage = "General";
+        } else if (currentPage === "General" && label === "Keyboard") {
+          currentPage = "Keyboard";
+        } else if (currentPage === "About" && label === "iOS Version") {
+          currentPage = "iOS Version";
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async (args) => {
+        const target = args?.parentPageTitle;
+        if (currentPage === "About" && (target === "Back" || target === "General")) {
+          currentPage = "General";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "General" && (target === "Back" || target === "Settings")) {
+          currentPage = "Settings";
+          return okResult({ navigated: true } as any);
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    };
+
+    await explore(createMockConfig(), mcp);
+
+    assert.equal(
+      tapLog.some((entry) => entry.page === "General" && entry.label === "iOS Version"),
+      false,
+    );
+    assert.equal(
+      tapLog.some((entry) => entry.page === "General" && entry.label === "Keyboard"),
+      true,
+    );
+  });
 });

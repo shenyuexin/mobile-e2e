@@ -91,6 +91,13 @@ export interface RunSummary {
   aborted?: boolean;
   /** Present when the run was aborted. */
   abortReason?: string;
+  /** Present when high-fanout collection page sampling was applied. */
+  sampling?: {
+    /** Screen IDs of pages where sampling was applied. */
+    appliedPages: string[];
+    /** Total children skipped due to sampling. */
+    skippedChildren: number;
+  };
 }
 
 /** Options passed to summary generation. */
@@ -103,6 +110,11 @@ export interface SummaryOpts {
   durationMs: number;
   /** ISO timestamp when exploration started. */
   startedAt?: string;
+  /** Sampling metadata for high-fanout collection pages. */
+  sampling?: {
+    appliedPages: string[];
+    skippedChildren: number;
+  };
 }
 
 /**
@@ -162,6 +174,10 @@ export function generateSummaryJson(
   if (opts.partial) {
     summary.aborted = true;
     summary.abortReason = opts.abortReason;
+  }
+
+  if (opts.sampling) {
+    summary.sampling = opts.sampling;
   }
 
   return summary;
