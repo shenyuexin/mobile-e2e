@@ -49,4 +49,26 @@ describe('generateAsciiTree', () => {
       ].join('\n'),
     );
   });
+
+  it('falls back to path-derived hierarchy when arrivedFrom is missing', () => {
+    const pages = [
+      makePage('root', 'settings', 0, [], null, null, 'Settings'),
+      makePage('general', 'general', 0, ['General'], null, null, 'General'),
+      makePage('about', 'about', 0, ['General', 'About'], null, null, 'About'),
+      makePage('ios-version', 'ios-version', 0, ['General', 'About', 'iOS Version'], null, null, 'iOS Version'),
+    ];
+
+    const tree = generateAsciiTree(pages);
+
+    assert.equal(
+      tree,
+      [
+        'Settings',
+        '└── General',
+        '    └── About',
+        '        └── iOS Version',
+        '',
+      ].join('\n'),
+    );
+  });
 });

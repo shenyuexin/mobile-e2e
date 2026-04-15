@@ -68,6 +68,21 @@ describe('generateMermaidGraph', () => {
     assert.ok(graph.includes('page-1 -->|button-a| page-2'));
   });
 
+  it('derives hierarchy edges from path when arrivedFrom is missing', () => {
+    const pages = [
+      makePage('page-1', 'settings', 0, [], null, null, 'Settings'),
+      makePage('page-2', 'general', 0, ['General'], null, null, 'General'),
+      makePage('page-3', 'about', 0, ['General', 'About'], null, null, 'About'),
+      makePage('page-4', 'ios-version', 0, ['General', 'About', 'iOS Version'], null, null, 'iOS Version'),
+    ];
+
+    const graph = generateMermaidGraph(pages, []);
+
+    assert.ok(graph.includes('page-1 -->|General| page-2'));
+    assert.ok(graph.includes('page-2 -->|About| page-3'));
+    assert.ok(graph.includes('page-3 -->|iOS Version| page-4'));
+  });
+
   it('failed pages have red style', () => {
     const pages = [
       makePage('page-1', 's1', 0, []),

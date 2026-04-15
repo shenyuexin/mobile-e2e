@@ -117,7 +117,7 @@ describe("navigateBack — failure paths", () => {
     const result = await backtracker.navigateBack("General");
 
     assert.equal(result, true);
-    assert.deepEqual(attemptedTitles, ["General", "Back"]);
+    assert.deepEqual(attemptedTitles, ["Back", "General"]);
   });
 
   it("treats success-with-unchanged-page as failed back navigation", async () => {
@@ -138,7 +138,7 @@ describe("navigateBack — failure paths", () => {
     const result = await backtracker.navigateBack("General");
 
     assert.equal(result, true);
-    assert.deepEqual(attemptedTitles, ["General", "Back"]);
+    assert.deepEqual(attemptedTitles, ["Back", "General"]);
   });
 });
 
@@ -193,5 +193,23 @@ describe("isOnExpectedPage", () => {
     const backtracker = createBacktracker(mcp);
     const result = await backtracker.isOnExpectedPage("nonexistent-hash");
     assert.equal(result, false);
+  });
+
+  it("falls back to normalized title match when hash and screenId differ", async () => {
+    const { createBacktracker } = await import("../src/backtrack.js");
+    const mcp = createMockMcp({
+      navigateBackStatus: "success",
+      waitForUiStableStatus: "success",
+      inspectUiContent: {
+        className: "Application",
+        children: [
+          { className: "StaticText", text: "Preferred   Languages", clickable: false, enabled: true, scrollable: false, children: [] },
+        ],
+      },
+    });
+    const backtracker = createBacktracker(mcp);
+
+    const result = await backtracker.isOnExpectedPage("screen-id-that-does-not-match", "PREFERRED LANGUAGES", "hash-that-does-not-match");
+    assert.equal(result, true);
   });
 });

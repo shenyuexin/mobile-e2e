@@ -50,7 +50,7 @@ export function createBacktracker(mcp: McpToolInterface) {
      */
     async navigateBack(parentTitle?: string): Promise<boolean> {
       const candidateTitles = parentTitle && parentTitle !== "Back"
-        ? [parentTitle, "Back"]
+        ? ["Back", parentTitle]
         : [parentTitle];
 
       const waitForSettle = async (): Promise<boolean> => {
@@ -128,9 +128,24 @@ export function createBacktracker(mcp: McpToolInterface) {
         }
       }
 
+      // Tier 4: normalized title-only fallback (for dynamic pages where hashes drift)
+      if (expectedScreenTitle) {
+        const currentTitle = extractScreenTitleFromUiTree(uiTree);
+        if (
+          currentTitle &&
+          normalizeTitle(currentTitle) === normalizeTitle(expectedScreenTitle)
+        ) {
+          return true;
+        }
+      }
+
       return false;
     },
   };
+}
+
+function normalizeTitle(title: string): string {
+  return title.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 /**

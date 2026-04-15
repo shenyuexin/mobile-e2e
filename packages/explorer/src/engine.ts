@@ -25,6 +25,8 @@ import type {
   PageState,
   Action,
   PageSnapshot,
+  SamplingRule,
+  SamplingRuleMatch,
 } from "./types.js";
 import { PageRegistry, hashUiStructure } from "./page-registry.js";
 import { createSnapshotter, createTapExecutor, generateScreenId } from "./snapshot.js";
@@ -40,6 +42,84 @@ import {
 } from "./circuit-breaker.js";
 import { generateReport } from "./report.js";
 import { hashVisibleTexts } from "./page-registry.js";
+
+// ---------------------------------------------------------------------------
+// Sampling helpers — high-fanout collection page representative-child flow
+// SPEC: explorer-high-fanout-list-sampling
+// ---------------------------------------------------------------------------
+
+/** Side-effect action labels that should not be selected as representatives. */
+const SIDE_EFFECT_PATTERNS = [
+  /download/i,
+  /install/i,
+  /purchase/i,
+  /buy/i,
+  /delete/i,
+  /remove/i,
+  /erase/i,
+  /reset/i,
+  /sign\s*out/i,
+  /log\s*out/i,
+];
+
+function isSideEffectAction(label: string): boolean {
+  return SIDE_EFFECT_PATTERNS.some((p) => p.test(label));
+}
+
+/**
+ * Check if a sampling rule matches the current frame state.
+ * Matching priority: screenId > pathPrefix > screenTitle.
+ */
+function matchSamplingRule(
+  rules: SamplingRule[] | undefined,
+  framePath: string[],
+  screenTitle: string | undefined,
+  screenId: string | undefined,
+  mode: string,
+): SamplingRule | undefined {
+  if (!rules || rules.length === 0) return undefined;
+
+  for (const rule of rules) {
+    if (rule.mode && rule.mode !== mode) continue;
+    const m = rule.match;
+
+    // Priority 1: screenId match
+    if (m.screenId && screenId && m.screenId === screenId) return rule;
+
+    // Priority 2: pathPrefix match (case-insensitive substring)
+    // frame.path may contain resourceIds like "com.apple.settings.general"
+    // so we match using case-insensitive substring containment
+    if (m.pathPrefix && m.pathPrefix.length > 0) {
+      const prefix = m.pathPrefix;
+      if (framePath.length >= prefix.length - 1) {
+        let matches = true;
+        for (let i = 0; i < prefix.length - 1; i++) {
+          const framePart = framePath[i].toLowerCase();
+          const rulePart = prefix[i].toLowerCase();
+          // Substring match: "com.apple.settings.general" contains "general"
+          if (!framePart.includes(rulePart)) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) return rule;
+      }
+    }
+
+    // Priority 3: screenTitle match
+    if (m.screenTitle && screenTitle && m.screenTitle === screenTitle) return rule;
+  }
+
+  return undefined;
+}
+
+/** Sampling state tracked during exploration. */
+interface SamplingState {
+  /** Pages where sampling was applied (screenId set). */
+  appliedPages: Set<string>;
+  /** Total children skipped due to sampling. */
+  skippedChildren: number;
+}
 
 // ---------------------------------------------------------------------------
 // Failure log
@@ -235,6 +315,12 @@ export async function explore(
   const tapper = createTapExecutor(mcp);
   const backtracker = createBacktracker(mcp);
 
+  // --- Sampling state (high-fanout collection pages) ---
+  const samplingState: SamplingState = {
+    appliedPages: new Set(),
+    skippedChildren: 0,
+  };
+
   // --- App launch ---
   const launchResult = await mcp.launchApp({ appId: config.appId });
   if (launchResult.status !== "success" && launchResult.status !== "partial") {
@@ -329,6 +415,7 @@ export async function explore(
     // Lenient mode for iOS: pages often have dynamic content that changes structural hash.
     // Instead of failing hard, try to recover but continue if recovery is unreliable.
     if (frame.depth > 0 && frame.state.screenId) {
+      let poppedCurrentFrame = false;
       const onExpectedPage = await backtracker.isOnExpectedPage(
         frame.state.screenId,
         frame.state.screenTitle,
@@ -372,10 +459,14 @@ export async function explore(
             if (debugSnap.screenTitle === parentTitleTrimmed || debugSnap.screenTitle === initialSnapshot.screenTitle) {
               console.log(`[BACKTRACK-POP] Already on parent/higher page "${debugSnap.screenTitle}" — popping frame`);
               stack.pop();
+              poppedCurrentFrame = true;
               recovered = true;
               break;
             }
           }
+        }
+        if (poppedCurrentFrame) {
+          continue;
         }
         if (!recovered) {
           failed.record({
@@ -416,8 +507,44 @@ export async function explore(
         screenTitle: snapshot.screenTitle,
         structureHash: hashUiStructure(snapshot.uiTree),
       };
-      frame.parentTitle = snapshot.screenTitle ?? frame.parentTitle;
       recordPageSuccess(circuitBreaker); // reset per-page counter for new page
+
+      // --- Sampling check: high-fanout collection pages (smoke mode) ---
+      const matchedRule = matchSamplingRule(
+        config.samplingRules,
+        frame.path,
+        frame.state.screenTitle,
+        frame.state.screenId,
+        config.mode,
+      );
+      console.log(`[SAMPLING-DEBUG] path=[${frame.path.join(", ")}], title="${frame.state.screenTitle}", mode="${config.mode}", rules=${config.samplingRules?.length ?? 0}, matched=${matchedRule ? "yes" : "no"}`);
+      if (matchedRule && matchedRule.strategy === "representative-child") {
+        const maxChildren = matchedRule.maxChildrenToValidate ?? 1;
+        const excludePatterns = matchedRule.excludeActions ?? [];
+        const hasExclude = excludePatterns.length > 0;
+
+        // Filter out side-effect actions and explicitly excluded patterns
+        const safeElements = frame.elements.filter((el) => {
+          if (hasExclude && excludePatterns.some((p) => new RegExp(p, "i").test(el.label))) {
+            return false;
+          }
+          if (isSideEffectAction(el.label)) {
+            return false;
+          }
+          return true;
+        });
+
+        if (safeElements.length > 0) {
+          const originalCount = frame.elements.length;
+          frame.elements = prioritizeElements(safeElements.slice(0, maxChildren));
+          samplingState.appliedPages.add(frame.state.screenId ?? "unknown");
+          samplingState.skippedChildren += originalCount - frame.elements.length;
+          console.log(
+            `[SAMPLING] Rule matched: "${matchedRule.match.pathPrefix?.join(" > ") || matchedRule.match.screenTitle || "unknown"}" — ` +
+            `reducing ${originalCount} children to ${frame.elements.length} representative(s)`,
+          );
+        }
+      }
     }
 
     // Step 2: Visit next unexplored element
@@ -659,6 +786,12 @@ export async function explore(
     abortReason: isCircuitOpen(circuitBreaker)
       ? `${circuitBreaker.consecutiveFailedPages} consecutive pages with no successful navigation — circuit breaker opened`
       : undefined,
+    sampling: samplingState.appliedPages.size > 0
+      ? {
+          appliedPages: [...samplingState.appliedPages],
+          skippedChildren: samplingState.skippedChildren,
+        }
+      : undefined,
   };
 
   await generateReport(
@@ -669,6 +802,7 @@ export async function explore(
       partial: result.aborted ?? false,
       abortReason: result.abortReason,
       durationMs: Date.now() - startTime,
+      sampling: result.sampling,
     },
   );
 

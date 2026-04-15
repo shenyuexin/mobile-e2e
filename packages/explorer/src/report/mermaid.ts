@@ -9,6 +9,7 @@
  */
 
 import type { PageEntry, FailureEntry } from '../types.js';
+import { derivePageLink } from './hierarchy.js';
 
 /** Threshold for switching to sub-graph layout per module. */
 const LARGE_APP_PAGE_THRESHOLD = 200;
@@ -39,7 +40,10 @@ export function generateMermaidGraph(
   // Detect orphan arrivals (arrivedFrom references that don't match any page)
   const pageScreenIds = new Set(pages.map((p) => p.screenId));
   const hasOrphanArrivals = pages.some(
-    (p) => p.arrivedFrom && !pageScreenIds.has(p.arrivedFrom),
+    (p) => {
+      const link = derivePageLink(p, pages);
+      return link.parentScreenId !== null && !pageScreenIds.has(link.parentScreenId);
+    },
   );
 
   const homeNodeId = isLargeApp && moduleName
@@ -65,11 +69,13 @@ export function generateMermaidGraph(
 
   // Define edges
   for (const page of pages) {
-    if (page.arrivedFrom) {
-      const fromId = findPageIdByScreenId(pages, page.arrivedFrom);
+    const link = derivePageLink(page, pages);
+
+    if (link.parentScreenId) {
+      const fromId = findPageIdByScreenId(pages, link.parentScreenId);
       const resolvedFromId = fromId || homeNodeId;
-      const edgeLabel = page.viaElement
-        ? `|${escapeMermaidLabel(page.viaElement)}|`
+      const edgeLabel = link.viaElement
+        ? `|${escapeMermaidLabel(link.viaElement)}|`
         : '';
       lines.push(`  ${resolvedFromId} -->${edgeLabel} ${page.id}`);
     }

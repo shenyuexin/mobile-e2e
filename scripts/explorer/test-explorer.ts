@@ -13,7 +13,7 @@ import { explore } from "../../packages/explorer/src/cli.js";
 const mode = process.argv[2] === "full" ? "full" : "smoke";
 const outputDir = mode === "full" ? "artifacts/explorer/full" : "artifacts/explorer/smoke";
 const maxDepth = mode === "full" ? "8" : "5";
-const timeoutMs = mode === "full" ? "1800000" : "900000";
+const timeoutMs = mode === "full" ? "7200000" : "3600000";
 
 async function terminateSettingsApp(): Promise<void> {
   console.log("\n[CLEANUP] Terminating Settings app to ensure clean state...");
