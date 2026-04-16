@@ -24,6 +24,7 @@ function createMockMcp(options: {
   navigateBackDataList?: Array<Record<string, unknown>>;
   onNavigateBack?: (title: string | undefined) => void;
   tapElementStatus?: "success" | "failed";
+  tapElementStatuses?: Array<"success" | "failed">;
 }): McpToolInterface {
   const mockResult = (status: "success" | "failed"): ToolResult<unknown> => ({
     status: status === "success" ? "success" : "failed",
@@ -45,7 +46,10 @@ function createMockMcp(options: {
       result.data = { content: options.inspectUiContent ?? {} } as unknown as typeof result.data;
       return result;
     },
-    tapElement: async () => mockResult(options.tapElementStatus ?? "failed") as ToolResult<any>,
+    tapElement: async () => {
+      const nextTap = options.tapElementStatuses?.shift() ?? options.tapElementStatus ?? "failed";
+      return mockResult(nextTap) as ToolResult<any>;
+    },
     navigateBack: async (args) => {
       options.onNavigateBack?.(args?.parentPageTitle);
       const nextStatus = options.navigateBackStatuses?.shift() ?? options.navigateBackStatus;
@@ -103,7 +107,7 @@ describe("navigateBack — failure paths", () => {
     assert.equal(result, false);
   });
 
-  it("retries with generic Back when titled iOS back fails", async () => {
+  it("tries Back then Cancel before falling back to parent title", async () => {
     const { createBacktracker } = await import("../src/backtrack.js");
     const attemptedTitles: Array<string | undefined> = [];
     const mcp = createMockMcp({
@@ -117,7 +121,7 @@ describe("navigateBack — failure paths", () => {
     const result = await backtracker.navigateBack("General");
 
     assert.equal(result, true);
-    assert.deepEqual(attemptedTitles, ["Back", "General"]);
+    assert.deepEqual(attemptedTitles, ["Back", "Cancel"]);
   });
 
   it("treats success-with-unchanged-page as failed back navigation", async () => {
@@ -138,7 +142,24 @@ describe("navigateBack — failure paths", () => {
     const result = await backtracker.navigateBack("General");
 
     assert.equal(result, true);
-    assert.deepEqual(attemptedTitles, ["Back", "General"]);
+    assert.deepEqual(attemptedTitles, ["Back", "Cancel"]);
+  });
+
+  it("falls back to tapping Cancel when navigate_back selectors fail", async () => {
+    const { createBacktracker } = await import("../src/backtrack.js");
+    const attemptedTitles: Array<string | undefined> = [];
+    const mcp = createMockMcp({
+      navigateBackStatus: "failed",
+      waitForUiStableStatus: "success",
+      onNavigateBack: (title) => attemptedTitles.push(title),
+      tapElementStatuses: ["failed", "success"],
+    });
+    const backtracker = createBacktracker(mcp);
+
+    const result = await backtracker.navigateBack("General");
+
+    assert.equal(result, true);
+    assert.deepEqual(attemptedTitles, ["Back", "Cancel", "General"]);
   });
 });
 

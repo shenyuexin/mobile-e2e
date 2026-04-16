@@ -488,6 +488,14 @@ export async function explore(
           
           const navBackResult = await backtracker.navigateBack(backTitle);
           if (!navBackResult) {
+            stateGraph.registerTransition({
+              from: currentStateNode.id,
+              kind: "back",
+              intentLabel: backTitle ?? "navigateBack",
+              committed: false,
+              attempts: navAttempts,
+              failureReason: "navigateBack returned false",
+            });
             console.log(`[BACKTRACK-WARN] navigateBack("${backTitle}") attempt ${navAttempts} failed`);
             break;
           }
@@ -498,6 +506,13 @@ export async function explore(
             frame.state.structureHash,
           );
           if (recovered) {
+            stateGraph.registerTransition({
+              from: currentStateNode.id,
+              kind: "back",
+              intentLabel: backTitle ?? "navigateBack",
+              committed: true,
+              attempts: navAttempts,
+            });
             console.log(`[BACKTRACK-OK] Recovered to "${frame.state.screenTitle}" after ${navAttempts} attempt(s)`);
           } else {
             // Debug: what page are we actually on?
@@ -538,6 +553,14 @@ export async function explore(
             `[BACKTRACK-WARN] Could not recover to "${frame.state.screenTitle || frame.parentTitle}" after ${navAttempts} attempts — popping stale frame`,
           );
           if (frame.depth === 0) {
+            stateGraph.registerTransition({
+              from: currentStateNode.id,
+              kind: "home",
+              intentLabel: "home-recovery",
+              committed: false,
+              attempts: navAttempts,
+              failureReason: "home recovery failed",
+            });
             recoveryAbortReason = `Home recovery failed after ${navAttempts} attempts at "${frame.state.screenTitle || "unknown"}"`;
             break;
           }
