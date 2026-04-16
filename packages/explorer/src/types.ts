@@ -340,6 +340,21 @@ export interface FailureEntry {
   path: string[];
 }
 
+/** Transition lifecycle event type. */
+export type TransitionLifecycleEventType =
+  | "action_sent"
+  | "post_state_observed"
+  | "transition_committed"
+  | "transition_rejected";
+
+/** Transition lifecycle counters for observability. */
+export interface TransitionLifecycleSummary {
+  actionSent: number;
+  postStateObserved: number;
+  transitionCommitted: number;
+  transitionRejected: number;
+}
+
 /** Complete result of an exploration session. */
 export interface ExplorationResult {
   /** Registry of all visited pages. */
@@ -356,7 +371,18 @@ export interface ExplorationResult {
     appliedPages: string[];
     /** Total children skipped due to sampling. */
     skippedChildren: number;
+    /** Per-page sampling details for report rendering. */
+    details?: Record<string, {
+      screenTitle?: string;
+      totalChildren: number;
+      exploredChildren: number;
+      skippedChildren: number;
+      exploredLabels: string[];
+      skippedLabels: string[];
+    }>;
   };
+  /** Transition lifecycle summary for auditing navigation progress. */
+  transitionLifecycle?: TransitionLifecycleSummary;
 }
 
 /** Failure log collection. */

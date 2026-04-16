@@ -7,7 +7,7 @@
  * §5.3 — Summary specification.
  */
 
-import type { PageEntry, FailureEntry, ExplorerConfig } from '../types.js';
+import type { PageEntry, FailureEntry, ExplorerConfig, TransitionLifecycleSummary } from '../types.js';
 import type { ModuleGroup } from './modules.js';
 
 /** Compact run entry for the index.json history file. */
@@ -97,7 +97,18 @@ export interface RunSummary {
     appliedPages: string[];
     /** Total children skipped due to sampling. */
     skippedChildren: number;
+    /** Per-page sampling details for transparency in reports. */
+    details?: Record<string, {
+      screenTitle?: string;
+      totalChildren: number;
+      exploredChildren: number;
+      skippedChildren: number;
+      exploredLabels: string[];
+      skippedLabels: string[];
+    }>;
   };
+  /** Transition lifecycle counters for navigation auditing. */
+  transitionLifecycle?: TransitionLifecycleSummary;
 }
 
 /** Options passed to summary generation. */
@@ -114,7 +125,17 @@ export interface SummaryOpts {
   sampling?: {
     appliedPages: string[];
     skippedChildren: number;
+    details?: Record<string, {
+      screenTitle?: string;
+      totalChildren: number;
+      exploredChildren: number;
+      skippedChildren: number;
+      exploredLabels: string[];
+      skippedLabels: string[];
+    }>;
   };
+  /** Transition lifecycle counters from the engine. */
+  transitionLifecycle?: TransitionLifecycleSummary;
 }
 
 /**
@@ -178,6 +199,10 @@ export function generateSummaryJson(
 
   if (opts.sampling) {
     summary.sampling = opts.sampling;
+  }
+
+  if (opts.transitionLifecycle) {
+    summary.transitionLifecycle = opts.transitionLifecycle;
   }
 
   return summary;
