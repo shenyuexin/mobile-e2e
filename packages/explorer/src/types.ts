@@ -355,6 +355,15 @@ export interface TransitionLifecycleSummary {
   transitionRejected: number;
 }
 
+export type TransitionKind = "forward" | "back" | "cancel" | "home" | "relaunch";
+
+export interface StateGraphSummary {
+  nodeCount: number;
+  edgeCount: number;
+  committedEdgeCount: number;
+  rejectedEdgeCount: number;
+}
+
 /** Complete result of an exploration session. */
 export interface ExplorationResult {
   /** Registry of all visited pages. */
@@ -383,6 +392,8 @@ export interface ExplorationResult {
   };
   /** Transition lifecycle summary for auditing navigation progress. */
   transitionLifecycle?: TransitionLifecycleSummary;
+  /** StateGraph summary metrics for this run. */
+  stateGraph?: StateGraphSummary;
 }
 
 /** Failure log collection. */

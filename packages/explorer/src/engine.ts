@@ -34,6 +34,7 @@ import { PageRegistry, hashUiStructure } from "./page-registry.js";
 import { createSnapshotter, createTapExecutor, generateScreenId } from "./snapshot.js";
 import { prioritizeElements } from "./element-prioritizer.js";
 import { createBacktracker } from "./backtrack.js";
+import { createStateGraph } from "./state-graph.js";
 import {
   createCircuitBreaker,
   recordPageSuccess,
@@ -353,6 +354,7 @@ export async function explore(
   const snapshotter = createSnapshotter(mcp);
   const tapper = createTapExecutor(mcp);
   const backtracker = createBacktracker(mcp);
+  const stateGraph = createStateGraph();
 
   // --- Sampling state (high-fanout collection pages) ---
   const samplingState: SamplingState = {
@@ -424,11 +426,13 @@ export async function explore(
   let currentAppId = targetAppId;
   
   visited.register({ alreadyVisited: false }, initialSnapshot, []);
+  const initialStructureHash = hashUiStructure(initialSnapshot.uiTree);
+  let currentStateNode = stateGraph.registerState(initialSnapshot, initialStructureHash);
   backtracker.registerPage(initialSnapshot.screenId, initialSnapshot.uiTree);
   stack[0].state = {
     screenId: initialSnapshot.screenId,
     screenTitle: initialSnapshot.screenTitle,
-    structureHash: hashUiStructure(initialSnapshot.uiTree),
+    structureHash: initialStructureHash,
   };
   // Populate home page's clickable elements
   stack[0].elements = prioritizeElements(initialSnapshot.clickableElements);
@@ -566,6 +570,7 @@ export async function explore(
         screenTitle: snapshot.screenTitle,
         structureHash: hashUiStructure(snapshot.uiTree),
       };
+      currentStateNode = stateGraph.registerState(snapshot, frame.state.structureHash ?? "");
       recordPageSuccess(circuitBreaker); // reset per-page counter for new page
 
       // --- Sampling check: high-fanout collection pages (smoke mode) ---
@@ -768,6 +773,13 @@ export async function explore(
           console.log(`[EXTERNAL-LINK] Remaining element[${i}]: "${frame.elements[i].label.slice(0, 40)}"`);
         }
         transitionLifecycle.transitionCommitted += 1;
+        stateGraph.registerTransition({
+          from: currentStateNode.id,
+          kind: "forward",
+          intentLabel: element.label,
+          committed: true,
+          attempts: elementRetries + 1,
+        });
         continue;
       }
 
@@ -811,6 +823,14 @@ export async function explore(
           );
         }
         transitionLifecycle.transitionRejected += 1;
+        stateGraph.registerTransition({
+          from: currentStateNode.id,
+          kind: "forward",
+          intentLabel: element.label,
+          committed: false,
+          attempts: elementRetries + 1,
+          failureReason: navValidation.reason,
+        });
         continue; // element didn't lead anywhere — try next sibling
       }
 
@@ -852,6 +872,19 @@ export async function explore(
         isExternalApp: isAppSwitched,
       });
       transitionLifecycle.transitionCommitted += 1;
+      const nextStateNode = stateGraph.registerState(
+        nextStateSnapshot,
+        hashUiStructure(nextStateSnapshot.uiTree),
+      );
+      stateGraph.registerTransition({
+        from: currentStateNode.id,
+        to: nextStateNode.id,
+        kind: "forward",
+        intentLabel: element.label,
+        committed: true,
+        attempts: elementRetries + 1,
+      });
+      currentStateNode = nextStateNode;
       
       // For external app pages, after exploration we'll use launchApp to return
       // (handled in the backtrack step below via isExternalApp flag)
@@ -859,6 +892,14 @@ export async function explore(
     }
     else {
       transitionLifecycle.transitionRejected += 1;
+      stateGraph.registerTransition({
+        from: currentStateNode.id,
+        kind: "forward",
+        intentLabel: element.label,
+        committed: false,
+        attempts: elementRetries + 1,
+        failureReason: "tap-and-wait failed",
+      });
     }
     // If element failed, continue the while loop to try next sibling.
     // No backtrack needed — we're still on the parent page (failed tap didn't navigate).
@@ -881,6 +922,7 @@ export async function explore(
         }
       : undefined,
     transitionLifecycle,
+    stateGraph: stateGraph.getSummary(),
   };
 
   await generateReport(
@@ -893,6 +935,7 @@ export async function explore(
       durationMs: Date.now() - startTime,
       sampling: result.sampling,
       transitionLifecycle: result.transitionLifecycle,
+      stateGraph: result.stateGraph,
     },
   );
 

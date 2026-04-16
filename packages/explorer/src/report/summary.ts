@@ -7,7 +7,13 @@
  * §5.3 — Summary specification.
  */
 
-import type { PageEntry, FailureEntry, ExplorerConfig, TransitionLifecycleSummary } from '../types.js';
+import type {
+  PageEntry,
+  FailureEntry,
+  ExplorerConfig,
+  TransitionLifecycleSummary,
+  StateGraphSummary,
+} from '../types.js';
 import type { ModuleGroup } from './modules.js';
 
 /** Compact run entry for the index.json history file. */
@@ -109,6 +115,8 @@ export interface RunSummary {
   };
   /** Transition lifecycle counters for navigation auditing. */
   transitionLifecycle?: TransitionLifecycleSummary;
+  /** StateGraph aggregate counters. */
+  stateGraph?: StateGraphSummary;
 }
 
 /** Options passed to summary generation. */
@@ -136,6 +144,8 @@ export interface SummaryOpts {
   };
   /** Transition lifecycle counters from the engine. */
   transitionLifecycle?: TransitionLifecycleSummary;
+  /** StateGraph aggregate counters from engine. */
+  stateGraph?: StateGraphSummary;
 }
 
 /**
@@ -203,6 +213,10 @@ export function generateSummaryJson(
 
   if (opts.transitionLifecycle) {
     summary.transitionLifecycle = opts.transitionLifecycle;
+  }
+
+  if (opts.stateGraph) {
+    summary.stateGraph = opts.stateGraph;
   }
 
   return summary;

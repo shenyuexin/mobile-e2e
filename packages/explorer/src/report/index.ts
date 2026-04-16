@@ -7,7 +7,13 @@
 
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import type { PageEntry, FailureEntry, ExplorerConfig, TransitionLifecycleSummary } from '../types.js';
+import type {
+  PageEntry,
+  FailureEntry,
+  ExplorerConfig,
+  TransitionLifecycleSummary,
+  StateGraphSummary,
+} from '../types.js';
 import { inferModules } from './modules.js';
 import { generateSummaryJson, generateRunId, type RunIndexEntry } from './summary.js';
 import { generateMarkdown } from './markdown.js';
@@ -40,6 +46,8 @@ export interface ReportOpts {
   };
   /** Transition lifecycle counters from the engine. */
   transitionLifecycle?: TransitionLifecycleSummary;
+  /** StateGraph aggregate counters from engine. */
+  stateGraph?: StateGraphSummary;
 }
 
 /**
