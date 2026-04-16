@@ -50,7 +50,7 @@ export function createBacktracker(mcp: McpToolInterface) {
      */
     async navigateBack(parentTitle?: string): Promise<boolean> {
       const candidateTitles = parentTitle && parentTitle !== "Back"
-        ? ["Back", parentTitle]
+        ? ["Back", "Cancel", parentTitle]
         : [parentTitle];
 
       const waitForSettle = async (): Promise<boolean> => {
@@ -75,6 +75,12 @@ export function createBacktracker(mcp: McpToolInterface) {
       // tap_element but not via navigate_back selector routing.
       const genericBackTap = await mcp.tapElement({ contentDesc: "Back" });
       if (genericBackTap.status === "success" || genericBackTap.status === "partial") {
+        return waitForSettle();
+      }
+
+      // Some modal/picker-style pages only expose a top-right "Cancel" action.
+      const genericCancelTap = await mcp.tapElement({ contentDesc: "Cancel" });
+      if (genericCancelTap.status === "success" || genericCancelTap.status === "partial") {
         return waitForSettle();
       }
 
