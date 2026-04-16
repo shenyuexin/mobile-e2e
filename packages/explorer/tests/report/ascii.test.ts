@@ -71,4 +71,35 @@ describe('generateAsciiTree', () => {
       ].join('\n'),
     );
   });
+
+  it('renders sampled skipped children and per-page sampling counts', () => {
+    const pages = [
+      makePage('root', 'settings', 0, [], null, null, 'Settings'),
+      makePage('general', 'general', 0, ['General'], null, null, 'General'),
+      makePage('fonts', 'fonts', 0, ['General', 'Fonts'], null, null, 'Fonts'),
+    ];
+
+    const tree = generateAsciiTree(pages, {
+      fonts: {
+        screenTitle: 'Fonts',
+        totalChildren: 3,
+        exploredChildren: 1,
+        skippedChildren: 2,
+        exploredLabels: ['System Fonts'],
+        skippedLabels: ['System Fonts', 'My Fonts'],
+      },
+    });
+
+    assert.equal(
+      tree,
+      [
+        'Settings',
+        '└── General',
+        '    └── Fonts  [sampling: 1/3]',
+        '        ├── System Fonts  [skipped by sampling]',
+        '        └── My Fonts  [skipped by sampling]',
+        '',
+      ].join('\n'),
+    );
+  });
 });
