@@ -149,6 +149,28 @@ describe('generateSummaryJson', () => {
     assert.equal(summary.pages[0].hasFailure, false);
   });
 
+  it('includes stateGraph summary when provided', () => {
+    const pages = [makePage('p1', 0, ['home'], false)];
+    const modules = inferModules(pages);
+    const summary = generateSummaryJson(pages, [], modules, mockConfig, {
+      partial: false,
+      durationMs: 5000,
+      stateGraph: {
+        nodeCount: 5,
+        edgeCount: 7,
+        committedEdgeCount: 4,
+        rejectedEdgeCount: 3,
+      },
+    });
+
+    assert.deepEqual(summary.stateGraph, {
+      nodeCount: 5,
+      edgeCount: 7,
+      committedEdgeCount: 4,
+      rejectedEdgeCount: 3,
+    });
+  });
+
   it('generates a valid runId', () => {
     const runId = generateRunId();
     assert.ok(typeof runId === 'string');

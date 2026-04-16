@@ -81,6 +81,10 @@ export type { TapResult } from "./snapshot.js";
 // Backtracking
 export { createBacktracker } from "./backtrack.js";
 
+// State graph
+export { createStateGraph } from "./state-graph.js";
+export type { StateNode, TransitionEdge, StateGraph, StateGraphSummary } from "./state-graph.js";
+
 // DFS engine
 export { explore as exploreEngine, FailureLog } from "./engine.js";
 
