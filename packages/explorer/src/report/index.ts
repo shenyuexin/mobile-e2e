@@ -7,7 +7,7 @@
 
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import type { PageEntry, FailureEntry, ExplorerConfig } from '../types.js';
+import type { PageEntry, FailureEntry, ExplorerConfig, TransitionLifecycleSummary } from '../types.js';
 import { inferModules } from './modules.js';
 import { generateSummaryJson, generateRunId, type RunIndexEntry } from './summary.js';
 import { generateMarkdown } from './markdown.js';
@@ -29,7 +29,17 @@ export interface ReportOpts {
   sampling?: {
     appliedPages: string[];
     skippedChildren: number;
+    details?: Record<string, {
+      screenTitle?: string;
+      totalChildren: number;
+      exploredChildren: number;
+      skippedChildren: number;
+      exploredLabels: string[];
+      skippedLabels: string[];
+    }>;
   };
+  /** Transition lifecycle counters from the engine. */
+  transitionLifecycle?: TransitionLifecycleSummary;
 }
 
 /**
@@ -81,7 +91,7 @@ export async function generateReport(
   writeFileSync(join(runDir, 'graph.mmd'), graph, 'utf-8');
 
   // Generate tree.txt
-  const asciiTree = generateAsciiTree(pages);
+  const asciiTree = generateAsciiTree(pages, opts.sampling?.details);
   writeFileSync(join(runDir, 'tree.txt'), asciiTree, 'utf-8');
 
   // Save config snapshot
