@@ -28,7 +28,7 @@ function findNodeAtPoint(nodes: InspectUiNode[], point: { x: number; y: number }
   let smallest: InspectUiNode | undefined;
   let smallestArea = Infinity;
   for (const node of matchingNodes) {
-    const bounds = parseUiBounds(node.bounds!);
+    const bounds = node.bounds ? parseUiBounds(node.bounds) : undefined;
     if (!bounds) continue;
     const area = bounds.width * bounds.height;
     if (area < smallestArea) {
@@ -282,7 +282,9 @@ export function createIosUiRuntimeHooks(): UiRuntimePlatformHooks {
     },
     buildDescribePointCommand: (deviceId, x, y) => {
       const backend = router.selectBackend(deviceId);
-      return backend.buildHierarchyCaptureCommand(deviceId);
+      return backend.buildDescribePointCommand
+        ? backend.buildDescribePointCommand(deviceId, x, y)
+        : backend.buildHierarchyCaptureCommand(deviceId);
     },
     verifyResolvedPoint: verifyResolvedIosPointWithHooks,
     verifyTypedPostcondition: verifyTypedIosPostconditionWithHooks,

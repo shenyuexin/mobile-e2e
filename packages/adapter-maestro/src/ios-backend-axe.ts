@@ -77,6 +77,17 @@ export class AxeSimulatorBackend implements IosExecutionBackend {
     return ["axe", "describe-ui", "--udid", deviceId];
   }
 
+  buildDescribePointCommand(deviceId: string, x: number, y: number): string[] {
+    return [
+      "axe",
+      "describe-ui",
+      "--udid",
+      deviceId,
+      "--point",
+      `${Math.round(x)},${Math.round(y)}`,
+    ];
+  }
+
   buildScreenshotCommand(deviceId: string, outputPath: string): string[] {
     // axe screenshot --udid UDID --output <path>
     // VERIFIED: saved 3.6M PNG, 1290×2796, RGBA

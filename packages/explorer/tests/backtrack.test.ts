@@ -20,12 +20,18 @@ function createMockMcp(options: {
   navigateBackStatus: "success" | "failed";
   waitForUiStableStatus: "success" | "failed";
   inspectUiContent?: Record<string, unknown>;
+  inspectUiContents?: Array<Record<string, unknown>>;
   navigateBackStatuses?: Array<"success" | "failed">;
   navigateBackDataList?: Array<Record<string, unknown>>;
-  onNavigateBack?: (title: string | undefined) => void;
+  onNavigateBack?: (args: { title?: string; iosStrategy?: "selector_tap" | "edge_swipe" }) => void;
+  onTapElement?: (args: { resourceId?: string; contentDesc?: string; text?: string; className?: string; clickable?: boolean }) => void;
   tapElementStatus?: "success" | "failed";
   tapElementStatuses?: Array<"success" | "failed">;
+  screenSummaryData?: Record<string, unknown>;
+  tapStatus?: "success" | "failed";
+  onCoordinateTap?: (args: { x: number; y: number }) => void;
 }): McpToolInterface {
+  let inspectCounter = 0;
   const mockResult = (status: "success" | "failed"): ToolResult<unknown> => ({
     status: status === "success" ? "success" : "failed",
     reasonCode: status === "success" ? "OK" : "ACTION_TAP_FAILED",
@@ -43,15 +49,27 @@ function createMockMcp(options: {
       mockResult(options.waitForUiStableStatus) as ToolResult<any>,
     inspectUi: async () => {
       const result = mockResult("success") as ToolResult<any>;
-      result.data = { content: options.inspectUiContent ?? {} } as unknown as typeof result.data;
+      const sequenceContent = options.inspectUiContents?.shift();
+      inspectCounter += 1;
+      const fallbackDynamicContent = {
+        className: "Application",
+        children: [{ className: "StaticText", text: `screen-${inspectCounter}`, clickable: false, enabled: true, scrollable: false, children: [] }],
+      };
+      result.data = {
+        content: sequenceContent ?? options.inspectUiContent ?? fallbackDynamicContent,
+      } as unknown as typeof result.data;
       return result;
     },
-    tapElement: async () => {
+    tapElement: async (args) => {
+      options.onTapElement?.(args ?? {});
       const nextTap = options.tapElementStatuses?.shift() ?? options.tapElementStatus ?? "failed";
       return mockResult(nextTap) as ToolResult<any>;
     },
     navigateBack: async (args) => {
-      options.onNavigateBack?.(args?.parentPageTitle);
+      options.onNavigateBack?.({
+        title: args?.parentPageTitle,
+        iosStrategy: args?.iosStrategy,
+      });
       const nextStatus = options.navigateBackStatuses?.shift() ?? options.navigateBackStatus;
       const result = mockResult(nextStatus) as ToolResult<any>;
       const data = options.navigateBackDataList?.shift();
@@ -64,6 +82,28 @@ function createMockMcp(options: {
     recoverToKnownState: async () => mockResult("success") as ToolResult<any>,
     resetAppState: async () => mockResult("success") as ToolResult<any>,
     requestManualHandoff: async () => mockResult("success") as ToolResult<any>,
+    getScreenSummary: async () => {
+      const result = mockResult("success") as ToolResult<any>;
+      result.data = {
+        dryRun: false,
+        runnerProfile: "native_ios",
+        outputPath: "",
+        command: [],
+        exitCode: 0,
+        supportLevel: "full",
+        summarySource: "ui_only",
+        screenSummary: options.screenSummaryData ?? {
+          pageIdentity: {
+            hasBackAffordance: false,
+          },
+        },
+      };
+      return result;
+    },
+    tap: async (args) => {
+      options.onCoordinateTap?.({ x: args.x, y: args.y });
+      return mockResult(options.tapStatus ?? "failed") as ToolResult<any>;
+    },
   };
 }
 
@@ -81,6 +121,34 @@ describe("navigateBack — success path", () => {
     const backtracker = createBacktracker(mcp);
     const result = await backtracker.navigateBack();
     assert.equal(result, true);
+  });
+
+  it("uses iOS edge_swipe as first strategy and succeeds immediately when state changes", async () => {
+    const { createBacktracker } = await import("../src/backtrack.js");
+    const attempts: Array<{ title?: string; iosStrategy?: "selector_tap" | "edge_swipe" }> = [];
+    const mcp = createMockMcp({
+      navigateBackStatus: "success",
+      navigateBackStatuses: ["success"],
+      navigateBackDataList: [{ stateChanged: true, executedStrategy: "ios_edge_swipe" }],
+      waitForUiStableStatus: "success",
+      inspectUiContents: [
+        {
+          className: "Application",
+          children: [{ className: "StaticText", text: "INSTALLED FONTS", clickable: false, enabled: true, scrollable: false, children: [] }],
+        },
+        {
+          className: "Application",
+          children: [{ className: "StaticText", text: "Fonts", clickable: false, enabled: true, scrollable: false, children: [] }],
+        },
+      ],
+      onNavigateBack: (info) => attempts.push(info),
+    });
+
+    const backtracker = createBacktracker(mcp);
+    const result = await backtracker.navigateBack("Fonts");
+
+    assert.equal(result, true);
+    assert.deepEqual(attempts, [{ title: undefined, iosStrategy: "edge_swipe" }]);
   });
 });
 
@@ -109,24 +177,27 @@ describe("navigateBack — failure paths", () => {
 
   it("tries Back then Cancel before falling back to parent title", async () => {
     const { createBacktracker } = await import("../src/backtrack.js");
-    const attemptedTitles: Array<string | undefined> = [];
+    const attempts: Array<{ title?: string; iosStrategy?: "selector_tap" | "edge_swipe" }> = [];
     const mcp = createMockMcp({
       navigateBackStatus: "failed",
       navigateBackStatuses: ["failed", "success"],
       waitForUiStableStatus: "success",
-      onNavigateBack: (title) => attemptedTitles.push(title),
+      onNavigateBack: (info) => attempts.push(info),
     });
     const backtracker = createBacktracker(mcp);
 
     const result = await backtracker.navigateBack("General");
 
     assert.equal(result, true);
-    assert.deepEqual(attemptedTitles, ["Back", "Cancel"]);
+    assert.deepEqual(attempts, [
+      { title: undefined, iosStrategy: "edge_swipe" },
+      { title: undefined, iosStrategy: undefined },
+    ]);
   });
 
   it("treats success-with-unchanged-page as failed back navigation", async () => {
     const { createBacktracker } = await import("../src/backtrack.js");
-    const attemptedTitles: Array<string | undefined> = [];
+    const attempts: Array<{ title?: string; iosStrategy?: "selector_tap" | "edge_swipe" }> = [];
     const mcp = createMockMcp({
       navigateBackStatus: "success",
       navigateBackStatuses: ["success", "success"],
@@ -135,23 +206,55 @@ describe("navigateBack — failure paths", () => {
         { stateChanged: true, pageTreeHashUnchanged: false },
       ],
       waitForUiStableStatus: "success",
-      onNavigateBack: (title) => attemptedTitles.push(title),
+      onNavigateBack: (info) => attempts.push(info),
     });
     const backtracker = createBacktracker(mcp);
 
     const result = await backtracker.navigateBack("General");
 
     assert.equal(result, true);
-    assert.deepEqual(attemptedTitles, ["Back", "Cancel"]);
+    assert.deepEqual(attempts, [
+      { title: undefined, iosStrategy: "edge_swipe" },
+      { title: undefined, iosStrategy: undefined },
+      { title: "General", iosStrategy: "selector_tap" },
+    ]);
+  });
+
+  it("does not reject solely because pageTreeHashUnchanged is true", async () => {
+    const { createBacktracker } = await import("../src/backtrack.js");
+    const attempts: Array<{ title?: string; iosStrategy?: "selector_tap" | "edge_swipe" }> = [];
+    const mcp = createMockMcp({
+      navigateBackStatus: "success",
+      navigateBackStatuses: ["success"],
+      navigateBackDataList: [{ stateChanged: "unknown", pageTreeHashUnchanged: true }],
+      waitForUiStableStatus: "success",
+      inspectUiContents: [
+        {
+          className: "Application",
+          children: [{ className: "StaticText", text: "INSTALLED FONTS", clickable: false, enabled: true, scrollable: false, children: [] }],
+        },
+        {
+          className: "Application",
+          children: [{ className: "StaticText", text: "Fonts", clickable: false, enabled: true, scrollable: false, children: [] }],
+        },
+      ],
+      onNavigateBack: (info) => attempts.push(info),
+    });
+    const backtracker = createBacktracker(mcp);
+
+    const result = await backtracker.navigateBack("Fonts");
+
+    assert.equal(result, true);
+    assert.deepEqual(attempts, [{ title: undefined, iosStrategy: "edge_swipe" }]);
   });
 
   it("falls back to tapping Cancel when navigate_back selectors fail", async () => {
     const { createBacktracker } = await import("../src/backtrack.js");
-    const attemptedTitles: Array<string | undefined> = [];
+    const attempts: Array<{ title?: string; iosStrategy?: "selector_tap" | "edge_swipe" }> = [];
     const mcp = createMockMcp({
       navigateBackStatus: "failed",
       waitForUiStableStatus: "success",
-      onNavigateBack: (title) => attemptedTitles.push(title),
+      onNavigateBack: (info) => attempts.push(info),
       tapElementStatuses: ["failed", "success"],
     });
     const backtracker = createBacktracker(mcp);
@@ -159,7 +262,104 @@ describe("navigateBack — failure paths", () => {
     const result = await backtracker.navigateBack("General");
 
     assert.equal(result, true);
-    assert.deepEqual(attemptedTitles, ["Back", "Cancel", "General"]);
+    assert.deepEqual(attempts, [
+      { title: undefined, iosStrategy: "edge_swipe" },
+      { title: undefined, iosStrategy: undefined },
+      { title: "General", iosStrategy: "selector_tap" },
+    ]);
+  });
+
+  it("falls back to tapping parent title when Back/Cancel are unavailable", async () => {
+    const { createBacktracker } = await import("../src/backtrack.js");
+    const attempts: Array<{ title?: string; iosStrategy?: "selector_tap" | "edge_swipe" }> = [];
+    const mcp = createMockMcp({
+      navigateBackStatus: "failed",
+      waitForUiStableStatus: "success",
+      onNavigateBack: (info) => attempts.push(info),
+      tapElementStatuses: ["failed", "failed", "success"],
+    });
+    const backtracker = createBacktracker(mcp);
+
+    const result = await backtracker.navigateBack("Fonts");
+
+    assert.equal(result, true);
+    assert.deepEqual(attempts, [
+      { title: undefined, iosStrategy: "edge_swipe" },
+      { title: undefined, iosStrategy: undefined },
+      { title: "Fonts", iosStrategy: "selector_tap" },
+    ]);
+  });
+
+  it("uses screen summary back affordance label as final fallback", async () => {
+    const { createBacktracker } = await import("../src/backtrack.js");
+    const tapSelectors: Array<{ resourceId?: string; contentDesc?: string; text?: string; className?: string; clickable?: boolean }> = [];
+    const mcp = createMockMcp({
+      navigateBackStatus: "failed",
+      waitForUiStableStatus: "success",
+      tapElementStatuses: Array.from({ length: 200 }, () => "failed" as const),
+      screenSummaryData: {
+        pageIdentity: {
+          hasBackAffordance: true,
+          backAffordanceLabel: "Fonts",
+        },
+      },
+      onTapElement: (args) => tapSelectors.push(args),
+    });
+    const backtracker = createBacktracker(mcp);
+
+    const result = await backtracker.navigateBack("Fonts");
+
+    assert.equal(result, false);
+    assert.equal(
+      tapSelectors.some((selector) => selector.contentDesc === "Fonts" && selector.className === "Button"),
+      true,
+    );
+  });
+
+  it("uses nav-bar coordinate tap as last-resort fallback", async () => {
+    const { createBacktracker } = await import("../src/backtrack.js");
+    const coordinateTaps: Array<{ x: number; y: number }> = [];
+    const mcp = createMockMcp({
+      navigateBackStatus: "failed",
+      waitForUiStableStatus: "success",
+      tapElementStatuses: Array.from({ length: 200 }, () => "failed" as const),
+      tapStatus: "success",
+      inspectUiContents: [
+        {
+          className: "Application",
+          children: [
+            {
+              className: "Group",
+              accessibilityRole: "Nav bar",
+              frame: { x: 0, y: 50, width: 430, height: 96 },
+              clickable: false,
+              enabled: true,
+              scrollable: false,
+              children: [],
+            },
+            { className: "Heading", text: "INSTALLED FONTS", clickable: false, enabled: true, scrollable: false, children: [] },
+          ],
+        },
+        {
+          className: "Application",
+          children: [
+            { className: "Heading", text: "Fonts", clickable: false, enabled: true, scrollable: false, children: [] },
+          ],
+        },
+      ],
+      onCoordinateTap: (args) => coordinateTaps.push(args),
+      screenSummaryData: {
+        pageIdentity: {
+          hasBackAffordance: false,
+        },
+      },
+    });
+    const backtracker = createBacktracker(mcp);
+
+    const result = await backtracker.navigateBack("Fonts");
+
+    assert.equal(result, true);
+    assert.equal(coordinateTaps.length > 0, true);
   });
 });
 

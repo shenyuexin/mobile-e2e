@@ -6,7 +6,7 @@
  * Accuracy target: >=95% across >=30 operations.
  */
 
-import type { McpToolInterface, UiHierarchy, PageState } from "./types.js";
+import type { McpToolInterface, UiHierarchy } from "./types.js";
 import { generateScreenId } from "./snapshot.js";
 import { hashUiStructure } from "./page-registry.js";
 
@@ -17,6 +17,25 @@ export function createBacktracker(mcp: McpToolInterface) {
   // Cache of known screenId -> structureHash mappings
   const knownPages = new Map<string, string>();
 
+  type BackAffordanceStatus = "selector_detected" | "nav_bar_only" | "not_detected";
+
+  const captureCurrentPageContext = async (): Promise<{ screenId?: string; title?: string }> => {
+    const inspectResult = await mcp.inspectUi();
+    if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
+      return {};
+    }
+    const uiTree = parseUiTreeFromInspectResult(
+      inspectResult.data as unknown as Record<string, unknown>,
+    );
+    if (!uiTree) {
+      return {};
+    }
+    return {
+      screenId: generateScreenId(uiTree),
+      title: extractScreenTitleFromUiTree(uiTree),
+    };
+  };
+
   const isSuccessfulBackResult = (result: Awaited<ReturnType<McpToolInterface["navigateBack"]>>): boolean => {
     if (result.status !== "success" && result.status !== "partial") {
       return false;
@@ -24,10 +43,6 @@ export function createBacktracker(mcp: McpToolInterface) {
 
     const data = (result.data ?? {}) as unknown as Record<string, unknown>;
     if (data.stateChanged === false) {
-      return false;
-    }
-
-    if (data.pageTreeHashUnchanged === true) {
       return false;
     }
 
@@ -49,41 +64,589 @@ export function createBacktracker(mcp: McpToolInterface) {
      * @returns true if back navigation succeeded and UI stabilized.
      */
     async navigateBack(parentTitle?: string): Promise<boolean> {
-      const candidateTitles = parentTitle && parentTitle !== "Back"
-        ? ["Back", "Cancel", parentTitle]
-        : [parentTitle];
+      const normalizeLabel = (label: string): string => label.trim().replace(/\s+/g, " ");
+
+      const dedupeLabels = (labels: string[]): string[] => {
+        const seen = new Set<string>();
+        const result: string[] = [];
+        for (const raw of labels) {
+          const label = normalizeLabel(raw);
+          if (!label || seen.has(label.toLowerCase())) {
+            continue;
+          }
+          seen.add(label.toLowerCase());
+          result.push(label);
+        }
+        return result;
+      };
+
+      const logTrace = (message: string): void => {
+        console.log(`[BACKTRACK-TRACE] ${message}`);
+      };
+
+      const logWarn = (message: string): void => {
+        console.log(`[BACKTRACK-WARN] ${message}`);
+      };
+
+      const detectBackAffordance = async (): Promise<{
+        status: BackAffordanceStatus;
+        navBarFrame?: { x: number; y: number; width: number; height: number };
+        selectorLabels: string[];
+      }> => {
+        const inspectResult = await mcp.inspectUi();
+        if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
+          return { status: "not_detected", selectorLabels: [] };
+        }
+
+        const uiTree = parseUiTreeFromInspectResult(inspectResult.data as unknown as Record<string, unknown>);
+        if (!uiTree) {
+          return { status: "not_detected", selectorLabels: [] };
+        }
+
+        const nodes = flattenUiTree(uiTree);
+        const navBarNode = nodes.find((node) => {
+          const role = (node.accessibilityRole ?? "").toLowerCase();
+          const className = (node.className ?? "").toLowerCase();
+          return (role.includes("nav bar") || className.includes("navigationbar")) && node.frame;
+        });
+
+        const normalizedParent = parentTitle ? normalizeLabel(parentTitle).toLowerCase() : "";
+        const selectorCandidates = nodes
+          .filter((node) => {
+            const role = (node.accessibilityRole ?? "").toLowerCase();
+            const className = (node.className ?? "").toLowerCase();
+            const isButtonLike = node.clickable
+              || role.includes("button")
+              || role.includes("back button")
+              || className.includes("button");
+            const topY = node.frame?.y ?? Number.MAX_SAFE_INTEGER;
+            return isButtonLike && topY <= 180;
+          })
+          .map((node) => normalizeLabel(node.contentDesc ?? node.text ?? node.accessibilityLabel ?? ""))
+          .filter((label) => label.length > 0)
+          .filter((label) => {
+            const normalized = label.toLowerCase();
+            return normalized === "back"
+              || normalized.includes("back")
+              || normalized.startsWith("<")
+              || normalized.startsWith("‹")
+              || (normalizedParent.length > 0 && normalized.includes(normalizedParent));
+          });
+
+        const selectorLabels = dedupeLabels([
+          ...selectorCandidates,
+          ...(parentTitle ? [parentTitle, `< ${parentTitle}`, `‹ ${parentTitle}`] : []),
+          "Back",
+        ]);
+
+        const status: BackAffordanceStatus = selectorCandidates.length > 0
+          ? "selector_detected"
+          : navBarNode?.frame
+          ? "nav_bar_only"
+          : "not_detected";
+
+        logTrace(
+          `affordance status=${status}, selectorCandidates=${JSON.stringify(selectorCandidates.slice(0, 3))}, ` +
+          `navBarFrame=${JSON.stringify(navBarNode?.frame ?? null)}`,
+        );
+
+        return {
+          status,
+          navBarFrame: navBarNode?.frame,
+          selectorLabels,
+        };
+      };
 
       const waitForSettle = async (): Promise<boolean> => {
         const settleResult = await mcp.waitForUiStable({ timeoutMs: 3000 });
+        if (settleResult.status !== "success" && settleResult.status !== "partial") {
+          logWarn(`waitForUiStable failed: status=${settleResult.status}, reason=${settleResult.reasonCode}`);
+        }
         return settleResult.status === "success" || settleResult.status === "partial";
       };
 
-      for (const candidateTitle of candidateTitles) {
-        const result = await mcp.navigateBack({ parentPageTitle: candidateTitle });
-        if (!isSuccessfulBackResult(result)) {
-          continue;
+      const verifyScreenChanged = (before?: string, after?: string): boolean => {
+        // Keep compatibility when UI identity cannot be inspected.
+        if (!before || !after) {
+          return true;
         }
+        return before !== after;
+      };
 
-        if (!(await waitForSettle())) {
+      const tryNavigateBack = async (
+        method: string,
+        args?: {
+          parentPageTitle?: string;
+          iosStrategy?: "selector_tap" | "edge_swipe";
+          selector?: {
+            resourceId?: string;
+            contentDesc?: string;
+            text?: string;
+            className?: string;
+            clickable?: boolean;
+          };
+        },
+      ): Promise<boolean> => {
+        const before = await captureCurrentPageContext();
+        const result = await mcp.navigateBack(args);
+        const resultData = (result.data ?? {}) as unknown as Record<string, unknown>;
+
+        const detail =
+          `method=${method}, status=${result.status}, reason=${result.reasonCode}, ` +
+          `executed=${String(resultData.executedStrategy ?? "unknown")}, ` +
+          `stateChanged=${String(resultData.stateChanged ?? "unknown")}, ` +
+          `pageTreeHashUnchanged=${String(resultData.pageTreeHashUnchanged ?? "unknown")}, ` +
+          `fallbackUsed=${String(resultData.fallbackUsed ?? "unknown")}`;
+
+        if (!isSuccessfulBackResult(result)) {
+          logWarn(`${detail} => rejected by contract check`);
           return false;
         }
 
+        if (!(await waitForSettle())) {
+          logWarn(`${detail} => settle failed`);
+          return false;
+        }
+
+        const after = await captureCurrentPageContext();
+        if (!verifyScreenChanged(before.screenId, after.screenId)) {
+          logWarn(
+            `${detail} => screen unchanged (before=${before.title ?? before.screenId ?? "unknown"}, ` +
+            `after=${after.title ?? after.screenId ?? "unknown"})`,
+          );
+          return false;
+        }
+
+        logTrace(
+          `${detail} => success (before=${before.title ?? before.screenId ?? "unknown"}, ` +
+          `after=${after.title ?? after.screenId ?? "unknown"})`,
+        );
+        return true;
+      };
+
+      const tryTapBackControl = async (
+        method: string,
+        selector: { contentDesc?: string; text?: string; className?: string; clickable?: boolean },
+      ): Promise<boolean> => {
+        const before = await captureCurrentPageContext();
+        const tapResult = await mcp.tapElement(selector);
+        const selectorLabel = selector.contentDesc ?? selector.text ?? "<unknown-selector>";
+        const detail =
+          `method=${method}, selector="${selectorLabel}", coordinate=n/a, status=${tapResult.status}, ` +
+          `reason=${tapResult.reasonCode}, executedStrategy=tap_element`;
+
+        if (tapResult.status !== "success" && tapResult.status !== "partial") {
+          logWarn(`${detail} => tap failed`);
+          return false;
+        }
+
+        if (!(await waitForSettle())) {
+          logWarn(`${detail} => settle failed`);
+          return false;
+        }
+
+        const after = await captureCurrentPageContext();
+        if (!verifyScreenChanged(before.screenId, after.screenId)) {
+          logWarn(
+            `${detail} => screen unchanged (before=${before.title ?? before.screenId ?? "unknown"}, ` +
+            `after=${after.title ?? after.screenId ?? "unknown"})`,
+          );
+          return false;
+        }
+
+        logTrace(
+          `${detail} => success (before=${before.title ?? before.screenId ?? "unknown"}, ` +
+          `after=${after.title ?? after.screenId ?? "unknown"})`,
+        );
+        return true;
+      };
+
+      const logBackFailureEvidence = async (): Promise<void> => {
+        const inspectResult = await mcp.inspectUi();
+        if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
+          logWarn(`evidence inspect failed: status=${inspectResult.status}, reason=${inspectResult.reasonCode}`);
+          return;
+        }
+
+        const uiTree = parseUiTreeFromInspectResult(inspectResult.data as unknown as Record<string, unknown>);
+        if (!uiTree) {
+          logWarn("evidence inspect parse failed: empty ui tree");
+          return;
+        }
+
+        const nodes = flattenUiTree(uiTree);
+        const currentTitle = extractScreenTitleFromUiTree(uiTree);
+        const currentScreenId = generateScreenId(uiTree);
+
+        const topCandidates = nodes
+          .filter((node) => node.clickable === true)
+          .filter((node) => (node.frame?.y ?? Number.MAX_SAFE_INTEGER) <= 220)
+          .slice(0, 10)
+          .map((node) => ({
+            label: node.contentDesc ?? node.text ?? node.accessibilityLabel ?? "",
+            className: node.className,
+            clickable: node.clickable,
+            frame: node.frame,
+          }));
+
+        const navBarNode = nodes.find(
+          (node) => (node.accessibilityRole ?? "").toLowerCase().includes("nav bar") && node.frame,
+        );
+
+        const summaryResult = await mcp.getScreenSummary();
+        const summaryStatus = `${summaryResult.status}/${summaryResult.reasonCode}`;
+        const pageIdentity = (summaryResult.data as unknown as Record<string, unknown> | undefined)?.screenSummary as Record<string, unknown> | undefined;
+        const backAffordance = (pageIdentity?.pageIdentity as Record<string, unknown> | undefined);
+
+        console.log(
+          `[BACKTRACK-EVIDENCE] title="${currentTitle ?? "unknown"}", screenId=${currentScreenId}, ` +
+          `navBarPresent=${Boolean(navBarNode?.frame)}, navBarFrame=${JSON.stringify(navBarNode?.frame ?? null)}, ` +
+          `screenSummary=${summaryStatus}, backAffordance=${JSON.stringify({
+            hasBackAffordance: backAffordance?.hasBackAffordance,
+            backAffordanceLabel: backAffordance?.backAffordanceLabel,
+          })}`,
+        );
+        console.log(`[BACKTRACK-EVIDENCE] topCandidates=${JSON.stringify(topCandidates)}`);
+      };
+
+      const tryTopBarBackCandidates = async (): Promise<boolean> => {
+        const inspectResult = await mcp.inspectUi();
+        if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
+          logWarn("top-bar candidate probe failed: inspect_ui unavailable");
+          return false;
+        }
+
+        const uiTree = parseUiTreeFromInspectResult(inspectResult.data as unknown as Record<string, unknown>);
+        if (!uiTree) {
+          logWarn("top-bar candidate probe failed: inspect_ui parse returned empty tree");
+          return false;
+        }
+
+        const nodes = flattenUiTree(uiTree);
+        const candidates = nodes
+          .filter((node) => node.clickable === true)
+          .filter((node) => node.className?.toLowerCase() === "button")
+          .map((node) => {
+            const label = normalizeLabel(node.contentDesc ?? node.text ?? "");
+            const topY = node.frame?.y ?? Number.MAX_SAFE_INTEGER;
+            return {
+              label,
+              topY,
+              contentDesc: node.contentDesc,
+              text: node.text,
+            };
+          })
+          .filter((candidate) => candidate.label.length > 0)
+          .filter((candidate) => {
+            const normalizedParent = parentTitle ? normalizeLabel(parentTitle).toLowerCase() : "";
+            const normalizedLabel = candidate.label.toLowerCase();
+            const looksLikeBack =
+              normalizedLabel === "back"
+              || normalizedLabel.includes("back")
+              || normalizedLabel.startsWith("<")
+              || normalizedLabel.startsWith("‹")
+              || (normalizedParent.length > 0 && normalizedLabel.includes(normalizedParent));
+            return looksLikeBack;
+          })
+          .filter((candidate) => candidate.topY <= 180)
+          .sort((left, right) => left.topY - right.topY)
+          .slice(0, 3);
+
+        if (candidates.length === 0) {
+          logWarn("top-bar candidate probe found no clickable Button candidates in header area");
+          return false;
+        }
+
+        for (const candidate of candidates) {
+          if (
+            candidate.contentDesc
+            && await tryTapBackControl("tap_topbar_candidate:contentDesc", {
+              contentDesc: candidate.contentDesc,
+              className: "Button",
+              clickable: true,
+            })
+          ) {
+            return true;
+          }
+          if (
+            candidate.text
+            && await tryTapBackControl("tap_topbar_candidate:text", {
+              text: candidate.text,
+              className: "Button",
+              clickable: true,
+            })
+          ) {
+            return true;
+          }
+        }
+
+        return false;
+      };
+
+      const tryScreenSummaryBackAffordance = async (): Promise<boolean> => {
+        const summaryResult = await mcp.getScreenSummary();
+        if (summaryResult.status !== "success" && summaryResult.status !== "partial") {
+          logWarn(`screen-summary probe failed: status=${summaryResult.status}, reason=${summaryResult.reasonCode}`);
+          return false;
+        }
+
+        const summaryData = (summaryResult.data ?? {}) as unknown as Record<string, unknown>;
+        const screenSummary = (summaryData.screenSummary ?? {}) as Record<string, unknown>;
+        const pageIdentity = (screenSummary.pageIdentity ?? {}) as Record<string, unknown>;
+        const hasBackAffordance = pageIdentity.hasBackAffordance === true;
+        const backAffordanceLabel = typeof pageIdentity.backAffordanceLabel === "string"
+          ? normalizeLabel(pageIdentity.backAffordanceLabel)
+          : undefined;
+
+        if (!hasBackAffordance && !backAffordanceLabel) {
+          logWarn("screen-summary probe: no back affordance detected");
+          return false;
+        }
+
+        const summaryLabels = dedupeLabels([
+          ...(backAffordanceLabel ? [backAffordanceLabel] : []),
+          ...(parentTitle ? [parentTitle] : []),
+          "Back",
+        ]);
+
+        for (const label of summaryLabels) {
+          if (
+            await tryTapBackControl("tap_screen_summary_back:contentDesc", {
+              contentDesc: label,
+              className: "Button",
+              clickable: true,
+            }) ||
+            await tryTapBackControl("tap_screen_summary_back:text", {
+              text: label,
+              className: "Button",
+              clickable: true,
+            })
+          ) {
+            return true;
+          }
+        }
+
+        return false;
+      };
+
+      const tryNavBarCoordinateBack = async (): Promise<boolean> => {
+        const inspectResult = await mcp.inspectUi();
+        if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
+          logWarn("nav-bar coordinate fallback skipped: inspect_ui unavailable");
+          return false;
+        }
+
+        const uiTree = parseUiTreeFromInspectResult(inspectResult.data as unknown as Record<string, unknown>);
+        if (!uiTree) {
+          logWarn("nav-bar coordinate fallback skipped: empty ui tree");
+          return false;
+        }
+
+        const navBarNode = flattenUiTree(uiTree)
+          .find((node) => (node.accessibilityRole ?? "").toLowerCase().includes("nav bar") && node.frame);
+
+        if (!navBarNode?.frame) {
+          logWarn("nav-bar coordinate fallback skipped: no nav bar frame found");
+          return false;
+        }
+
+        const tapX = Math.round(navBarNode.frame.x + 24);
+        const tapY = Math.round(navBarNode.frame.y + navBarNode.frame.height / 2);
+        const before = await captureCurrentPageContext();
+        const tapResult = await mcp.tap({ x: tapX, y: tapY });
+        const detail = `method=tap_nav_bar_coordinate, x=${tapX}, y=${tapY}, status=${tapResult.status}, reason=${tapResult.reasonCode}`;
+
+        if (tapResult.status !== "success" && tapResult.status !== "partial") {
+          logWarn(`${detail} => tap failed`);
+          return false;
+        }
+
+        if (!(await waitForSettle())) {
+          logWarn(`${detail} => settle failed`);
+          return false;
+        }
+
+        const after = await captureCurrentPageContext();
+        if (!verifyScreenChanged(before.screenId, after.screenId)) {
+          logWarn(
+            `${detail} => screen unchanged (before=${before.title ?? before.screenId ?? "unknown"}, ` +
+            `after=${after.title ?? after.screenId ?? "unknown"})`,
+          );
+          return false;
+        }
+
+        logTrace(
+          `${detail} => success (before=${before.title ?? before.screenId ?? "unknown"}, ` +
+          `after=${after.title ?? after.screenId ?? "unknown"})`,
+        );
+        return true;
+      };
+
+      const tryPointBandBack = async (): Promise<boolean> => {
+        const probePoints = [
+          { x: 24, y: 72, name: "left-nav-primary" },
+          { x: 42, y: 92, name: "left-nav-secondary" },
+        ];
+
+        for (const point of probePoints) {
+          const before = await captureCurrentPageContext();
+          const tapResult = await mcp.tap({ x: point.x, y: point.y });
+          const detail =
+            `method=tap_point_band_back, point=${point.name}, x=${point.x}, y=${point.y}, ` +
+            `status=${tapResult.status}, reason=${tapResult.reasonCode}`;
+
+          if (tapResult.status !== "success" && tapResult.status !== "partial") {
+            logWarn(`${detail} => tap failed`);
+            continue;
+          }
+
+          if (!(await waitForSettle())) {
+            logWarn(`${detail} => settle failed`);
+            continue;
+          }
+
+          const after = await captureCurrentPageContext();
+          if (!verifyScreenChanged(before.screenId, after.screenId)) {
+            logWarn(
+              `${detail} => screen unchanged (before=${before.title ?? before.screenId ?? "unknown"}, ` +
+              `after=${after.title ?? after.screenId ?? "unknown"})`,
+            );
+            continue;
+          }
+
+          logTrace(
+            `${detail} => success (before=${before.title ?? before.screenId ?? "unknown"}, ` +
+            `after=${after.title ?? after.screenId ?? "unknown"})`,
+          );
+          return true;
+        }
+
+        return false;
+      };
+
+      // Strategy order:
+      // 1) iOS edge swipe (preferred cross-backend path)
+      // 2) selector family when selector-detectable
+      // 3) nav-bar coordinate fallback when nav bar exists but selector is missing
+      // 4) cancel/x and dialog controls
+      const affordance = await detectBackAffordance();
+
+      if (await tryNavigateBack("navigate_back:edge_swipe", { iosStrategy: "edge_swipe" })) {
         return true;
       }
 
-      // Some iOS Settings pages expose a generic "Back" button that works with
-      // tap_element but not via navigate_back selector routing.
-      const genericBackTap = await mcp.tapElement({ contentDesc: "Back" });
-      if (genericBackTap.status === "success" || genericBackTap.status === "partial") {
-        return waitForSettle();
+      const shouldTrySelectorFamily = affordance.status !== "nav_bar_only";
+
+      if (shouldTrySelectorFamily) {
+        if (await tryNavigateBack("navigate_back:selector_tap")) {
+          return true;
+        }
+
+        if (
+          parentTitle &&
+          await tryNavigateBack("navigate_back:selector_tap(parent_button_contentDesc)", {
+            iosStrategy: "selector_tap",
+            selector: {
+              contentDesc: parentTitle,
+              className: "Button",
+              clickable: true,
+            },
+          })
+        ) {
+          return true;
+        }
+
+        if (
+          parentTitle &&
+          await tryNavigateBack("navigate_back:selector_tap(parent_button_text)", {
+            iosStrategy: "selector_tap",
+            selector: {
+              text: parentTitle,
+              className: "Button",
+              clickable: true,
+            },
+          })
+        ) {
+          return true;
+        }
+
+        if (
+          parentTitle &&
+          await tryNavigateBack("navigate_back:selector_tap(parent)", {
+            parentPageTitle: parentTitle,
+            iosStrategy: "selector_tap",
+          })
+        ) {
+          return true;
+        }
+
+        const backButtonLabels = affordance.selectorLabels;
+
+        for (const label of backButtonLabels) {
+          if (
+            await tryTapBackControl("tap_back_button:contentDesc", {
+              contentDesc: label,
+              className: "Button",
+              clickable: true,
+            }) ||
+            await tryTapBackControl("tap_back_button:text", {
+              text: label,
+              className: "Button",
+              clickable: true,
+            })
+          ) {
+            return true;
+          }
+        }
+      } else {
+        logWarn("selector family skipped: nav_bar_only affordance detected");
       }
 
-      // Some modal/picker-style pages only expose a top-right "Cancel" action.
-      const genericCancelTap = await mcp.tapElement({ contentDesc: "Cancel" });
-      if (genericCancelTap.status === "success" || genericCancelTap.status === "partial") {
-        return waitForSettle();
+      if (await tryTopBarBackCandidates()) {
+        return true;
       }
 
+      if (await tryScreenSummaryBackAffordance()) {
+        return true;
+      }
+
+      if (await tryNavBarCoordinateBack()) {
+        return true;
+      }
+
+      if (await tryPointBandBack()) {
+        return true;
+      }
+
+      const cancelOrCloseLabels = dedupeLabels([
+        "Cancel",
+        "Close",
+      ]);
+      for (const label of cancelOrCloseLabels) {
+        if (
+          await tryTapBackControl("tap_cancel_or_close:contentDesc", { contentDesc: label }) ||
+          await tryTapBackControl("tap_cancel_or_close:text", { text: label })
+        ) {
+          return true;
+        }
+      }
+
+      const dialogControlLabels = dedupeLabels(["OK", "Ok", "Done", "Cancel"]);
+      for (const label of dialogControlLabels) {
+        if (
+          await tryTapBackControl("tap_dialog_control:contentDesc", { contentDesc: label }) ||
+          await tryTapBackControl("tap_dialog_control:text", { text: label })
+        ) {
+          return true;
+        }
+      }
+
+      await logBackFailureEvidence();
+
+      logWarn(
+        `all strategies failed for parentTitle="${parentTitle ?? "<none>"}" ` +
+        `(edge_swipe -> selector_tap -> back buttons -> cancel/x -> dialog controls)`,
+      );
       return false;
     },
 
@@ -147,7 +710,27 @@ export function createBacktracker(mcp: McpToolInterface) {
 
       return false;
     },
+
+    async getCurrentPageContext(): Promise<{ screenId?: string; title?: string }> {
+      return captureCurrentPageContext();
+    },
   };
+}
+
+function flattenUiTree(root: UiHierarchy): UiHierarchy[] {
+  const queue: UiHierarchy[] = [root];
+  const result: UiHierarchy[] = [];
+  while (queue.length > 0) {
+    const node = queue.shift();
+    if (!node) {
+      continue;
+    }
+    result.push(node);
+    if (node.children && node.children.length > 0) {
+      queue.push(...node.children);
+    }
+  }
+  return result;
 }
 
 function normalizeTitle(title: string): string {
@@ -260,6 +843,41 @@ function normalizeToUiHierarchy(
         .map((c) => normalizeToUiHierarchy(c as Record<string, unknown>))
     : [];
 
+  let frame: UiHierarchy["frame"];
+  if (typeof node.bounds === "string") {
+    const match = node.bounds.match(/\[([\d.]+),([\d.]+)\]\[([\d.]+),([\d.]+)\]/);
+    if (match) {
+      frame = {
+        x: parseFloat(match[1]),
+        y: parseFloat(match[2]),
+        width: parseFloat(match[3]) - parseFloat(match[1]),
+        height: parseFloat(match[4]) - parseFloat(match[2]),
+      };
+    }
+  }
+
+  if (!frame && typeof node.AXFrame === "string") {
+    const match = node.AXFrame.match(/\{\{([\d.]+),([\d.]+)\},\{([\d.]+),([\d.]+)\}\}/);
+    if (match) {
+      frame = {
+        x: parseFloat(match[1]),
+        y: parseFloat(match[2]),
+        width: parseFloat(match[3]),
+        height: parseFloat(match[4]),
+      };
+    }
+  }
+
+  if (!frame && typeof node.frame === "object" && node.frame !== null) {
+    const nestedFrame = node.frame as Record<string, unknown>;
+    frame = {
+      x: typeof nestedFrame.x === "number" ? nestedFrame.x : 0,
+      y: typeof nestedFrame.y === "number" ? nestedFrame.y : 0,
+      width: typeof nestedFrame.width === "number" ? nestedFrame.width : 0,
+      height: typeof nestedFrame.height === "number" ? nestedFrame.height : 0,
+    };
+  }
+
   const className =
     typeof node.className === "string" ? node.className :
     typeof node.type === "string" ? node.type :
@@ -277,13 +895,35 @@ function normalizeToUiHierarchy(
     typeof node.AXUniqueId === "string" ? node.AXUniqueId :
     undefined;
 
+  const inferredRole =
+    typeof node.accessibilityRole === "string" ? node.accessibilityRole :
+    typeof node.role === "string" ? node.role :
+    typeof node.role_description === "string" ? node.role_description :
+    "";
+
+  const classNameLower = (className ?? "").toLowerCase();
+  const roleLower = inferredRole.toLowerCase();
+  const isButtonLike =
+    classNameLower.includes("button")
+    || classNameLower.includes("link")
+    || roleLower.includes("button")
+    || roleLower.includes("back button")
+    || roleLower.includes("link");
+
+  const clickable =
+    node.clickable === true
+    || isButtonLike
+    || classNameLower.includes("textfield")
+    || roleLower.includes("text field");
+
   return {
     text,
     className,
     contentDesc,
-    clickable: node.clickable === true,
+    clickable,
     enabled: node.enabled !== false,
     scrollable: node.scrollable === true,
+    frame,
     children,
     accessibilityLabel:
       typeof node.accessibilityLabel === "string" ? node.accessibilityLabel :
@@ -292,6 +932,7 @@ function normalizeToUiHierarchy(
     accessibilityRole:
       typeof node.accessibilityRole === "string" ? node.accessibilityRole :
       typeof node.role === "string" ? node.role :
+      typeof node.role_description === "string" ? node.role_description :
       undefined,
     visibleTexts:
       typeof node.text === "string" ? [node.text] :

@@ -128,7 +128,10 @@ export class PageRegistry implements PageRegistryContract {
       id: `page-${String(this.counter).padStart(3, "0")}`,
       screenId: snapshot.screenId,
       screenTitle: snapshot.screenTitle,
-      depth: snapshot.depth,
+      // Derive depth from the canonical traversal path captured by the engine.
+      // Snapshot.depth is currently capture-time metadata (often 0), while
+      // path length reflects the actual DFS stack depth used by reports.
+      depth: path.length,
       path: [...path],
       arrivedFrom: snapshot.arrivedFrom,
       viaElement: snapshot.viaElement,
