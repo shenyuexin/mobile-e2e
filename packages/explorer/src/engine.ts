@@ -108,12 +108,14 @@ function matchSamplingRule(
     // Priority 1: screenId match
     if (m.screenId && screenId && m.screenId === screenId) return rule;
 
-    // Priority 2: pathPrefix strict prefix match.
-    // Rules should only apply when the full declared prefix is reached.
-    // Example: [General, Fonts, System Fonts] must NOT match [General, Fonts].
+    // Priority 2: pathPrefix exact-depth match.
+    // Rules apply only at the exact declared node, not descendants.
+    // Example: [General, Fonts, System Fonts] matches exactly that node,
+    // but must NOT match [General, Fonts] or
+    // [General, Fonts, System Fonts, Academy Engraved LET].
     if (m.pathPrefix && m.pathPrefix.length > 0) {
       const prefix = m.pathPrefix;
-      if (framePath.length >= prefix.length) {
+      if (framePath.length === prefix.length) {
         let matches = true;
         for (let i = 0; i < prefix.length; i++) {
           const framePart = normalizeSamplingPathSegment(framePath[i]);
@@ -457,118 +459,73 @@ export async function explore(
     !isCircuitOpen(circuitBreaker)
   ) {
     const frame = stack[stack.length - 1]; // PEEK (don't pop)
-    console.log(`[FRAME] stack=${stack.length}, depth=${frame.depth}, cursor=${frame.elementIndex}/${frame.elements.length}, title="${frame.state.screenTitle || '(none)'}"`);
-    if (frame.elementIndex < frame.elements.length) {
-      console.log(`[FRAME] Next element to tap: "${frame.elements[frame.elementIndex].label.slice(0, 50)}"`);
-    }
+    console.log(
+      `[FRAME-LOOP] depth=${frame.depth}, stack=${stack.length}, cursor=${frame.elementIndex}/${frame.elements.length}, ` +
+      `frameTitle="${frame.state.screenTitle ?? "(none)"}", frameScreenId="${frame.state.screenId ?? "(none)"}"`,
+    );
 
-    // Step 0: Navigate to this frame's page if needed (R2-A: backtrack recovery)
-    // Lenient mode for iOS: pages often have dynamic content that changes structural hash.
-    // Instead of failing hard, try to recover but continue if recovery is unreliable.
+    // Step 0: ensure frame-state is aligned with the currently visible page
+    // before attempting the next tap. If still mismatched after one bounded
+    // recovery attempt, do not advance cursor.
     if (frame.state.screenId) {
-      let poppedCurrentFrame = false;
-      const onExpectedPage = await backtracker.isOnExpectedPage(
+      const alignedBeforeTap = await backtracker.isOnExpectedPage(
         frame.state.screenId,
         frame.state.screenTitle,
         frame.state.structureHash,
       );
-      if (!onExpectedPage) {
-        // Try navigating back repeatedly until we reach the expected page
-        let navAttempts = 0;
-        let recovered = false;
-        while (navAttempts < 8 && !recovered) {
-          navAttempts++;
-          // For iOS child pages, the back button label is usually the expected
-          // parent page title, not the current page title.
-          const currentSnap = await snapshotter.captureSnapshot(config);
-          const backTitle =
-            frame.state.screenTitle ||
-            frame.parentTitle ||
-            currentSnap.screenTitle;
-          
-          const navBackResult = await backtracker.navigateBack(backTitle);
-          if (!navBackResult) {
-            stateGraph.registerTransition({
-              from: currentStateNode.id,
-              kind: "back",
-              intentLabel: backTitle ?? "navigateBack",
-              committed: false,
-              attempts: navAttempts,
-              failureReason: "navigateBack returned false",
-            });
-            console.log(`[BACKTRACK-WARN] navigateBack("${backTitle}") attempt ${navAttempts} failed`);
-            break;
-          }
 
-          recovered = await backtracker.isOnExpectedPage(
+      if (!alignedBeforeTap) {
+        console.log(
+          `[FRAME-GUARD] mismatch detected before tap: expected="${frame.state.screenTitle ?? frame.state.screenId}", ` +
+          `parent="${frame.parentTitle ?? "(none)"}"`,
+        );
+
+        const recovered = await backtracker.navigateBack(frame.parentTitle);
+        const alignedAfterRecovery = recovered
+          ? await backtracker.isOnExpectedPage(
             frame.state.screenId,
             frame.state.screenTitle,
             frame.state.structureHash,
-          );
-          if (recovered) {
-            stateGraph.registerTransition({
-              from: currentStateNode.id,
-              kind: "back",
-              intentLabel: backTitle ?? "navigateBack",
-              committed: true,
-              attempts: navAttempts,
-            });
-            console.log(`[BACKTRACK-OK] Recovered to "${frame.state.screenTitle}" after ${navAttempts} attempt(s)`);
-          } else {
-            // Debug: what page are we actually on?
-            const debugSnap = await snapshotter.captureSnapshot(config);
-            console.log(`[BACKTRACK-WARN] Attempt ${navAttempts}: expected "${frame.state.screenTitle}", actually on "${debugSnap.screenTitle}"`);
-            
-            // If we're already on the parent page, pop this frame — no need to recover
-            const parentTitleTrimmed = (frame.parentTitle || '').trim();
-            console.log(`[BACKTRACK-CHECK] debugSnap="${debugSnap.screenTitle}", parentTitle="${parentTitleTrimmed}", home="${initialSnapshot.screenTitle}"`);
-            if (debugSnap.screenTitle === parentTitleTrimmed || debugSnap.screenTitle === initialSnapshot.screenTitle) {
-              console.log(`[BACKTRACK-POP] Already on parent/higher page "${debugSnap.screenTitle}" — popping frame`);
-              stack.pop();
-              poppedCurrentFrame = true;
-              recovered = true;
-              break;
-            }
-          }
-        }
-        if (poppedCurrentFrame) {
-          continue;
-        }
-        if (!recovered) {
-          const remainingSiblings = Math.max(0, frame.elements.length - frame.elementIndex);
-          console.log(
-            `[BACKTRACK-CONTEXT] frameDepth=${frame.depth}, cursor=${frame.elementIndex}/${frame.elements.length}, ` +
-            `remainingSiblings=${remainingSiblings}, framePath=[${frame.path.join(" > ")}], currentTitle="${frame.state.screenTitle ?? "(unknown)"}"`,
-          );
+          )
+          : false;
+
+        if (!alignedAfterRecovery) {
           failed.record({
             pageScreenId: frame.state.screenId ?? "unknown",
             elementLabel: frame.state.screenTitle ?? frame.parentTitle ?? "resume-frame",
             failureType: "BACKTRACK_MISMATCH",
-            retryCount: navAttempts,
-            errorMessage: `Could not recover visible UI to frame "${frame.state.screenTitle || frame.parentTitle || "unknown"}"`,
+            retryCount: recovered ? 1 : 0,
+            errorMessage: `ensureFrameAligned mismatch for "${frame.state.screenTitle || frame.parentTitle || "unknown"}"`,
             depth: frame.depth,
             path: frame.path,
           });
-          console.log(
-            `[BACKTRACK-WARN] Could not recover to "${frame.state.screenTitle || frame.parentTitle}" after ${navAttempts} attempts — popping stale frame`,
-          );
+
           if (frame.depth === 0) {
             stateGraph.registerTransition({
               from: currentStateNode.id,
               kind: "home",
               intentLabel: "home-recovery",
               committed: false,
-              attempts: navAttempts,
-              failureReason: "home recovery failed",
+              attempts: recovered ? 1 : 0,
+              failureReason: "ensureFrameAligned mismatch",
             });
-            recoveryAbortReason = `Home recovery failed after ${navAttempts} attempts at "${frame.state.screenTitle || "unknown"}"`;
+            recoveryAbortReason = `Home recovery failed at "${frame.state.screenTitle || "unknown"}"`;
             break;
           }
+
+          console.log(
+            `[FRAME-GUARD] BACKTRACK_MISMATCH, popping frame depth=${frame.depth} title="${frame.state.screenTitle ?? "(unknown)"}"`,
+          );
           stack.pop();
           continue;
         }
+
+        console.log(
+          `[FRAME-GUARD] recovered frame alignment for "${frame.state.screenTitle ?? frame.state.screenId}"`,
+        );
       }
     }
+
     if (recoveryAbortReason) {
       break;
     }
@@ -652,7 +609,16 @@ export async function explore(
     }
 
     // Step 2: Visit next unexplored element
+    const liveContextForPlan = await backtracker.getCurrentPageContext();
+    const currentLabelForPlan = liveContextForPlan.title ?? liveContextForPlan.screenId ?? "(unknown)";
+
     if (frame.elementIndex >= frame.elements.length) {
+      const expectedAfterAction = frame.parentTitle ?? "(root)";
+      console.log(
+        `[FRAME-PLAN] depth=${frame.depth}, stack=${stack.length}, cursor=${frame.elementIndex}/${frame.elements.length}, ` +
+        `current="${currentLabelForPlan}", expected="${expectedAfterAction}", nextAction=pop frame and backtrack`,
+      );
+
       // All elements explored — pop and backtrack
       stack.pop();
       console.log(`[POP] Frame "${frame.state.screenTitle || '(none)'}" all ${frame.elements.length} elements explored. Stack now: ${stack.length}`);
@@ -705,8 +671,22 @@ export async function explore(
     }
 
     const element = frame.elements[frame.elementIndex];
+    const expectedAfterAction = element.label.slice(0, 50);
+    console.log(
+      `[FRAME-PLAN] depth=${frame.depth}, stack=${stack.length}, cursor=${frame.elementIndex}/${frame.elements.length}, ` +
+      `current="${currentLabelForPlan}", expected="${expectedAfterAction}", nextAction=tap "${expectedAfterAction}"`,
+    );
+    console.log(
+      `[FRAME-NEXT] current="${currentLabelForPlan}", expected="${expectedAfterAction}", action=tap "${expectedAfterAction}"`,
+    );
+
     frame.elementIndex++; // advance cursor (even if this one fails)
-    console.log(`[TAP-ELEMENT] "${element.label.slice(0, 40)}" selector=${JSON.stringify(element.selector)}`);
+    console.log(
+      `[ACTION-START] action=tap_element, label="${element.label.slice(0, 40)}", ` +
+      `from="${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}", ` +
+      `expected="${expectedAfterAction}", ` +
+      `selector=${JSON.stringify(element.selector)}`,
+    );
     transitionLifecycle.actionSent += 1;
 
     // Retry loop for this element
@@ -714,6 +694,12 @@ export async function explore(
     let elementResult = await tapper.tapAndWait(element, config.timeoutMs);
 
     while (!elementResult.success) {
+      console.log(
+        `[ACTION-RESULT] action=tap_element, label="${element.label.slice(0, 40)}", ` +
+        `expected="${expectedAfterAction}", ` +
+        `status=failed, from="${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}", ` +
+        `reason="${elementResult.error.message}"`,
+      );
       failed.record({
         pageScreenId: frame.state.screenId ?? "unknown",
         elementLabel: element.label,
@@ -761,7 +747,12 @@ export async function explore(
         // Capture snapshot to detect app switching
         const nextStateSnapshot = await snapshotter.captureSnapshot(config);
         transitionLifecycle.postStateObserved += 1;
-        console.log(`[TAP-SUCCESS] "${element.label.slice(0, 40)}" → page: "${nextStateSnapshot.screenTitle}"`);
+        console.log(
+          `[ACTION-RESULT] action=tap_element, label="${element.label.slice(0, 40)}", ` +
+          `expected="${expectedAfterAction}", ` +
+          `status=success, from="${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}", ` +
+          `to="${nextStateSnapshot.screenTitle ?? nextStateSnapshot.screenId}"`,
+        );
 
         // Check if app actually switched by comparing with CURRENT app identity
         const isAppSwitched = nextStateSnapshot.appId !== undefined &&
@@ -809,7 +800,12 @@ export async function explore(
       // Normal in-app navigation
       const nextStateSnapshot = await snapshotter.captureSnapshot(config);
       transitionLifecycle.postStateObserved += 1;
-      console.log(`[TAP-SUCCESS] "${element.label.slice(0, 40)}" → page: "${nextStateSnapshot.screenTitle}"`);
+      console.log(
+        `[ACTION-RESULT] action=tap_element, label="${element.label.slice(0, 40)}", ` +
+        `expected="${expectedAfterAction}", ` +
+        `status=success, from="${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}", ` +
+        `to="${nextStateSnapshot.screenTitle ?? nextStateSnapshot.screenId}"`,
+      );
 
       // Check for app switching via appId change (non-link elements that open external apps)
       const isAppSwitched = nextStateSnapshot.appId !== undefined &&
@@ -834,9 +830,19 @@ export async function explore(
         if (navValidation.shouldDismissDialog) {
           // TODO: implement handleSystemDialog
           // For now, log and skip
-          console.log(`[SYSTEM-DIALOG] ${navValidation.reason}`);
+          console.log(
+            `[ACTION-RESULT] action=tap_element, label="${element.label.slice(0, 40)}", ` +
+            `expected="${expectedAfterAction}", ` +
+            `status=partial, from="${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}", ` +
+            `to="${nextStateSnapshot.screenTitle ?? nextStateSnapshot.screenId}", reason="${navValidation.reason}"`,
+          );
         } else {
-          console.log(`[NO-NAV] ${navValidation.reason}`);
+          console.log(
+            `[ACTION-RESULT] action=tap_element, label="${element.label.slice(0, 40)}", ` +
+            `expected="${expectedAfterAction}", ` +
+            `status=partial, from="${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}", ` +
+            `to="${nextStateSnapshot.screenTitle ?? nextStateSnapshot.screenId}", reason="${navValidation.reason}"`,
+          );
         }
         // Record this as a page-level failure for circuit breaker tracking
         const pageOpen = recordPageFailure(circuitBreaker);
@@ -867,6 +873,61 @@ export async function explore(
         nextStateSnapshot.isExternalApp = true;
       }
 
+      const nextStateStructureHash = hashUiStructure(nextStateSnapshot.uiTree);
+
+      // If a tap lands on an already active ancestor frame, treat it as an
+      // in-flow back transition and collapse stale descendants immediately.
+      // This prevents recovery loops like Academy -> System Fonts where we
+      // would otherwise keep the child frame alive and fail BACKTRACK_MISMATCH.
+      let ancestorFrameIndex = -1;
+      if (!isExternalApp) {
+        for (let i = stack.length - 1; i >= 0; i--) {
+          if (stack[i].state.screenId === nextStateSnapshot.screenId) {
+            ancestorFrameIndex = i;
+            break;
+          }
+        }
+      }
+      if (ancestorFrameIndex >= 0 && ancestorFrameIndex < stack.length - 1) {
+        console.log(
+          `[FRAME-RESUME] "${element.label}" returned to ancestor frame depth=${ancestorFrameIndex} ` +
+          `title="${stack[ancestorFrameIndex].state.screenTitle ?? "(none)"}"`,
+        );
+
+        resetCircuit(circuitBreaker);
+
+        while (stack.length - 1 > ancestorFrameIndex) {
+          stack.pop();
+        }
+
+        const resumedFrame = stack[ancestorFrameIndex];
+        resumedFrame.state = {
+          screenId: nextStateSnapshot.screenId,
+          screenTitle: nextStateSnapshot.screenTitle,
+          structureHash: nextStateStructureHash,
+        };
+        resumedFrame.appId = nextStateSnapshot.appId ?? resumedFrame.appId ?? config.appId;
+        resumedFrame.isExternalApp = false;
+
+        backtracker.registerPage(nextStateSnapshot.screenId, nextStateSnapshot.uiTree);
+
+        transitionLifecycle.transitionCommitted += 1;
+        const resumedStateNode = stateGraph.registerState(
+          nextStateSnapshot,
+          nextStateStructureHash,
+        );
+        stateGraph.registerTransition({
+          from: currentStateNode.id,
+          to: resumedStateNode.id,
+          kind: "back",
+          intentLabel: element.label,
+          committed: true,
+          attempts: elementRetries + 1,
+        });
+        currentStateNode = resumedStateNode;
+        continue;
+      }
+
       // Successful navigation — reset circuit breaker
       resetCircuit(circuitBreaker);
 
@@ -882,7 +943,7 @@ export async function explore(
         state: {
           screenId: nextStateSnapshot.screenId,
           screenTitle: nextStateSnapshot.screenTitle,
-          structureHash: hashUiStructure(nextStateSnapshot.uiTree),
+          structureHash: nextStateStructureHash,
         } as PageState,
         depth: childDepth,
         path: [...frame.path, element.label],
@@ -897,7 +958,7 @@ export async function explore(
       transitionLifecycle.transitionCommitted += 1;
       const nextStateNode = stateGraph.registerState(
         nextStateSnapshot,
-        hashUiStructure(nextStateSnapshot.uiTree),
+        nextStateStructureHash,
       );
       stateGraph.registerTransition({
         from: currentStateNode.id,

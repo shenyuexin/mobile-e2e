@@ -244,6 +244,24 @@ describe("PageRegistry", () => {
     assert.equal(entries[1].id, "page-002");
   });
 
+  it("derives entry depth from traversal path length", async () => {
+    const registry = new PageRegistry();
+    const tree = makeUiTree({
+      children: [
+        { className: "StaticText", clickable: false, enabled: true, scrollable: false, text: "Leaf", children: [] },
+      ],
+    });
+
+    registry.register(
+      { alreadyVisited: false },
+      makeSnapshot(tree, { screenId: "leaf-screen", depth: 0 }),
+      ["General", "Fonts", "System Fonts"],
+    );
+
+    const [entry] = registry.getEntries();
+    assert.equal(entry.depth, 3);
+  });
+
   it("structurally similar pages return warning", async () => {
     const registry = new PageRegistry();
     // Two trees with same structure but different text

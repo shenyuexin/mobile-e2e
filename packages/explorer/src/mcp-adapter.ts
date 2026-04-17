@@ -18,6 +18,8 @@ import type {
   RecoverToKnownStateData,
   ResetAppStateData,
   RequestManualHandoffData,
+  GetScreenSummaryData,
+  TapData,
 } from "@mobile-e2e-mcp/contracts";
 
 /** Session context required by all MCP tools. */
@@ -32,6 +34,16 @@ export interface SessionContext {
 export interface NavigateBackArgs {
   /** Title of the parent page — used as iOS back button text. */
   parentPageTitle?: string;
+  /** iOS-only back strategy override. */
+  iosStrategy?: "selector_tap" | "edge_swipe";
+  /** Optional explicit selector for iOS selector_tap back. */
+  selector?: {
+    resourceId?: string;
+    contentDesc?: string;
+    text?: string;
+    className?: string;
+    clickable?: boolean;
+  };
 }
 
 /** Type-safe interface for MCP tools consumed by the explorer engine. */
@@ -52,6 +64,8 @@ export interface McpToolInterface {
   recoverToKnownState(): Promise<ToolResult<RecoverToKnownStateData>>;
   resetAppState(args: { appId: string }): Promise<ToolResult<ResetAppStateData>>;
   requestManualHandoff(): Promise<ToolResult<RequestManualHandoffData>>;
+  getScreenSummary(): Promise<ToolResult<GetScreenSummaryData>>;
+  tap(args: { x: number; y: number }): Promise<ToolResult<TapData>>;
 }
 
 /** Shape of an object that has an invoke method (MobileE2EMcpServer). */
@@ -97,14 +111,19 @@ export function createMcpAdapter(
       invoke("tap_element", { ...baseInput(), ...args }) as Promise<ToolResult<TapElementData>>,
     navigateBack: (args?) => {
       const parentTitle = args?.parentPageTitle;
-      const selector = parentTitle
+      const selector = args?.iosStrategy === "edge_swipe"
+        ? undefined
+        : args?.selector
+        ? { ...args.selector }
+        : parentTitle
         ? ctx.platform === "ios"
-          ? { contentDesc: parentTitle }
+          ? { text: parentTitle, contentDesc: parentTitle }
           : { text: parentTitle }
         : undefined;
       return invoke("navigate_back", {
         ...baseInput(),
         target: "app" as const,
+        ...(args?.iosStrategy ? { iosStrategy: args.iosStrategy } : {}),
         ...(selector && { selector }),
       }) as Promise<ToolResult<NavigateBackData>>;
     },
@@ -116,6 +135,10 @@ export function createMcpAdapter(
       invoke("reset_app_state", { ...baseInput(), appId: args.appId }) as Promise<ToolResult<ResetAppStateData>>,
     requestManualHandoff: () =>
       invoke("request_manual_handoff", { ...baseInput() }) as Promise<ToolResult<RequestManualHandoffData>>,
+    getScreenSummary: () =>
+      invoke("get_screen_summary", { ...baseInput(), includeDebugSignals: false }) as Promise<ToolResult<GetScreenSummaryData>>,
+    tap: (args) =>
+      invoke("tap", { ...baseInput(), x: args.x, y: args.y }) as Promise<ToolResult<TapData>>,
   };
 }
 

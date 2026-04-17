@@ -2506,18 +2506,20 @@ test("navigateBackWithMaestro iOS without selector fails with helpful suggestion
   assert.match(result.data.capabilityNote ?? "", /selector.*back button/i);
 });
 
-test("navigateBackWithMaestro iOS edge_swipe without dimensions returns conditional unsupported", async () => {
+test("navigateBackWithMaestro iOS edge_swipe dry-run returns ios_edge_swipe strategy", async () => {
   const result = await navigateBackWithMaestro({
     sessionId: "navigate-back-test",
     platform: "ios",
     target: "app",
     iosStrategy: "edge_swipe",
+    dryRun: true,
   });
 
-  assert.equal(result.status, "failed");
-  assert.equal(result.reasonCode, REASON_CODES.unsupportedOperation);
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, REASON_CODES.ok);
+  assert.equal(result.data.executedStrategy, "ios_edge_swipe");
   assert.equal(result.data.supportLevel, "conditional");
-  assert.match(result.data.capabilityNote ?? "", /edge_swipe/i);
+  assert.match(result.data.capabilityNote ?? "", /edge.*swipe/i);
 });
 
 test("navigateBackWithMaestro iOS selector tap preserves command evidence", async () => {

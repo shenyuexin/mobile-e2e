@@ -39,6 +39,11 @@ export interface IosExecutionBackend {
   ): string[];
   /** Build a hierarchy capture command that returns JSON/XML hierarchy data. */
   buildHierarchyCaptureCommand(deviceId: string): string[];
+  /**
+   * Build a point-scoped hierarchy/describe command when supported by backend.
+   * Used for resolved-point verification to avoid relying on full-tree ordering.
+   */
+  buildDescribePointCommand?: (deviceId: string, x: number, y: number) => string[];
   /** Build a screenshot command writing output to the given path. */
   buildScreenshotCommand(deviceId: string, outputPath: string): string[];
 

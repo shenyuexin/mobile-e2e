@@ -468,3 +468,111 @@ test("navigate_back iOS selector-tap captures pre-back hash BEFORE tap", async (
   assert.equal(result.data.postBackPageIdentity?.treeHash, "ios-post-hash");
   assert.equal(result.data.postBackPageIdentity?.visibleElementCount, 15);
 });
+
+test("navigate_back iOS edge-swipe builds expected command envelope", async () => {
+  const hooks: NavigateBackTestHooks = {
+    iosEdgeSwipeProbe: async () => ({
+      viewportWidth: 400,
+      viewportHeight: 800,
+      navBarCenterY: 96,
+    }),
+  };
+
+  setNavigateBackTestHooksForTesting(hooks);
+
+  const result = await navigateBackWithMaestro({
+    sessionId: "test-session",
+    platform: "ios",
+    deviceId: "ios-sim-1",
+    iosStrategy: "edge_swipe",
+    dryRun: true,
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.reasonCode, REASON_CODES.ok);
+  assert.equal(result.data.executedStrategy, "ios_edge_swipe");
+  assert.equal(result.data.stateChanged, "unknown");
+  assert.equal(typeof result.data.command, "string");
+  assert.equal((result.data.command ?? "").length > 0, true);
+});
+
+test("navigate_back iOS edge-swipe marks no-state-change when page hash unchanged", async () => {
+  let summaryCalls = 0;
+  const hooks: NavigateBackTestHooks = {
+    iosEdgeSwipeProbe: async () => ({
+      viewportWidth: 390,
+      viewportHeight: 844,
+      navBarCenterY: 88,
+    }),
+    executeSwipeCommand: async () => ({ exitCode: 0, stderr: "", stdout: "" }),
+    waitForUiStable: async () => ({
+      status: "success",
+      reasonCode: REASON_CODES.ok,
+      sessionId: "test",
+      durationMs: 100,
+      attempts: 1,
+      artifacts: [],
+      data: {
+        dryRun: false,
+        runnerProfile: "phase1",
+        stable: true,
+        polls: 2,
+        stableAfterMs: 300,
+        stableFingerprint: "stable",
+        confidence: 0.95,
+        stabilityBasis: "visible-tree",
+        timeoutMs: 5000,
+        intervalMs: 300,
+        consecutiveStable: 2,
+      },
+      nextSuggestions: [],
+    }),
+    getScreenSummary: async (input) => {
+      summaryCalls += 1;
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: input.sessionId,
+        durationMs: 1,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: false,
+          runnerProfile: input.runnerProfile,
+          outputPath: "/tmp/test.json",
+          command: [],
+          exitCode: 0,
+          supportLevel: "full",
+          summarySource: "ui_only",
+          screenSummary: {
+            appPhase: "catalog" as const,
+            readiness: "ready" as const,
+            blockingSignals: [] as string[],
+            pageIdentity: {
+              treeHash: "same-hash",
+              visibleElementCount: 10,
+              identityConfidence: 0.9,
+            },
+          },
+        },
+        nextSuggestions: [],
+      };
+    },
+  };
+
+  setNavigateBackTestHooksForTesting(hooks);
+
+  const result = await navigateBackWithMaestro({
+    sessionId: "test-session",
+    platform: "ios",
+    deviceId: "ios-sim-1",
+    iosStrategy: "edge_swipe",
+  });
+
+  assert.equal(summaryCalls >= 2, true);
+  assert.equal(result.status, "partial");
+  assert.equal(result.reasonCode, REASON_CODES.retryExhaustedNoStateChange);
+  assert.equal(result.data.executedStrategy, "ios_edge_swipe");
+  assert.equal(result.data.stateChanged, false);
+  assert.equal(result.data.pageTreeHashUnchanged, true);
+});

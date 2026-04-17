@@ -22,6 +22,7 @@ import type {
   BackTarget,
   BackExecutionPath,
   RunnerProfile,
+  InspectUiNode,
 } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
 import {
@@ -35,6 +36,7 @@ import {
   buildNonExecutedUiTargetResolution,
   buildScrollSwipeCoordinates,
   hasQueryUiSelector,
+  parseUiBounds,
   reasonCodeForResolutionStatus,
 } from "./ui-model.js";
 import {
@@ -241,6 +243,10 @@ export interface NavigateBackTestHooks {
   getScreenSummary?: (input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string }) => Promise<ToolResult<GetScreenSummaryData>>;
   waitForUiStable?: (input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string; timeoutMs?: number }) => Promise<ToolResult<WaitForUiStableData>>;
   executeBackCommand?: () => Promise<{ exitCode: number; stderr: string; stdout: string }>;
+  /** iOS edge-swipe: mock the swipe command execution result. */
+  executeSwipeCommand?: () => Promise<{ exitCode: number; stderr: string; stdout: string }>;
+  /** iOS edge-swipe: mock viewport/nav bar probe used to build swipe coordinates. */
+  iosEdgeSwipeProbe?: () => Promise<{ viewportWidth: number; viewportHeight: number; navBarCenterY?: number }>;
   /** iOS: mock the back button tap result. When not set, uses real tapElementWithMaestroTool. */
   tapBackButton?: () => Promise<ToolResult<import("@mobile-e2e-mcp/contracts").TapElementData>>;
 }
@@ -291,6 +297,81 @@ async function navigateBackGetScreenSummary(input: { sessionId: string; platform
 async function navigateBackWaitForUiStable(input: { sessionId: string; platform: "android" | "ios"; runnerProfile: RunnerProfile; deviceId?: string; timeoutMs?: number }) {
   const { waitForUiStableWithMaestro } = await import("./ui-stability.js");
   return waitForUiStableWithMaestro({ sessionId: input.sessionId, platform: input.platform, runnerProfile: input.runnerProfile, deviceId: input.deviceId, timeoutMs: input.timeoutMs });
+}
+
+function estimateIosViewportFromNodes(nodes: InspectUiNode[]): {
+  viewportWidth: number;
+  viewportHeight: number;
+  navBarCenterY?: number;
+} {
+  const parsedBounds = nodes
+    .map((node) => parseUiBounds(node.bounds))
+    .filter((bounds): bounds is NonNullable<ReturnType<typeof parseUiBounds>> => bounds !== undefined);
+
+  const viewportWidth = Math.max(320, Math.round(parsedBounds.reduce((acc, bounds) => Math.max(acc, bounds.right), 390)));
+  const viewportHeight = Math.max(640, Math.round(parsedBounds.reduce((acc, bounds) => Math.max(acc, bounds.bottom), 844)));
+
+  const navBarCandidate = nodes
+    .map((node) => ({
+      node,
+      bounds: parseUiBounds(node.bounds),
+    }))
+    .filter((entry): entry is { node: InspectUiNode; bounds: NonNullable<ReturnType<typeof parseUiBounds>> } => entry.bounds !== undefined)
+    .filter((entry) => {
+      const className = entry.node.className?.toLowerCase() ?? "";
+      const text = entry.node.text?.toLowerCase() ?? "";
+      const contentDesc = entry.node.contentDesc?.toLowerCase() ?? "";
+      const isNavBar = className.includes("navigationbar")
+        || className.includes("nav bar")
+        || className.includes("navigation bar")
+        || text.includes("nav bar")
+        || contentDesc.includes("nav bar");
+      return isNavBar && entry.bounds.top <= viewportHeight * 0.35;
+    })
+    .sort((left, right) => left.bounds.top - right.bounds.top)[0];
+
+  return {
+    viewportWidth,
+    viewportHeight,
+    navBarCenterY: navBarCandidate
+      ? Math.round(navBarCandidate.bounds.top + navBarCandidate.bounds.height / 2)
+      : undefined,
+  };
+}
+
+async function resolveIosEdgeSwipeProbe(input: {
+  repoRoot: string;
+  deviceId: string;
+  sessionId: string;
+  runnerProfile: RunnerProfile;
+}): Promise<{ viewportWidth: number; viewportHeight: number; navBarCenterY?: number }> {
+  if (navigateBackTestHooks?.iosEdgeSwipeProbe) {
+    return navigateBackTestHooks.iosEdgeSwipeProbe();
+  }
+
+  const snapshot = await captureIosUiRuntimeSnapshot(
+    input.repoRoot,
+    input.deviceId,
+    input.sessionId,
+    input.runnerProfile,
+    undefined,
+    {
+      sessionId: input.sessionId,
+      platform: "ios",
+      runnerProfile: input.runnerProfile,
+      deviceId: input.deviceId,
+    },
+  );
+
+  if ("nodes" in snapshot) {
+    return estimateIosViewportFromNodes(snapshot.nodes);
+  }
+
+  return {
+    viewportWidth: 390,
+    viewportHeight: 844,
+    navBarCenterY: undefined,
+  };
 }
 
 export async function tapWithMaestroTool(
@@ -1473,9 +1554,150 @@ export async function navigateBackWithMaestroTool(
   const iosStrategy = input.iosStrategy ?? "selector_tap";
 
   if (iosStrategy === "edge_swipe") {
+    const runtimeHooks = resolveUiRuntimePlatformHooks("ios");
+    const executedStrategy: BackExecutionPath = "ios_edge_swipe";
+    const waitForStable = input.postBackWaitForStable !== false;
+
+    let preBackTreeHash: string | undefined;
+    if (waitForStable && !dryRun) {
+      const getScreenSummary = navigateBackTestHooks?.getScreenSummary ?? navigateBackGetScreenSummary;
+      const preBackState = await getScreenSummary({
+        sessionId: input.sessionId,
+        platform: "ios",
+        runnerProfile,
+        deviceId,
+      });
+      preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
+    }
+
+    const probe = await resolveIosEdgeSwipeProbe({
+      repoRoot,
+      deviceId,
+      sessionId: input.sessionId,
+      runnerProfile,
+    });
+
+    const startX = Math.min(12, Math.max(5, 8));
+    const endX = Math.max(startX + 40, Math.round(probe.viewportWidth * 0.65));
+    const swipeY = Math.round(
+      Math.max(
+        40,
+        Math.min(
+          probe.viewportHeight - 40,
+          probe.navBarCenterY ?? probe.viewportHeight / 2,
+        ),
+      ),
+    );
+
+    let command: string[];
+    try {
+      command = runtimeHooks.buildSwipeCommand(deviceId, {
+        start: { x: startX, y: swipeY },
+        end: { x: endX, y: swipeY },
+        durationMs: 260,
+      });
+    } catch (error) {
+      return {
+        status: "failed",
+        reasonCode: REASON_CODES.unsupportedOperation,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun,
+          target,
+          executedStrategy,
+          supportLevel: "conditional",
+          fallbackUsed: false,
+          stateChanged: false,
+          capabilityNote: "iOS edge swipe back is unavailable with the current backend. Install axe (simulator) or use WDA (physical device) to enable swipe.",
+        },
+        nextSuggestions: [
+          `Failed to build iOS edge swipe command: ${error instanceof Error ? error.message : String(error)}`,
+        ],
+      };
+    }
+
+    if (dryRun) {
+      return {
+        status: "success",
+        reasonCode: REASON_CODES.ok,
+        sessionId: input.sessionId,
+        durationMs: Date.now() - startTime,
+        attempts: 1,
+        artifacts: [],
+        data: {
+          dryRun: true,
+          target,
+          executedStrategy,
+          supportLevel: "conditional",
+          fallbackUsed: false,
+          command: command.join(" "),
+          exitCode: 0,
+          stateChanged: "unknown",
+          capabilityNote: "iOS app back via left-edge swipe gesture (dry run).",
+        },
+        nextSuggestions: [
+          "Run navigate_back without dryRun to execute iOS edge swipe back.",
+        ],
+      };
+    }
+
+    const executionResult = navigateBackTestHooks?.executeSwipeCommand
+      ? await navigateBackTestHooks.executeSwipeCommand()
+      : await executeUiActionCommand({
+        repoRoot,
+        command,
+        requiresProbe: runtimeHooks.requiresProbe,
+        probeRuntimeAvailability: runtimeHooks.probeRuntimeAvailability,
+      });
+
+    const outcome = normalizeBackOutcome(executionResult);
+    const commandSucceeded = outcome.exitCode === 0;
+
+    let postBackVerified = false;
+    let postBackStableAfterMs: number | undefined;
+    let postBackPageIdentity: import("@mobile-e2e-mcp/contracts").PageIdentity | undefined;
+    let postBackTreeHash: string | undefined;
+
+    if (waitForStable && commandSucceeded) {
+      const getScreenSummary = navigateBackTestHooks?.getScreenSummary ?? navigateBackGetScreenSummary;
+      const waitForStableFn = navigateBackTestHooks?.waitForUiStable ?? navigateBackWaitForUiStable;
+
+      const stableResult = await waitForStableFn({
+        sessionId: input.sessionId,
+        platform: "ios",
+        runnerProfile,
+        deviceId,
+        timeoutMs: input.verificationTimeoutMs ?? 5000,
+      });
+
+      if (stableResult.status === "success") {
+        postBackVerified = true;
+        postBackStableAfterMs = stableResult.data.stableAfterMs;
+        const postBackState = await getScreenSummary({
+          sessionId: input.sessionId,
+          platform: "ios",
+          runnerProfile,
+          deviceId,
+        });
+        postBackTreeHash = postBackState.data.screenSummary?.pageIdentity?.treeHash;
+        postBackPageIdentity = postBackState.data.screenSummary?.pageIdentity;
+      }
+    }
+
+    const pageTreeHashUnchanged = preBackTreeHash !== undefined && preBackTreeHash === postBackTreeHash;
+    const stateChanged = preBackTreeHash !== undefined && postBackTreeHash !== undefined
+      ? preBackTreeHash !== postBackTreeHash
+      : "unknown";
+    const noStateChange = stateChanged === false;
+
     return {
-      status: "failed",
-      reasonCode: REASON_CODES.unsupportedOperation,
+      status: commandSucceeded ? (noStateChange ? "partial" : "success") : "failed",
+      reasonCode: commandSucceeded
+        ? (noStateChange ? REASON_CODES.retryExhaustedNoStateChange : REASON_CODES.ok)
+        : REASON_CODES.adapterError,
       sessionId: input.sessionId,
       durationMs: Date.now() - startTime,
       attempts: 1,
@@ -1483,15 +1705,27 @@ export async function navigateBackWithMaestroTool(
       data: {
         dryRun,
         target,
-        executedStrategy: "unsupported",
+        executedStrategy,
         supportLevel: "conditional",
         fallbackUsed: false,
-        capabilityNote: "iOS edge_swipe back requires screen dimensions to calculate swipe coordinates. Provide a selector instead for deterministic back.",
+        command: command.join(" "),
+        exitCode: outcome.exitCode,
+        stateChanged,
+        capabilityNote: commandSucceeded
+          ? "iOS app back via left-edge swipe gesture."
+          : "iOS edge swipe command failed to execute.",
+        postBackVerified,
+        postBackStableAfterMs,
+        postBackPageIdentity,
+        pageTreeHashUnchanged,
+        preBackTreeHash,
+        postBackTreeHash,
       },
-      nextSuggestions: [
-        "Provide a selector pointing to the back button for deterministic iOS app back.",
-        "Alternatively, use a dedicated swipe tool with explicit coordinates.",
-      ],
+      nextSuggestions: commandSucceeded
+        ? (noStateChange
+          ? ["Edge swipe executed but page did not change. Retry with selector_tap or provide parent back-button selector."]
+          : ["Verify the expected iOS screen transition with get_screen_summary or inspect_ui."])
+        : [buildFailureReason(outcome.stderr, outcome.exitCode ?? -1)],
     };
   }
 

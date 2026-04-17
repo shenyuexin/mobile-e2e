@@ -288,8 +288,9 @@ describe("explore engine recovery", () => {
       "System Fonts": makePage("System Fonts", ["Font A", "Font B"]),
       "My Fonts": makePage("My Fonts", []),
       Keyboard: makePage("Keyboard", []),
-      "Font A": makePage("Font A", []),
+      "Font A": makePage("Font A", ["System Fonts", "Plain"]),
       "Font B": makePage("Font B", []),
+      Plain: makePage("Plain", []),
     } satisfies Record<string, UiHierarchy>;
 
     let currentPage: keyof typeof pages = "Settings";
@@ -329,6 +330,12 @@ describe("explore engine recovery", () => {
           currentPage = "Font A";
         } else if (currentPage === "System Fonts" && label === "Font B") {
           currentPage = "Font B";
+        } else if (currentPage === "Font A" && label === "System Fonts") {
+          currentPage = "System Fonts";
+        } else if (currentPage === "Font A" && label === "Plain") {
+          currentPage = "Plain";
+        } else if (currentPage === "Plain" && label === "Back") {
+          currentPage = "Font A";
         }
 
         return okResult({ tapped: true } as any);
@@ -337,6 +344,10 @@ describe("explore engine recovery", () => {
         const target = args?.parentPageTitle;
         if ((currentPage === "Font A" || currentPage === "Font B") && target === "System Fonts") {
           currentPage = "System Fonts";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Plain" && target === "Font A") {
+          currentPage = "Font A";
           return okResult({ navigated: true } as any);
         }
         if ((currentPage === "System Fonts" || currentPage === "My Fonts") && target === "Fonts") {
@@ -375,8 +386,83 @@ describe("explore engine recovery", () => {
     );
     assert.equal(tappedSystemFontChildren.length, 1);
     assert.equal(
+      tapLog.some((entry) => entry.page === "Font A" && entry.label === "Plain"),
+      true,
+    );
+    assert.equal(
       result.failed.getEntries().some((entry) => entry.failureType === "BACKTRACK_MISMATCH"),
       false,
+    );
+  });
+
+  it("collapses descendant frames when a child action returns to an ancestor page", async () => {
+    const pages = {
+      Settings: makePage("Settings", ["General"]),
+      General: makePage("General", ["Fonts", "Keyboard"]),
+      Fonts: makePage("Fonts", ["System Fonts"]),
+      "System Fonts": makePage("System Fonts", ["Academy Engraved LET"]),
+      "Academy Engraved LET": makePage("Academy Engraved LET", ["System Fonts"]),
+      Keyboard: makePage("Keyboard", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const mcp: McpToolInterface = {
+      launchApp: async () => okResult({}),
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "General") {
+          currentPage = "General";
+        } else if (currentPage === "General" && label === "Fonts") {
+          currentPage = "Fonts";
+        } else if (currentPage === "General" && label === "Keyboard") {
+          currentPage = "Keyboard";
+        } else if (currentPage === "Fonts" && label === "System Fonts") {
+          currentPage = "System Fonts";
+        } else if (currentPage === "System Fonts" && label === "Academy Engraved LET") {
+          currentPage = "Academy Engraved LET";
+        } else if (currentPage === "Academy Engraved LET" && label === "System Fonts") {
+          currentPage = "System Fonts";
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async (args) => {
+        const target = args?.parentPageTitle;
+        if (currentPage === "System Fonts" && target === "Fonts") {
+          currentPage = "Fonts";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Fonts" && target === "General") {
+          currentPage = "General";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "General" && target === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true } as any);
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    };
+
+    const result = await explore(createMockConfig(), mcp);
+
+    assert.equal(
+      result.failed.getEntries().some((entry) => entry.failureType === "BACKTRACK_MISMATCH"),
+      false,
+    );
+    assert.equal(
+      tapLog.some((entry) => entry.page === "General" && entry.label === "Keyboard"),
+      true,
     );
   });
 
@@ -487,5 +573,74 @@ describe("explore engine recovery", () => {
     assert.equal(lifecycle?.postStateObserved, 3);
     assert.equal(lifecycle?.transitionCommitted, 2);
     assert.equal(lifecycle?.transitionRejected, 1);
+  });
+
+  it("continues to tap My Fonts after recovering from System Fonts backtrack", async () => {
+    const pages = {
+      Settings: makePage("Settings", ["General"]),
+      General: makePage("General", ["Fonts"]),
+      Fonts: makePage("Fonts", ["System Fonts", "My Fonts"]),
+      "System Fonts": makePage("System Fonts", ["Academy Engraved LET"]),
+      "My Fonts": makePage("My Fonts", []),
+      "Academy Engraved LET": makePage("Academy Engraved LET", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const mcp: McpToolInterface = {
+      launchApp: async () => okResult({}),
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "General") {
+          currentPage = "General";
+        } else if (currentPage === "General" && label === "Fonts") {
+          currentPage = "Fonts";
+        } else if (currentPage === "Fonts" && label === "System Fonts") {
+          currentPage = "System Fonts";
+        } else if (currentPage === "Fonts" && label === "My Fonts") {
+          currentPage = "My Fonts";
+        } else if (currentPage === "System Fonts" && label === "Academy Engraved LET") {
+          currentPage = "Academy Engraved LET";
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async (args) => {
+        const target = args?.parentPageTitle;
+        if (currentPage === "Academy Engraved LET" && target === "System Fonts") {
+          currentPage = "System Fonts";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "System Fonts" && target === "Fonts") {
+          currentPage = "Fonts";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Fonts" && target === "General") {
+          currentPage = "General";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "General" && target === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true } as any);
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    };
+
+    await explore(createMockConfig(), mcp);
+
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Fonts" && entry.label === "My Fonts"),
+      true,
+    );
   });
 });
