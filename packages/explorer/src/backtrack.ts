@@ -16,6 +16,8 @@ import { hashUiStructure } from "./page-registry.js";
 export function createBacktracker(mcp: McpToolInterface) {
   // Cache of known screenId -> structureHash mappings
   const knownPages = new Map<string, string>();
+  // Learned successful back point per (page, expected-parent) context.
+  const backPointCache = new Map<string, { x: number; y: number; name: string }>();
 
   type BackAffordanceStatus = "selector_detected" | "nav_bar_only" | "not_detected";
 
@@ -64,6 +66,15 @@ export function createBacktracker(mcp: McpToolInterface) {
      * @returns true if back navigation succeeded and UI stabilized.
      */
     async navigateBack(parentTitle?: string): Promise<boolean> {
+      const buildBackPointCacheKey = (
+        ctx: { screenId?: string; title?: string },
+        expectedParentTitle?: string,
+      ): string => {
+        const pageKey = ctx.screenId ?? normalizeTitle(ctx.title ?? "unknown-page");
+        const parentKey = normalizeTitle(expectedParentTitle ?? "<none>");
+        return `${pageKey}::${parentKey}`;
+      };
+
       const normalizeLabel = (label: string): string => label.trim().replace(/\s+/g, " ");
 
       const dedupeLabels = (labels: string[]): string[] => {
@@ -520,6 +531,10 @@ export function createBacktracker(mcp: McpToolInterface) {
       const tryPointBandBack = async (
         navBarFrame?: { x: number; y: number; width: number; height: number },
       ): Promise<boolean> => {
+        const initialContext = await captureCurrentPageContext();
+        const cacheKey = buildBackPointCacheKey(initialContext, parentTitle);
+        const cachedPoint = backPointCache.get(cacheKey);
+
         const frame = navBarFrame ?? { x: 0, y: 59, width: 393, height: 96 };
         const inset = Math.max(20, Math.min(40, Math.round(frame.width * 0.12)));
         const insetTight = Math.max(14, Math.min(24, Math.round(frame.width * 0.07)));
@@ -533,7 +548,7 @@ export function createBacktracker(mcp: McpToolInterface) {
         const rightX = Math.round(frame.x + frame.width - inset);
         const rightXTight = Math.round(frame.x + frame.width - insetTight);
 
-        const probePoints = [
+        const computedProbePoints = [
           { x: leftXTight, y: upperY, name: "left-nav-tight-upper" },
           { x: leftXTight, y: headerY, name: "left-nav-tight-header" },
           { x: leftX, y: centerY, name: "left-nav-primary" },
@@ -549,7 +564,27 @@ export function createBacktracker(mcp: McpToolInterface) {
           { x: rightXTight, y: lowerY, name: "right-nav-tight-lower" },
         ];
 
-        for (const point of probePoints) {
+        const probePoints = cachedPoint
+          ? [{ x: cachedPoint.x, y: cachedPoint.y, name: `cached:${cachedPoint.name}` }, ...computedProbePoints]
+          : computedProbePoints;
+
+        const seen = new Set<string>();
+        const dedupedProbePoints = probePoints.filter((point) => {
+          const key = `${point.x},${point.y}`;
+          if (seen.has(key)) {
+            return false;
+          }
+          seen.add(key);
+          return true;
+        });
+
+        if (cachedPoint) {
+          logTrace(
+            `using cached back point key=${cacheKey}, point=${cachedPoint.name}(${cachedPoint.x},${cachedPoint.y})`,
+          );
+        }
+
+        for (const point of dedupedProbePoints) {
           const before = await captureCurrentPageContext();
           const tapResult = await mcp.tap({ x: point.x, y: point.y });
           const detail =
@@ -581,6 +616,7 @@ export function createBacktracker(mcp: McpToolInterface) {
             `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
             `expectedParent=${parentTitle ?? "<none>"})`,
           );
+          backPointCache.set(cacheKey, { x: point.x, y: point.y, name: point.name });
           return true;
         }
 
