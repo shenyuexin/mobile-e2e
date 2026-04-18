@@ -135,7 +135,7 @@ export function createBacktracker(mcp: McpToolInterface) {
 
         const selectorLabels = dedupeLabels([
           ...selectorCandidates,
-          ...(parentTitle ? [parentTitle, `< ${parentTitle}`, `‹ ${parentTitle}`] : []),
+          ...(parentTitle ? [parentTitle] : []),
           "Back",
         ]);
 
@@ -165,12 +165,43 @@ export function createBacktracker(mcp: McpToolInterface) {
         return settleResult.status === "success" || settleResult.status === "partial";
       };
 
-      const verifyScreenChanged = (before?: string, after?: string): boolean => {
-        // Keep compatibility when UI identity cannot be inspected.
-        if (!before || !after) {
-          return true;
+      const verifyScreenChanged = (
+        before: { screenId?: string; title?: string },
+        after: { screenId?: string; title?: string },
+      ): boolean => {
+        if (before.screenId && after.screenId) {
+          return before.screenId !== after.screenId;
         }
-        return before !== after;
+
+        if (before.title && after.title) {
+          return normalizeTitle(before.title) !== normalizeTitle(after.title);
+        }
+
+        // If we cannot compare either IDs or titles reliably, treat as unchanged.
+        return false;
+      };
+
+      const verifyBackTransition = (
+        before: { screenId?: string; title?: string },
+        after: { screenId?: string; title?: string },
+        expectedParentTitle?: string,
+      ): boolean => {
+        const normalizedExpectedParent = expectedParentTitle
+          ? normalizeTitle(expectedParentTitle)
+          : undefined;
+
+        if (normalizedExpectedParent && after.title) {
+          const normalizedAfterTitle = normalizeTitle(after.title);
+          if (normalizedAfterTitle === normalizedExpectedParent) {
+            return true;
+          }
+
+          // If caller gave an explicit parent title but we did not reach it,
+          // reject even when screenId hash changed (dynamic content can drift).
+          return false;
+        }
+
+        return verifyScreenChanged(before, after);
       };
 
       const tryNavigateBack = async (
@@ -209,17 +240,19 @@ export function createBacktracker(mcp: McpToolInterface) {
         }
 
         const after = await captureCurrentPageContext();
-        if (!verifyScreenChanged(before.screenId, after.screenId)) {
+        if (!verifyBackTransition(before, after, parentTitle)) {
           logWarn(
-            `${detail} => screen unchanged (before=${before.title ?? before.screenId ?? "unknown"}, ` +
-            `after=${after.title ?? after.screenId ?? "unknown"})`,
+            `${detail} => transition rejected (before=${before.title ?? "unknown"}[${before.screenId ?? "n/a"}], ` +
+            `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
+            `expectedParent=${parentTitle ?? "<none>"})`,
           );
           return false;
         }
 
         logTrace(
-          `${detail} => success (before=${before.title ?? before.screenId ?? "unknown"}, ` +
-          `after=${after.title ?? after.screenId ?? "unknown"})`,
+          `${detail} => success (before=${before.title ?? "unknown"}[${before.screenId ?? "n/a"}], ` +
+          `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
+          `expectedParent=${parentTitle ?? "<none>"})`,
         );
         return true;
       };
@@ -246,17 +279,19 @@ export function createBacktracker(mcp: McpToolInterface) {
         }
 
         const after = await captureCurrentPageContext();
-        if (!verifyScreenChanged(before.screenId, after.screenId)) {
+        if (!verifyBackTransition(before, after, parentTitle)) {
           logWarn(
-            `${detail} => screen unchanged (before=${before.title ?? before.screenId ?? "unknown"}, ` +
-            `after=${after.title ?? after.screenId ?? "unknown"})`,
+            `${detail} => transition rejected (before=${before.title ?? "unknown"}[${before.screenId ?? "n/a"}], ` +
+            `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
+            `expectedParent=${parentTitle ?? "<none>"})`,
           );
           return false;
         }
 
         logTrace(
-          `${detail} => success (before=${before.title ?? before.screenId ?? "unknown"}, ` +
-          `after=${after.title ?? after.screenId ?? "unknown"})`,
+          `${detail} => success (before=${before.title ?? "unknown"}[${before.screenId ?? "n/a"}], ` +
+          `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
+          `expectedParent=${parentTitle ?? "<none>"})`,
         );
         return true;
       };
@@ -467,7 +502,7 @@ export function createBacktracker(mcp: McpToolInterface) {
         }
 
         const after = await captureCurrentPageContext();
-        if (!verifyScreenChanged(before.screenId, after.screenId)) {
+        if (!verifyScreenChanged(before, after)) {
           logWarn(
             `${detail} => screen unchanged (before=${before.title ?? before.screenId ?? "unknown"}, ` +
             `after=${after.title ?? after.screenId ?? "unknown"})`,
@@ -482,10 +517,36 @@ export function createBacktracker(mcp: McpToolInterface) {
         return true;
       };
 
-      const tryPointBandBack = async (): Promise<boolean> => {
+      const tryPointBandBack = async (
+        navBarFrame?: { x: number; y: number; width: number; height: number },
+      ): Promise<boolean> => {
+        const frame = navBarFrame ?? { x: 0, y: 59, width: 393, height: 96 };
+        const inset = Math.max(20, Math.min(40, Math.round(frame.width * 0.12)));
+        const insetTight = Math.max(14, Math.min(24, Math.round(frame.width * 0.07)));
+        const centerY = Math.round(frame.y + frame.height / 2);
+        const upperY = Math.round(frame.y + Math.min(frame.height - 6, Math.max(18, frame.height * 0.23)));
+        const secondaryY = Math.round(frame.y + Math.min(frame.height - 6, frame.height * 0.75));
+        const lowerY = Math.round(frame.y + Math.min(frame.height - 6, frame.height * 0.9));
+        const headerY = Math.round(frame.y + Math.min(frame.height - 6, Math.max(22, frame.height * 0.42)));
+        const leftX = Math.round(frame.x + inset);
+        const leftXTight = Math.round(frame.x + insetTight);
+        const rightX = Math.round(frame.x + frame.width - inset);
+        const rightXTight = Math.round(frame.x + frame.width - insetTight);
+
         const probePoints = [
-          { x: 24, y: 72, name: "left-nav-primary" },
-          { x: 42, y: 92, name: "left-nav-secondary" },
+          { x: leftXTight, y: upperY, name: "left-nav-tight-upper" },
+          { x: leftXTight, y: headerY, name: "left-nav-tight-header" },
+          { x: leftX, y: centerY, name: "left-nav-primary" },
+          { x: leftX, y: upperY, name: "left-nav-upper" },
+          { x: leftX, y: secondaryY, name: "left-nav-secondary" },
+          { x: leftX, y: headerY, name: "left-nav-header" },
+          { x: rightX, y: centerY, name: "right-nav-primary" },
+          { x: rightX, y: upperY, name: "right-nav-upper" },
+          { x: rightX, y: secondaryY, name: "right-nav-secondary" },
+          { x: rightX, y: lowerY, name: "right-nav-lower" },
+          { x: rightXTight, y: headerY, name: "right-nav-tight-header" },
+          { x: rightXTight, y: secondaryY, name: "right-nav-tight-secondary" },
+          { x: rightXTight, y: lowerY, name: "right-nav-tight-lower" },
         ];
 
         for (const point of probePoints) {
@@ -506,17 +567,19 @@ export function createBacktracker(mcp: McpToolInterface) {
           }
 
           const after = await captureCurrentPageContext();
-          if (!verifyScreenChanged(before.screenId, after.screenId)) {
+          if (!verifyBackTransition(before, after, parentTitle)) {
             logWarn(
-              `${detail} => screen unchanged (before=${before.title ?? before.screenId ?? "unknown"}, ` +
-              `after=${after.title ?? after.screenId ?? "unknown"})`,
+              `${detail} => transition rejected (before=${before.title ?? "unknown"}[${before.screenId ?? "n/a"}], ` +
+              `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
+              `expectedParent=${parentTitle ?? "<none>"})`,
             );
             continue;
           }
 
           logTrace(
-            `${detail} => success (before=${before.title ?? before.screenId ?? "unknown"}, ` +
-            `after=${after.title ?? after.screenId ?? "unknown"})`,
+            `${detail} => success (before=${before.title ?? "unknown"}[${before.screenId ?? "n/a"}], ` +
+            `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
+            `expectedParent=${parentTitle ?? "<none>"})`,
           );
           return true;
         }
@@ -525,18 +588,16 @@ export function createBacktracker(mcp: McpToolInterface) {
       };
 
       // Strategy order:
-      // 1) iOS edge swipe (preferred cross-backend path)
-      // 2) selector family when selector-detectable
-      // 3) nav-bar coordinate fallback when nav bar exists but selector is missing
-      // 4) cancel/x and dialog controls
+      // 1) back-button family (selector/topbar/summary/nav-point)
+      // 2) modal dismiss controls (Cancel/Close/Done/OK)
+      // 3) iOS edge swipe fallback
       const affordance = await detectBackAffordance();
 
-      if (await tryNavigateBack("navigate_back:edge_swipe", { iosStrategy: "edge_swipe" })) {
+      if (await tryPointBandBack(affordance.navBarFrame)) {
         return true;
       }
 
       const shouldTrySelectorFamily = affordance.status !== "nav_bar_only";
-
       if (shouldTrySelectorFamily) {
         if (await tryNavigateBack("navigate_back:selector_tap")) {
           return true;
@@ -614,10 +675,6 @@ export function createBacktracker(mcp: McpToolInterface) {
         return true;
       }
 
-      if (await tryPointBandBack()) {
-        return true;
-      }
-
       const cancelOrCloseLabels = dedupeLabels([
         "Cancel",
         "Close",
@@ -641,11 +698,15 @@ export function createBacktracker(mcp: McpToolInterface) {
         }
       }
 
+      if (await tryNavigateBack("navigate_back:edge_swipe", { iosStrategy: "edge_swipe" })) {
+        return true;
+      }
+
       await logBackFailureEvidence();
 
       logWarn(
         `all strategies failed for parentTitle="${parentTitle ?? "<none>"}" ` +
-        `(edge_swipe -> selector_tap -> back buttons -> cancel/x -> dialog controls)`,
+        `(back buttons -> nav-point -> cancel/close/dialog -> edge_swipe)`,
       );
       return false;
     },
