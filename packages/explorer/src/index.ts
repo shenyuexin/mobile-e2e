@@ -74,9 +74,16 @@ export {
   createSnapshotter,
   createTapExecutor,
   generateScreenId,
-  extractScreenTitle,
 } from "./snapshot.js";
 export type { TapResult } from "./snapshot.js";
+
+// Explorer platform hooks
+export { resolveExplorerPlatformHooks } from "./explorer-platform.js";
+export type {
+  ExplorerNavigateBackInput,
+  ExplorerNavigateBackSelector,
+  ExplorerPlatformHooks,
+} from "./explorer-platform.js";
 
 // Backtracking
 export { createBacktracker } from "./backtrack.js";

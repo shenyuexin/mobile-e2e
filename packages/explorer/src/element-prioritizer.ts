@@ -308,7 +308,9 @@ export function isNonInteractive(el: UiHierarchy): boolean {
     NON_INTERACTIVE_TYPES.has(el.elementType ?? "") ||
     NON_INTERACTIVE_TYPES.has(el.className ?? "")
   ) {
-    return true;
+    // Android often marks navigable rows as clickable FrameLayout/ViewGroup containers.
+    // Preserve those actionable wrappers instead of discarding them as purely structural.
+    return !el.clickable;
   }
 
   return false;
@@ -332,6 +334,7 @@ export function isDestructive(
  * Check if an element is interactive (navigable/clickable).
  */
 export function isInteractive(el: UiHierarchy): boolean {
+  if (el.clickable) return true;
   if (el.elementType && INTERACTIVE_TYPES.has(el.elementType)) return true;
   if (el.className && INTERACTIVE_TYPES.has(el.className)) return true;
   if (

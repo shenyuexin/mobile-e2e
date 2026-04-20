@@ -64,6 +64,28 @@ function makePage(title: string, buttons: string[]): UiHierarchy {
   };
 }
 
+function makePageInApp(appId: string, title: string, buttons: string[]): UiHierarchy {
+  return {
+    className: "Application",
+    accessibilityLabel: appId,
+    clickable: false,
+    enabled: true,
+    scrollable: false,
+    children: [
+      {
+        className: "StaticText",
+        text: title,
+        contentDesc: title,
+        clickable: false,
+        enabled: true,
+        scrollable: false,
+        children: [],
+      },
+      ...buttons.map(makeButton),
+    ],
+  };
+}
+
 function createMockConfig(): ExplorerConfig {
   return {
     mode: "smoke",
@@ -78,6 +100,7 @@ function createMockConfig(): ExplorerConfig {
     appId: "com.apple.Preferences",
     reportDir: "/tmp/explorer-engine-test",
     externalLinkMaxDepth: 1,
+    statefulFormPolicy: "skip",
   };
 }
 
@@ -640,6 +663,243 @@ describe("explore engine recovery", () => {
 
     assert.equal(
       tapLog.some((entry) => entry.page === "Fonts" && entry.label === "My Fonts"),
+      true,
+    );
+  });
+
+  it("collapses descendant frames when external-app back returns to an ancestor page", async () => {
+    const pages = {
+      Settings: makePageInApp("com.android.settings", "Settings", ["Account"]),
+      Profile: makePageInApp("com.bbk.account", "Profile", ["Profile picture"]),
+      "Profile picture": makePageInApp("com.bbk.account", "Profile picture", ["Profile picture settings"]),
+      "Profile picture settings": makePageInApp("com.bbk.account", "Profile picture settings", ["Back", "Change avatar"]),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const config = {
+      ...createMockConfig(),
+      platform: "android-device" as const,
+      appId: "com.android.settings",
+      externalLinkMaxDepth: 1,
+      maxPages: 10,
+    };
+
+    const mcp: McpToolInterface = {
+      launchApp: async () => {
+        currentPage = "Settings";
+        return okResult({});
+      },
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "Account") {
+          currentPage = "Profile";
+        } else if (currentPage === "Profile" && label === "Profile picture") {
+          currentPage = "Profile picture";
+        } else if (currentPage === "Profile picture" && label === "Profile picture settings") {
+          currentPage = "Profile picture settings";
+        } else if (currentPage === "Profile picture settings" && label === "Back") {
+          currentPage = "Profile picture";
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async (args) => {
+        const target = args?.parentPageTitle;
+        if (currentPage === "Profile picture settings" && (target === "Profile picture" || target === "Back")) {
+          currentPage = "Profile picture";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Profile picture" && target === "Profile") {
+          currentPage = "Profile";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Profile" && target === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true } as any);
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    };
+
+    const result = await explore(config, mcp);
+
+    assert.equal(
+      result.failed.getEntries().some((entry) => entry.failureType === "BACKTRACK_MISMATCH"),
+      false,
+    );
+    assert.equal(
+      tapLog.filter((entry) => entry.page === "Profile picture settings" && entry.label === "Change avatar").length,
+      0,
+    );
+  });
+
+  it("dismisses Account nickname dialog via Cancel-first backtrack instead of exploring inside it", async () => {
+    const pages = {
+      Settings: makePageInApp("com.android.settings", "Settings", ["Account"]),
+      Profile: makePageInApp("com.bbk.account", "Profile", ["Profile picture"]),
+      "Profile picture": makePageInApp("com.bbk.account", "Profile picture", ["Account nickname"]),
+      "Account nickname": makePageInApp("com.bbk.account", "Account nickname", ["OK", "Cancel"]),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+    const backLog: Array<{ page: string; target?: string }> = [];
+
+    const config = {
+      ...createMockConfig(),
+      platform: "android-device" as const,
+      appId: "com.android.settings",
+      externalLinkMaxDepth: 1,
+      maxPages: 10,
+    };
+
+    const mcp: McpToolInterface = {
+      launchApp: async () => {
+        currentPage = "Settings";
+        return okResult({});
+      },
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "Account") {
+          currentPage = "Profile";
+        } else if (currentPage === "Profile" && label === "Profile picture") {
+          currentPage = "Profile picture";
+        } else if (currentPage === "Profile picture" && label === "Account nickname") {
+          currentPage = "Account nickname";
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async (args) => {
+        backLog.push({ page: currentPage, target: args?.parentPageTitle });
+        if (currentPage === "Account nickname") {
+          currentPage = "Profile picture";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Profile picture" && args?.parentPageTitle === "Profile") {
+          currentPage = "Profile";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Profile" && args?.parentPageTitle === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true } as any);
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    };
+
+    const result = await explore(config, mcp);
+
+    assert.equal(
+      backLog.some((entry) => entry.page === "Account nickname"),
+      true,
+    );
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Account nickname" && entry.label === "OK"),
+      false,
+    );
+    assert.equal(
+      result.failed.getEntries().some((entry) => entry.failureType === "BACKTRACK_MISMATCH"),
+      false,
+    );
+  });
+
+  it("records stateful create-address branch as reached but not expanded when policy is skip", async () => {
+    const pages = {
+      Settings: makePageInApp("com.android.settings", "Settings", ["Account"]),
+      Profile: makePageInApp("com.bbk.account", "Profile", ["Manage shipping addresses"]),
+      "Manage shipping addresses": makePageInApp("com.bbk.account", "Manage shipping addresses", ["Create shipping address"]),
+      "Create shipping address": makePageInApp("com.bbk.account", "Create shipping address", ["Select country/region", "Address line 1"]),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+    const backLog: Array<{ page: string; target?: string }> = [];
+
+    const config = {
+      ...createMockConfig(),
+      platform: "android-device" as const,
+      appId: "com.android.settings",
+      externalLinkMaxDepth: 1,
+      maxPages: 10,
+      statefulFormPolicy: "skip" as const,
+    };
+
+    const mcp: McpToolInterface = {
+      launchApp: async () => {
+        currentPage = "Settings";
+        return okResult({});
+      },
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "Account") {
+          currentPage = "Profile";
+        } else if (currentPage === "Profile" && label === "Manage shipping addresses") {
+          currentPage = "Manage shipping addresses";
+        } else if (currentPage === "Manage shipping addresses" && label === "Create shipping address") {
+          currentPage = "Create shipping address";
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async (args) => {
+        backLog.push({ page: currentPage, target: args?.parentPageTitle });
+        if (currentPage === "Create shipping address") {
+          currentPage = "Manage shipping addresses";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Manage shipping addresses" && args?.parentPageTitle === "Profile") {
+          currentPage = "Profile";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "Profile" && args?.parentPageTitle === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true } as any);
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    };
+
+    const result = await explore(config, mcp);
+    const createAddressEntry = result.visited.getEntries().find((entry) => entry.screenTitle === "Create shipping address");
+
+    assert.ok(createAddressEntry);
+    assert.equal(createAddressEntry?.explorationStatus, "reached-not-expanded");
+    assert.equal(createAddressEntry?.stoppedByPolicy, "statefulFormPolicy:skip");
+    assert.equal(createAddressEntry?.ruleFamily, "stateful_form_entry");
+    assert.equal(createAddressEntry?.recoveryMethod, "backtrack-cancel-first");
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Create shipping address" && entry.label === "Select country/region"),
+      false,
+    );
+    assert.equal(
+      backLog.some((entry) => entry.page === "Create shipping address"),
       true,
     );
   });

@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync } from "fs";
 import { homedir, platform } from "os";
 import { join } from "path";
-import type { AuthConfig, DestructiveActionPolicy, ExplorerConfig, ExplorerPlatform, FailureStrategy, ExplorationMode, SamplingRule } from "./types.js";
+import type { AuthConfig, DestructiveActionPolicy, ExplorerConfig, ExplorerPlatform, FailureStrategy, ExplorationMode, SamplingRule, StatefulFormPolicy } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Default sampling rules for high-fanout collection pages (smoke mode).
@@ -111,6 +111,16 @@ export const INTERVIEW_QUESTIONS: Question[] = [
     ],
     defaultValue: "skip",
   },
+  {
+    id: "statefulFormPolicy",
+    prompt: "状态型表单分支策略",
+    options: [
+      { label: "A) 到达即止步 (默认)", value: "skip" },
+      { label: "B) 运行前确认", value: "confirm" },
+      { label: "C) 允许深入", value: "allow" },
+    ],
+    defaultValue: "skip",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -156,6 +166,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
   const plat = (overrides.platform ?? "ios-simulator") as ExplorerPlatform;
   const failureStrategy = (overrides.failureStrategy ?? "retry-3") as FailureStrategy;
   const destructiveActionPolicy = (overrides.destructiveActionPolicy ?? "skip") as DestructiveActionPolicy;
+  const statefulFormPolicy = (overrides.statefulFormPolicy ?? "skip") as StatefulFormPolicy;
   const maxDepth = overrides.maxDepth ?? defaultDepthForMode(mode);
   const compareWith = overrides.compareWith ?? null;
   const appId = overrides.appId ?? "";
@@ -174,6 +185,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
     compareWith,
     platform: plat,
     destructiveActionPolicy,
+    statefulFormPolicy,
     appId,
     reportDir,
     samplingRules,

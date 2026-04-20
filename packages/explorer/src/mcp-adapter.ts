@@ -21,6 +21,7 @@ import type {
   GetScreenSummaryData,
   TapData,
 } from "@mobile-e2e-mcp/contracts";
+import { resolveExplorerPlatformHooks } from "./explorer-platform.js";
 
 /** Session context required by all MCP tools. */
 export interface SessionContext {
@@ -110,16 +111,7 @@ export function createMcpAdapter(
     tapElement: (args) =>
       invoke("tap_element", { ...baseInput(), ...args }) as Promise<ToolResult<TapElementData>>,
     navigateBack: (args?) => {
-      const parentTitle = args?.parentPageTitle;
-      const selector = args?.iosStrategy === "edge_swipe"
-        ? undefined
-        : args?.selector
-        ? { ...args.selector }
-        : parentTitle
-        ? ctx.platform === "ios"
-          ? { text: parentTitle, contentDesc: parentTitle }
-          : { text: parentTitle }
-        : undefined;
+      const selector = resolveExplorerPlatformHooks(ctx.platform).buildNavigateBackSelector(args);
       return invoke("navigate_back", {
         ...baseInput(),
         target: "app" as const,
