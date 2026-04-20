@@ -144,6 +144,15 @@ describe("isInteractive", () => {
     const el = makeNode({ className: "StaticText", clickable: false });
     assert.equal(isInteractive(el), false);
   });
+
+  it("detects clickable Android container as interactive", () => {
+    const el = makeNode({
+      className: "android.widget.FrameLayout",
+      elementType: "android.widget.FrameLayout",
+      clickable: true,
+    });
+    assert.equal(isInteractive(el), true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -189,6 +198,15 @@ describe("isNonInteractive", () => {
 
   it("does NOT detect Button as non-interactive", () => {
     const el = makeNode({ className: "Button" });
+    assert.equal(isNonInteractive(el), false);
+  });
+
+  it("does NOT detect clickable Android container as non-interactive", () => {
+    const el = makeNode({
+      className: "android.widget.FrameLayout",
+      elementType: "android.widget.FrameLayout",
+      clickable: true,
+    });
     assert.equal(isNonInteractive(el), false);
   });
 });
@@ -298,6 +316,30 @@ describe("findClickableElements", () => {
     const elements = findClickableElements(uiTree, allowConfig);
     // "General" and "Delete Account" should remain
     assert.equal(elements.length, 2);
+  });
+
+  it("keeps clickable Android container rows", () => {
+    const androidTree: UiHierarchy = {
+      className: "Application",
+      clickable: false,
+      enabled: true,
+      scrollable: false,
+      children: [
+        {
+          className: "android.widget.FrameLayout",
+          elementType: "android.widget.FrameLayout",
+          clickable: true,
+          enabled: true,
+          scrollable: false,
+          contentDesc: "Wi-Fi, Connected",
+          children: [],
+        },
+      ],
+    };
+
+    const elements = findClickableElements(androidTree, config);
+    assert.equal(elements.length, 1);
+    assert.equal(elements[0].label, "Wi-Fi, Connected");
   });
 });
 

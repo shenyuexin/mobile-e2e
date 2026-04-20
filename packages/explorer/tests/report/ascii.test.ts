@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { PageEntry } from '../../src/types.js';
 import { generateAsciiTree } from '../../src/report/index.js';
 
-function makePage(
+  function makePage(
   id: string,
   screenId: string,
   depth: number,
@@ -23,6 +23,7 @@ function makePage(
     loadTimeMs: 100,
     clickableCount: 1,
     hasFailure: false,
+    explorationStatus: 'expanded',
     snapshot: undefined as never,
   };
 }
@@ -98,6 +99,26 @@ describe('generateAsciiTree', () => {
         '    └── Fonts  [sampling: 1/3]',
         '        ├── System Fonts  [skipped by sampling]',
         '        └── My Fonts  [skipped by sampling]',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('renders reached-but-not-expanded stateful branches', () => {
+    const pages = [
+      makePage('root', 'settings', 0, [], null, null, 'Settings'),
+      makePage('shipping', 'shipping', 1, ['Create shipping address'], 'settings', 'Create shipping address', 'Create shipping address'),
+    ];
+    pages[1].explorationStatus = 'reached-not-expanded';
+    pages[1].ruleFamily = 'stateful_form_entry';
+
+    const tree = generateAsciiTree(pages);
+
+    assert.equal(
+      tree,
+      [
+        'Settings',
+        '└── Create shipping address  [via: Create shipping address]  [reached, not expanded: stateful_form_entry]',
         '',
       ].join('\n'),
     );

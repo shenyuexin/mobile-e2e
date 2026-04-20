@@ -7,19 +7,26 @@
  */
 
 import type { McpToolInterface, UiHierarchy } from "./types.js";
+import type { BackAffordance, BacktrackLadderContext, BacktrackTapSelector, CachedBackStrategy } from "./backtrack-core.js";
+import { runAndroidBacktrackLadder } from "./backtrack-android.js";
+import { runIosBacktrackLadder } from "./backtrack-ios.js";
+import { resolveExplorerPlatformHooks } from "./explorer-platform.js";
 import { generateScreenId } from "./snapshot.js";
 import { hashUiStructure } from "./page-registry.js";
 
 /**
  * Create a backtracker bound to the given MCP tool interface.
  */
-export function createBacktracker(mcp: McpToolInterface) {
+export function createBacktracker(
+  mcp: McpToolInterface,
+  platform: "ios-simulator" | "ios-device" | "android-emulator" | "android-device" = "ios-simulator",
+) {
+  const platformHooks = resolveExplorerPlatformHooks(platform);
   // Cache of known screenId -> structureHash mappings
   const knownPages = new Map<string, string>();
+  const backStrategyCache = new Map<string, CachedBackStrategy>();
   // Learned successful back point per (page, expected-parent) context.
   const backPointCache = new Map<string, { x: number; y: number; name: string }>();
-
-  type BackAffordanceStatus = "selector_detected" | "nav_bar_only" | "not_detected";
 
   const captureCurrentPageContext = async (): Promise<{ screenId?: string; title?: string }> => {
     const inspectResult = await mcp.inspectUi();
@@ -51,6 +58,13 @@ export function createBacktracker(mcp: McpToolInterface) {
     return true;
   };
 
+  const extractScreenTitleFromUiTree = (uiTree: UiHierarchy): string | undefined =>
+    platformHooks.extractScreenTitle(uiTree);
+
+  const parseUiTreeFromInspectResult = (
+    data: Record<string, unknown>,
+  ): UiHierarchy | null => platformHooks.parseInspectUi(data, { fallbackToDataRoot: false });
+
   return {
     /**
      * Register a page's structure hash for later fuzzy matching.
@@ -73,6 +87,76 @@ export function createBacktracker(mcp: McpToolInterface) {
         const pageKey = ctx.screenId ?? normalizeTitle(ctx.title ?? "unknown-page");
         const parentKey = normalizeTitle(expectedParentTitle ?? "<none>");
         return `${pageKey}::${parentKey}`;
+      };
+
+      const cacheSemanticStrategy = (cacheKey: string, strategy: CachedBackStrategy): void => {
+        backStrategyCache.set(cacheKey, strategy);
+      };
+
+      const toCachedBackStrategy = (
+        method: string,
+        args?: {
+          parentPageTitle?: string;
+          iosStrategy?: "selector_tap" | "edge_swipe";
+          selector?: BacktrackTapSelector;
+        },
+      ): CachedBackStrategy | undefined => {
+        if (method === "navigate_back:system_back") {
+          return { kind: "system_back" };
+        }
+        if (args?.iosStrategy === "edge_swipe") {
+          return { kind: "edge_swipe" };
+        }
+        if (args?.selector?.contentDesc) {
+          return { kind: "selector_content_desc", contentDesc: args.selector.contentDesc };
+        }
+        if (args?.selector?.text) {
+          return { kind: "selector_text", text: args.selector.text };
+        }
+        if (args?.parentPageTitle) {
+          return { kind: "selector_parent", parentPageTitle: args.parentPageTitle };
+        }
+        return undefined;
+      };
+
+      const executeCachedBackStrategy = async (strategy: CachedBackStrategy): Promise<boolean> => {
+        switch (strategy.kind) {
+          case "system_back":
+            return tryNavigateBack("cached:navigate_back:system_back");
+          case "edge_swipe":
+            return tryNavigateBack("cached:navigate_back:edge_swipe", { iosStrategy: "edge_swipe" });
+          case "selector_content_desc":
+            return tryNavigateBack("cached:navigate_back:selector_content_desc", {
+              iosStrategy: "selector_tap",
+              selector: { contentDesc: strategy.contentDesc, className: "Button", clickable: true },
+            });
+          case "selector_text":
+            return tryNavigateBack("cached:navigate_back:selector_text", {
+              iosStrategy: "selector_tap",
+              selector: { text: strategy.text, className: "Button", clickable: true },
+            });
+          case "selector_parent":
+            return tryNavigateBack("cached:navigate_back:selector_parent", {
+              parentPageTitle: strategy.parentPageTitle,
+              iosStrategy: "selector_tap",
+            });
+          case "tap_back_content_desc":
+            return tryTapBackControl("cached:tap_back_button:contentDesc", {
+              contentDesc: strategy.contentDesc,
+              className: "Button",
+              clickable: true,
+            });
+          case "tap_back_text":
+            return tryTapBackControl("cached:tap_back_button:text", {
+              text: strategy.text,
+              className: "Button",
+              clickable: true,
+            });
+          case "cancel_or_close":
+            return tryTapBackControl("cached:tap_cancel_or_close:text", { text: strategy.label });
+          case "dialog_control":
+            return tryTapBackControl("cached:tap_dialog_control:text", { text: strategy.label });
+        }
       };
 
       const normalizeLabel = (label: string): string => label.trim().replace(/\s+/g, " ");
@@ -99,11 +183,7 @@ export function createBacktracker(mcp: McpToolInterface) {
         console.log(`[BACKTRACK-WARN] ${message}`);
       };
 
-      const detectBackAffordance = async (): Promise<{
-        status: BackAffordanceStatus;
-        navBarFrame?: { x: number; y: number; width: number; height: number };
-        selectorLabels: string[];
-      }> => {
+      const detectBackAffordance = async (): Promise<BackAffordance> => {
         const inspectResult = await mcp.inspectUi();
         if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
           return { status: "not_detected", selectorLabels: [] };
@@ -144,27 +224,65 @@ export function createBacktracker(mcp: McpToolInterface) {
               || (normalizedParent.length > 0 && normalized.includes(normalizedParent));
           });
 
+        const navBarBottom = navBarNode?.frame ? navBarNode.frame.y + navBarNode.frame.height + 24 : 180;
+        const hasSearchField = nodes.some((node) => {
+          const className = (node.className ?? "").toLowerCase();
+          const elementType = (node.elementType ?? "").toLowerCase();
+          const role = (node.accessibilityRole ?? "").toLowerCase();
+          return className.includes("searchfield")
+            || elementType.includes("searchfield")
+            || role.includes("searchfield");
+        });
+        const hasTopCancelButton = nodes.some((node) => {
+          const topY = node.frame?.y ?? Number.MAX_SAFE_INTEGER;
+          const label = normalizeLabel(node.contentDesc ?? node.text ?? node.accessibilityLabel ?? "").toLowerCase();
+          const role = (node.accessibilityRole ?? "").toLowerCase();
+          const className = (node.className ?? "").toLowerCase();
+          const isButtonLike = node.clickable || role.includes("button") || className.includes("button");
+          return isButtonLike && label === "cancel" && topY <= navBarBottom;
+        });
+        const dialogButtons = nodes.filter((node) => {
+          const label = normalizeLabel(node.contentDesc ?? node.text ?? node.accessibilityLabel ?? "").toLowerCase();
+          const role = (node.accessibilityRole ?? "").toLowerCase();
+          const className = (node.className ?? "").toLowerCase();
+          const isButtonLike = node.clickable || role.includes("button") || className.includes("button");
+          return isButtonLike && ["cancel", "close", "ok", "done", "allow"].includes(label);
+        });
+        const hasDialogTitle = nodes.some((node) => {
+          const label = normalizeLabel(node.contentDesc ?? node.text ?? node.accessibilityLabel ?? "").toLowerCase();
+          const role = (node.accessibilityRole ?? "").toLowerCase();
+          const className = (node.className ?? "").toLowerCase();
+          return (role.includes("alert") || role.includes("dialog") || className.includes("alert") || className.includes("sheet"))
+            && label.length > 0;
+        });
+
         const selectorLabels = dedupeLabels([
           ...selectorCandidates,
           ...(parentTitle ? [parentTitle] : []),
           "Back",
         ]);
 
-        const status: BackAffordanceStatus = selectorCandidates.length > 0
+        const status: BackAffordance["status"] = selectorCandidates.length > 0
           ? "selector_detected"
           : navBarNode?.frame
           ? "nav_bar_only"
           : "not_detected";
+        const isSearchActiveLike = Boolean(navBarNode?.frame)
+          && selectorCandidates.length === 0
+          && (hasSearchField || hasTopCancelButton);
+        const isDialogLike = hasDialogTitle || dialogButtons.length >= 2;
 
         logTrace(
           `affordance status=${status}, selectorCandidates=${JSON.stringify(selectorCandidates.slice(0, 3))}, ` +
-          `navBarFrame=${JSON.stringify(navBarNode?.frame ?? null)}`,
+          `navBarFrame=${JSON.stringify(navBarNode?.frame ?? null)}, searchActiveLike=${String(isSearchActiveLike)}, dialogLike=${String(isDialogLike)}`,
         );
 
         return {
           status,
           navBarFrame: navBarNode?.frame,
           selectorLabels,
+          isSearchActiveLike,
+          isDialogLike,
         };
       };
 
@@ -220,13 +338,7 @@ export function createBacktracker(mcp: McpToolInterface) {
         args?: {
           parentPageTitle?: string;
           iosStrategy?: "selector_tap" | "edge_swipe";
-          selector?: {
-            resourceId?: string;
-            contentDesc?: string;
-            text?: string;
-            className?: string;
-            clickable?: boolean;
-          };
+          selector?: BacktrackTapSelector;
         },
       ): Promise<boolean> => {
         const before = await captureCurrentPageContext();
@@ -265,12 +377,17 @@ export function createBacktracker(mcp: McpToolInterface) {
           `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
           `expectedParent=${parentTitle ?? "<none>"})`,
         );
+        const strategy = toCachedBackStrategy(method, args);
+        const cacheKey = buildBackPointCacheKey(before, parentTitle);
+        if (strategy) {
+          cacheSemanticStrategy(cacheKey, strategy);
+        }
         return true;
       };
 
       const tryTapBackControl = async (
         method: string,
-        selector: { contentDesc?: string; text?: string; className?: string; clickable?: boolean },
+        selector: BacktrackTapSelector,
       ): Promise<boolean> => {
         const before = await captureCurrentPageContext();
         const tapResult = await mcp.tapElement(selector);
@@ -304,6 +421,16 @@ export function createBacktracker(mcp: McpToolInterface) {
           `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
           `expectedParent=${parentTitle ?? "<none>"})`,
         );
+        const cacheKey = buildBackPointCacheKey(before, parentTitle);
+        if (method.includes("tap_back_button:contentDesc") && selector.contentDesc) {
+          cacheSemanticStrategy(cacheKey, { kind: "tap_back_content_desc", contentDesc: selector.contentDesc });
+        } else if (method.includes("tap_back_button:text") && selector.text) {
+          cacheSemanticStrategy(cacheKey, { kind: "tap_back_text", text: selector.text });
+        } else if (method.includes("tap_cancel_or_close") && (selector.contentDesc || selector.text)) {
+          cacheSemanticStrategy(cacheKey, { kind: "cancel_or_close", label: selector.contentDesc ?? selector.text ?? "Cancel" });
+        } else if (method.includes("tap_dialog_control") && (selector.contentDesc || selector.text)) {
+          cacheSemanticStrategy(cacheKey, { kind: "dialog_control", label: selector.contentDesc ?? selector.text ?? "OK" });
+        }
         return true;
       };
 
@@ -623,128 +750,34 @@ export function createBacktracker(mcp: McpToolInterface) {
         return false;
       };
 
-      // Strategy order:
-      // 1) back-button family (selector/topbar/summary/nav-point)
-      // 2) modal dismiss controls (Cancel/Close/Done/OK)
-      // 3) iOS edge swipe fallback
-      const affordance = await detectBackAffordance();
+      const ladderContext: BacktrackLadderContext = {
+        parentTitle,
+        detectBackAffordance,
+        tryNavigateBack,
+        tryTapBackControl,
+        tryPointBandBack,
+        tryTopBarBackCandidates,
+        tryScreenSummaryBackAffordance,
+        tryNavBarCoordinateBack,
+        logWarn,
+        logBackFailureEvidence,
+      };
 
-      if (await tryPointBandBack(affordance.navBarFrame)) {
-        return true;
-      }
-
-      const shouldTrySelectorFamily = affordance.status !== "nav_bar_only";
-      if (shouldTrySelectorFamily) {
-        if (await tryNavigateBack("navigate_back:selector_tap")) {
-          return true;
-        }
-
-        if (
-          parentTitle &&
-          await tryNavigateBack("navigate_back:selector_tap(parent_button_contentDesc)", {
-            iosStrategy: "selector_tap",
-            selector: {
-              contentDesc: parentTitle,
-              className: "Button",
-              clickable: true,
-            },
-          })
-        ) {
-          return true;
-        }
-
-        if (
-          parentTitle &&
-          await tryNavigateBack("navigate_back:selector_tap(parent_button_text)", {
-            iosStrategy: "selector_tap",
-            selector: {
-              text: parentTitle,
-              className: "Button",
-              clickable: true,
-            },
-          })
-        ) {
-          return true;
-        }
-
-        if (
-          parentTitle &&
-          await tryNavigateBack("navigate_back:selector_tap(parent)", {
-            parentPageTitle: parentTitle,
-            iosStrategy: "selector_tap",
-          })
-        ) {
-          return true;
-        }
-
-        const backButtonLabels = affordance.selectorLabels;
-
-        for (const label of backButtonLabels) {
-          if (
-            await tryTapBackControl("tap_back_button:contentDesc", {
-              contentDesc: label,
-              className: "Button",
-              clickable: true,
-            }) ||
-            await tryTapBackControl("tap_back_button:text", {
-              text: label,
-              className: "Button",
-              clickable: true,
-            })
-          ) {
-            return true;
-          }
-        }
-      } else {
-        logWarn("selector family skipped: nav_bar_only affordance detected");
-      }
-
-      if (await tryTopBarBackCandidates()) {
-        return true;
-      }
-
-      if (await tryScreenSummaryBackAffordance()) {
-        return true;
-      }
-
-      if (await tryNavBarCoordinateBack()) {
-        return true;
-      }
-
-      const cancelOrCloseLabels = dedupeLabels([
-        "Cancel",
-        "Close",
-      ]);
-      for (const label of cancelOrCloseLabels) {
-        if (
-          await tryTapBackControl("tap_cancel_or_close:contentDesc", { contentDesc: label }) ||
-          await tryTapBackControl("tap_cancel_or_close:text", { text: label })
-        ) {
+      const initialContext = await captureCurrentPageContext();
+      const cacheKey = buildBackPointCacheKey(initialContext, parentTitle);
+      const cachedStrategy = backStrategyCache.get(cacheKey);
+      if (cachedStrategy) {
+        logTrace(`using cached back strategy key=${cacheKey}, kind=${cachedStrategy.kind}`);
+        if (await executeCachedBackStrategy(cachedStrategy)) {
           return true;
         }
       }
 
-      const dialogControlLabels = dedupeLabels(["OK", "Ok", "Done", "Cancel"]);
-      for (const label of dialogControlLabels) {
-        if (
-          await tryTapBackControl("tap_dialog_control:contentDesc", { contentDesc: label }) ||
-          await tryTapBackControl("tap_dialog_control:text", { text: label })
-        ) {
-          return true;
-        }
+      if (platform === "android-device" || platform === "android-emulator") {
+        return runAndroidBacktrackLadder(ladderContext);
       }
 
-      if (await tryNavigateBack("navigate_back:edge_swipe", { iosStrategy: "edge_swipe" })) {
-        return true;
-      }
-
-      await logBackFailureEvidence();
-
-      logWarn(
-        `all strategies failed for parentTitle="${parentTitle ?? "<none>"}" ` +
-        `(back buttons -> nav-point -> cancel/close/dialog -> edge_swipe)`,
-      );
-      return false;
+      return runIosBacktrackLadder(ladderContext);
     },
 
     /**
@@ -832,211 +865,4 @@ function flattenUiTree(root: UiHierarchy): UiHierarchy[] {
 
 function normalizeTitle(title: string): string {
   return title.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-/**
- * Extract screen title from UI tree (mirrors snapshot.ts extractScreenTitle).
- */
-function extractScreenTitleFromUiTree(uiTree: UiHierarchy): string | undefined {
-  function flatten(node: UiHierarchy, result: UiHierarchy[] = []): UiHierarchy[] {
-    result.push(node);
-    if (node.children) {
-      for (const child of node.children) {
-        flatten(child, result);
-      }
-    }
-    return result;
-  }
-  
-  const allElements = flatten(uiTree);
-  
-  // Priority 1: First Heading
-  for (const el of allElements) {
-    if (el.className === "Heading" || el.elementType === "Heading") {
-      const label = el.contentDesc || el.text || el.accessibilityLabel;
-      if (label && label.length > 0) return label;
-    }
-  }
-  
-  // Priority 2: First substantial StaticText
-  for (const el of allElements) {
-    if (el.className === "StaticText" || el.elementType === "StaticText") {
-      const label = el.contentDesc || el.text || el.accessibilityLabel;
-      if (label && label.length > 2 && label.length < 50) {
-        return label.split(" ").slice(0, 3).join(" ");
-      }
-    }
-  }
-  
-  return undefined;
-}
-
-/**
- * Parse UI tree from inspect_ui result data.
- * Mirrors the logic in snapshot.ts but kept separate to avoid circular deps.
- */
-function parseUiTreeFromInspectResult(
-  data: Record<string, unknown>,
-): UiHierarchy | null {
-  if (typeof data.content === "string") {
-    try {
-      const parsed = JSON.parse(data.content);
-      return normalizeParsedContent(parsed);
-    } catch {
-      return null;
-    }
-  }
-  if (typeof data.content === "object" && data.content !== null) {
-    return normalizeParsedContent(data.content);
-  }
-  return null;
-}
-
-/**
- * Normalize parsed JSON content from inspect_ui.
- * Handles both array (axe output) and object (Android output) formats.
- * Mirrors snapshot.ts normalizeParsedContent.
- */
-function normalizeParsedContent(content: unknown): UiHierarchy {
-  // axe (iOS) returns an array of root nodes
-  if (Array.isArray(content)) {
-    // Wrap array in a synthetic root node
-    return {
-      className: "Root",
-      clickable: false,
-      enabled: true,
-      scrollable: false,
-      children: content
-        .filter((c) => typeof c === "object" && c !== null)
-        .map((c) => normalizeToUiHierarchy(c as Record<string, unknown>)),
-    };
-  }
-
-  // Android returns a single object
-  if (typeof content === "object" && content !== null) {
-    return normalizeToUiHierarchy(content as Record<string, unknown>);
-  }
-
-  // Fallback
-  return {
-    className: "Root",
-    clickable: false,
-    enabled: true,
-    scrollable: false,
-    children: [],
-  };
-}
-
-/**
- * Normalize a raw UI tree object to our UiHierarchy interface.
- * Mirrors snapshot.ts normalizeToUiHierarchy.
- */
-function normalizeToUiHierarchy(
-  node: Record<string, unknown>,
-): UiHierarchy {
-  const children = Array.isArray(node.children)
-    ? node.children
-        .filter((c) => typeof c === "object" && c !== null)
-        .map((c) => normalizeToUiHierarchy(c as Record<string, unknown>))
-    : [];
-
-  let frame: UiHierarchy["frame"];
-  if (typeof node.bounds === "string") {
-    const match = node.bounds.match(/\[([\d.]+),([\d.]+)\]\[([\d.]+),([\d.]+)\]/);
-    if (match) {
-      frame = {
-        x: parseFloat(match[1]),
-        y: parseFloat(match[2]),
-        width: parseFloat(match[3]) - parseFloat(match[1]),
-        height: parseFloat(match[4]) - parseFloat(match[2]),
-      };
-    }
-  }
-
-  if (!frame && typeof node.AXFrame === "string") {
-    const match = node.AXFrame.match(/\{\{([\d.]+),([\d.]+)\},\{([\d.]+),([\d.]+)\}\}/);
-    if (match) {
-      frame = {
-        x: parseFloat(match[1]),
-        y: parseFloat(match[2]),
-        width: parseFloat(match[3]),
-        height: parseFloat(match[4]),
-      };
-    }
-  }
-
-  if (!frame && typeof node.frame === "object" && node.frame !== null) {
-    const nestedFrame = node.frame as Record<string, unknown>;
-    frame = {
-      x: typeof nestedFrame.x === "number" ? nestedFrame.x : 0,
-      y: typeof nestedFrame.y === "number" ? nestedFrame.y : 0,
-      width: typeof nestedFrame.width === "number" ? nestedFrame.width : 0,
-      height: typeof nestedFrame.height === "number" ? nestedFrame.height : 0,
-    };
-  }
-
-  const className =
-    typeof node.className === "string" ? node.className :
-    typeof node.type === "string" ? node.type :
-    typeof node.role === "string" ? node.role :
-    undefined;
-
-  const text =
-    typeof node.text === "string" ? node.text :
-    typeof node.AXLabel === "string" ? node.AXLabel :
-    typeof node.AXValue === "string" ? node.AXValue :
-    undefined;
-
-  const contentDesc =
-    typeof node.contentDesc === "string" ? node.contentDesc :
-    typeof node.AXUniqueId === "string" ? node.AXUniqueId :
-    undefined;
-
-  const inferredRole =
-    typeof node.accessibilityRole === "string" ? node.accessibilityRole :
-    typeof node.role === "string" ? node.role :
-    typeof node.role_description === "string" ? node.role_description :
-    "";
-
-  const classNameLower = (className ?? "").toLowerCase();
-  const roleLower = inferredRole.toLowerCase();
-  const isButtonLike =
-    classNameLower.includes("button")
-    || classNameLower.includes("link")
-    || roleLower.includes("button")
-    || roleLower.includes("back button")
-    || roleLower.includes("link");
-
-  const clickable =
-    node.clickable === true
-    || isButtonLike
-    || classNameLower.includes("textfield")
-    || roleLower.includes("text field");
-
-  return {
-    text,
-    className,
-    contentDesc,
-    clickable,
-    enabled: node.enabled !== false,
-    scrollable: node.scrollable === true,
-    frame,
-    children,
-    accessibilityLabel:
-      typeof node.accessibilityLabel === "string" ? node.accessibilityLabel :
-      typeof node.AXLabel === "string" ? node.AXLabel :
-      undefined,
-    accessibilityRole:
-      typeof node.accessibilityRole === "string" ? node.accessibilityRole :
-      typeof node.role === "string" ? node.role :
-      typeof node.role_description === "string" ? node.role_description :
-      undefined,
-    visibleTexts:
-      typeof node.text === "string" ? [node.text] :
-      Array.isArray(node.visibleTexts) ? node.visibleTexts as string[] :
-      undefined,
-    AXUniqueId: typeof node.AXUniqueId === "string" ? node.AXUniqueId : undefined,
-    AXValue: typeof node.AXValue === "string" ? node.AXValue : undefined,
-    elementType: typeof node.elementType === "string" ? node.elementType : className,
-  };
 }

@@ -139,6 +139,10 @@ export class PageRegistry implements PageRegistryContract {
       clickableCount: snapshot.clickableElements.length,
       hasFailure: false,
       snapshot,
+      explorationStatus: snapshot.explorationStatus ?? "expanded",
+      stoppedByPolicy: snapshot.stoppedByPolicy,
+      ruleFamily: snapshot.ruleFamily,
+      recoveryMethod: snapshot.recoveryMethod,
     };
     this.entries.push(entry);
 

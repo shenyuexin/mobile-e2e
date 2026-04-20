@@ -17,21 +17,21 @@
  */
 
 import type {
+  Action,
+  ClickableTarget,
   ExplorerConfig,
-  McpToolInterface,
   ExplorationResult,
   FailureEntry,
   Frame,
-  PageState,
-  Action,
+  McpToolInterface,
   PageSnapshot,
+  PageState,
   SamplingRule,
   SamplingRuleMatch,
-  ClickableTarget,
   TransitionLifecycleSummary,
 } from "./types.js";
 import { PageRegistry, hashUiStructure } from "./page-registry.js";
-import { createSnapshotter, createTapExecutor, generateScreenId } from "./snapshot.js";
+import { createSnapshotter, createTapExecutor } from "./snapshot.js";
 import { prioritizeElements } from "./element-prioritizer.js";
 import { createBacktracker } from "./backtrack.js";
 import { createStateGraph } from "./state-graph.js";
@@ -44,7 +44,6 @@ import {
   shouldSkipPage,
 } from "./circuit-breaker.js";
 import { generateReport } from "./report.js";
-import { hashVisibleTexts } from "./page-registry.js";
 
 // ---------------------------------------------------------------------------
 // Sampling helpers — high-fanout collection page representative-child flow
@@ -190,6 +189,53 @@ export class FailureLog {
 type NavValidation =
   | { navigated: true; isModalOverlay?: boolean }
   | { navigated: false; reason: string; shouldDismissDialog?: boolean };
+
+function hasClickableLabel(
+  clickableElements: Array<{ label: string }>,
+  expectedLabel: string,
+): boolean {
+  const normalized = expectedLabel.trim().toLowerCase();
+  return clickableElements.some((element) => element.label.trim().toLowerCase() === normalized);
+}
+
+function matchesStatefulKeyword(value: string | undefined, keywords: string[]): boolean {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  return keywords.some((keyword) => normalized.includes(keyword));
+}
+
+function isStatefulFormEntry(
+  element: ClickableTarget,
+  snapshot: PageSnapshot,
+  config: ExplorerConfig,
+): boolean {
+  if ((config.statefulFormPolicy ?? "skip") === "allow") {
+    return false;
+  }
+
+  const title = snapshot.screenTitle?.trim().toLowerCase() ?? "";
+  const label = element.label.trim().toLowerCase();
+  const entryKeywords = ["create", "add", "manage", "choose", "select"];
+  const domainKeywords = ["address", "shipping", "payment", "profile", "account", "location"];
+
+  const hasEntrySignal = matchesStatefulKeyword(title, entryKeywords) || matchesStatefulKeyword(label, entryKeywords);
+  const hasDomainSignal = matchesStatefulKeyword(title, domainKeywords) || matchesStatefulKeyword(label, domainKeywords);
+
+  return hasEntrySignal && hasDomainSignal;
+}
+
+function isDismissibleNicknameDialog(snapshot: PageSnapshot): boolean {
+  if (snapshot.appId !== "com.bbk.account") {
+    return false;
+  }
+
+  const title = snapshot.screenTitle?.trim().toLowerCase();
+  if (title !== "account nickname") {
+    return false;
+  }
+
+  return hasClickableLabel(snapshot.clickableElements, "Cancel")
+    && hasClickableLabel(snapshot.clickableElements, "OK");
+}
 
 /**
  * Validate that a tap led to a real page change.
@@ -355,7 +401,7 @@ export async function explore(
 
   const snapshotter = createSnapshotter(mcp);
   const tapper = createTapExecutor(mcp);
-  const backtracker = createBacktracker(mcp);
+  const backtracker = createBacktracker(mcp, config.platform);
   const stateGraph = createStateGraph();
 
   // --- Sampling state (high-fanout collection pages) ---
@@ -545,6 +591,10 @@ export async function explore(
       visited.register(dedupResult, snapshot, frame.path);
       backtracker.registerPage(snapshot.screenId, snapshot.uiTree);
       frame.elements = prioritizeElements(snapshot.clickableElements).sort(compareExplorationOrder);
+      console.log(
+        `[FRAME-ELEMENTS] depth=${frame.depth}, title="${snapshot.screenTitle ?? snapshot.screenId ?? "(unknown)"}", ` +
+        `count=${frame.elements.length}, labels=${JSON.stringify(frame.elements.map((candidate) => candidate.label))}`,
+      );
       frame.state = {
         screenId: snapshot.screenId,
         screenTitle: snapshot.screenTitle,
@@ -807,6 +857,62 @@ export async function explore(
         `to="${nextStateSnapshot.screenTitle ?? nextStateSnapshot.screenId}"`,
       );
 
+      if (isDismissibleNicknameDialog(nextStateSnapshot)) {
+        console.log(
+          `[MODAL-DISMISS] Recognized dismissible nickname dialog in ${nextStateSnapshot.appId}; ` +
+          `recording visit and dismissing via Cancel-first backtrack`,
+        );
+
+        visited.register({ alreadyVisited: false }, nextStateSnapshot, [...frame.path, element.label]);
+        transitionLifecycle.transitionCommitted += 1;
+        const modalStateNode = stateGraph.registerState(
+          nextStateSnapshot,
+          hashUiStructure(nextStateSnapshot.uiTree),
+        );
+        stateGraph.registerTransition({
+          from: currentStateNode.id,
+          to: modalStateNode.id,
+          kind: "cancel",
+          intentLabel: element.label,
+          committed: true,
+          attempts: elementRetries + 1,
+        });
+        currentStateNode = modalStateNode;
+
+        await backtracker.navigateBack(frame.state.screenTitle ?? frame.parentTitle);
+        continue;
+      }
+
+      if (isStatefulFormEntry(element, nextStateSnapshot, config)) {
+        console.log(
+          `[STATEFUL-SKIP] Reached stateful form-entry branch "${nextStateSnapshot.screenTitle ?? element.label}"; ` +
+          `recording visit without expansion`,
+        );
+        nextStateSnapshot.explorationStatus = "reached-not-expanded";
+        nextStateSnapshot.stoppedByPolicy = `statefulFormPolicy:${config.statefulFormPolicy ?? "skip"}`;
+        nextStateSnapshot.ruleFamily = "stateful_form_entry";
+        nextStateSnapshot.recoveryMethod = "backtrack-cancel-first";
+
+        visited.register({ alreadyVisited: false }, nextStateSnapshot, [...frame.path, element.label]);
+        transitionLifecycle.transitionCommitted += 1;
+        const gatedStateNode = stateGraph.registerState(
+          nextStateSnapshot,
+          hashUiStructure(nextStateSnapshot.uiTree),
+        );
+        stateGraph.registerTransition({
+          from: currentStateNode.id,
+          to: gatedStateNode.id,
+          kind: "cancel",
+          intentLabel: element.label,
+          committed: true,
+          attempts: elementRetries + 1,
+        });
+        currentStateNode = gatedStateNode;
+
+        await backtracker.navigateBack(frame.state.screenTitle ?? frame.parentTitle);
+        continue;
+      }
+
       // Check for app switching via appId change (non-link elements that open external apps)
       const isAppSwitched = nextStateSnapshot.appId !== undefined &&
                             nextStateSnapshot.appId !== currentAppId;
@@ -880,15 +986,25 @@ export async function explore(
       // This prevents recovery loops like Academy -> System Fonts where we
       // would otherwise keep the child frame alive and fail BACKTRACK_MISMATCH.
       let ancestorFrameIndex = -1;
-      if (!isExternalApp) {
-        for (let i = stack.length - 1; i >= 0; i--) {
-          if (stack[i].state.screenId === nextStateSnapshot.screenId) {
-            ancestorFrameIndex = i;
-            break;
-          }
+      for (let i = stack.length - 1; i >= 0; i--) {
+        const sameScreen = stack[i].state.screenId === nextStateSnapshot.screenId;
+        const sameAppIdentity =
+          nextStateSnapshot.appId === undefined ||
+          stack[i].appId === undefined ||
+          stack[i].appId === nextStateSnapshot.appId;
+        if (sameScreen && sameAppIdentity) {
+          ancestorFrameIndex = i;
+          break;
         }
       }
       if (ancestorFrameIndex >= 0 && ancestorFrameIndex < stack.length - 1) {
+        const remainingSiblingLabels = frame.elements
+          .slice(frame.elementIndex)
+          .map((candidate) => candidate.label);
+        console.log(
+          `[FRAME-RESUME-CONTEXT] frameTitle="${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}", ` +
+          `cursor=${frame.elementIndex}/${frame.elements.length}, remainingLabels=${JSON.stringify(remainingSiblingLabels)}`,
+        );
         console.log(
           `[FRAME-RESUME] "${element.label}" returned to ancestor frame depth=${ancestorFrameIndex} ` +
           `title="${stack[ancestorFrameIndex].state.screenTitle ?? "(none)"}"`,
@@ -953,7 +1069,7 @@ export async function explore(
         parentTitle: frame.state.screenTitle ?? frame.parentTitle,
         // Track app identity for app switching detection
         appId: nextStateSnapshot.appId ?? config.appId,
-        isExternalApp: isAppSwitched,
+        isExternalApp,
       });
       transitionLifecycle.transitionCommitted += 1;
       const nextStateNode = stateGraph.registerState(

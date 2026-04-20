@@ -81,18 +81,22 @@ export interface RunSummary {
     path: string[];
   }>;
   /** Page inventory. */
-  pages: Array<{
-    id: string;
-    screenId: string;
+    pages: Array<{
+      id: string;
+      screenId: string;
     screenTitle?: string;
     depth: number;
     path: string[];
     arrivedFrom: string | null;
     viaElement: string | null;
-    loadTimeMs: number;
-    clickableCount: number;
-    hasFailure: boolean;
-  }>;
+      loadTimeMs: number;
+      clickableCount: number;
+      hasFailure: boolean;
+      explorationStatus?: 'expanded' | 'reached-not-expanded';
+      stoppedByPolicy?: string;
+      ruleFamily?: string;
+      recoveryMethod?: string;
+    }>;
   /** Present when the run was aborted. */
   aborted?: boolean;
   /** Present when the run was aborted. */
@@ -199,6 +203,10 @@ export function generateSummaryJson(
       loadTimeMs: p.loadTimeMs,
       clickableCount: p.clickableCount,
       hasFailure: p.hasFailure,
+      explorationStatus: p.explorationStatus,
+      stoppedByPolicy: p.stoppedByPolicy,
+      ruleFamily: p.ruleFamily,
+      recoveryMethod: p.recoveryMethod,
     })),
   };
 

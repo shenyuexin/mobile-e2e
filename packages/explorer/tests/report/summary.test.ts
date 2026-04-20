@@ -22,6 +22,7 @@ function makePage(id: string, depth: number, path: string[], hasFailure = false)
     loadTimeMs: 100,
     clickableCount: 5,
     hasFailure,
+    explorationStatus: 'expanded',
   };
 }
 
@@ -49,6 +50,7 @@ const mockConfig: ExplorerConfig = {
   destructiveActionPolicy: 'skip',
   appId: 'com.example.app',
   reportDir: '/tmp/reports',
+  statefulFormPolicy: 'skip',
 };
 
 describe('generateSummaryJson', () => {
@@ -147,6 +149,25 @@ describe('generateSummaryJson', () => {
     assert.equal(summary.pages[0].id, 'p1');
     assert.equal(summary.pages[0].depth, 0);
     assert.equal(summary.pages[0].hasFailure, false);
+  });
+
+  it('includes reached-but-not-expanded page metadata', () => {
+    const page = makePage('p1', 1, ['Profile']);
+    page.screenTitle = 'Create shipping address';
+    page.explorationStatus = 'reached-not-expanded';
+    page.stoppedByPolicy = 'statefulFormPolicy:skip';
+    page.ruleFamily = 'stateful_form_entry';
+    page.recoveryMethod = 'backtrack-cancel-first';
+    const modules = inferModules([page]);
+    const summary = generateSummaryJson([page], [], modules, mockConfig, {
+      partial: false,
+      durationMs: 5000,
+    });
+
+    assert.equal(summary.pages[0].explorationStatus, 'reached-not-expanded');
+    assert.equal(summary.pages[0].stoppedByPolicy, 'statefulFormPolicy:skip');
+    assert.equal(summary.pages[0].ruleFamily, 'stateful_form_entry');
+    assert.equal(summary.pages[0].recoveryMethod, 'backtrack-cancel-first');
   });
 
   it('includes stateGraph summary when provided', () => {

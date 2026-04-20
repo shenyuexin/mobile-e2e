@@ -125,7 +125,10 @@ function formatPageLabel(
   samplingDetail?: SamplingPageDetail,
 ): string {
   const title = page.screenTitle || page.screenId;
-  const base = page.viaElement ? `${title}  [via: ${page.viaElement}]` : title;
+  let base = page.viaElement ? `${title}  [via: ${page.viaElement}]` : title;
+  if (page.explorationStatus === 'reached-not-expanded' && page.ruleFamily) {
+    base = `${base}  [reached, not expanded: ${page.ruleFamily}]`;
+  }
   if (!samplingDetail || samplingDetail.totalChildren <= 0) {
     return base;
   }

@@ -75,6 +75,8 @@ export type FailureStrategy = "retry-3" | "skip" | "handoff";
 
 /** How to handle elements that may cause destructive actions. */
 export type DestructiveActionPolicy = "skip" | "confirm" | "allow";
+/** How to handle stateful form-entry branches (create/add/manage/select address-like flows). */
+export type StatefulFormPolicy = "skip" | "confirm" | "allow";
 
 /** Target platform for the exploration session. */
 export type ExplorerPlatform =
@@ -108,6 +110,8 @@ export interface ExplorerConfig {
   platform: ExplorerPlatform;
   /** How to handle destructive elements (SPEC §4.4, R1-#1). */
   destructiveActionPolicy: DestructiveActionPolicy;
+  /** How to handle stateful form-entry branches that are risky but not strictly destructive. */
+  statefulFormPolicy?: StatefulFormPolicy;
   /** Bundle ID / package name of the target app. */
   appId: string;
   /** Base output directory for reports. */
@@ -233,6 +237,14 @@ export interface PageSnapshot {
   appId?: string;
   /** Whether this screen belongs to an external app (e.g., Safari opened from link). */
   isExternalApp?: boolean;
+  /** Whether this page was reached but intentionally not expanded further. */
+  explorationStatus?: "expanded" | "reached-not-expanded";
+  /** Policy or rule that stopped further exploration. */
+  stoppedByPolicy?: string;
+  /** Rule family responsible for classification. */
+  ruleFamily?: string;
+  /** Recovery or exit method after intentional stop. */
+  recoveryMethod?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +444,14 @@ export interface PageEntry {
   hasFailure: boolean;
   /** The original snapshot (for report generation). */
   snapshot?: PageSnapshot;
+  /** Whether this page was fully expanded or intentionally not expanded. */
+  explorationStatus?: "expanded" | "reached-not-expanded";
+  /** Policy or rule that stopped further exploration. */
+  stoppedByPolicy?: string;
+  /** Rule family responsible for classification. */
+  ruleFamily?: string;
+  /** Recovery or exit method after intentional stop. */
+  recoveryMethod?: string;
 }
 
 /** Action to take on failure. */
