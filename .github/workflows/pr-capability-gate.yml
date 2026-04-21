@@ -24,6 +24,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+          package-manager-cache: false
       - name: Validate capability PR metadata for guarded paths
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

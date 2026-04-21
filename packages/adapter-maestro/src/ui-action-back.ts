@@ -520,12 +520,18 @@ export async function navigateBackWithMaestroTool(
       preBackTreeHash = preBackState.data.screenSummary?.pageIdentity?.treeHash;
     }
 
-    const probe = await resolveIosEdgeSwipeProbe({
-      repoRoot,
-      deviceId,
-      sessionId: input.sessionId,
-      runnerProfile,
-    });
+    const probe = dryRun
+      ? {
+        viewportWidth: 390,
+        viewportHeight: 844,
+        navBarCenterY: undefined,
+      }
+      : await resolveIosEdgeSwipeProbe({
+        repoRoot,
+        deviceId,
+        sessionId: input.sessionId,
+        runnerProfile,
+      });
 
     const startX = Math.min(12, Math.max(5, 8));
     const endX = Math.max(startX + 40, Math.round(probe.viewportWidth * 0.65));
