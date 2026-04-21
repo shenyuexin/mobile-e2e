@@ -16,7 +16,7 @@ import {
   setNavigateBackTestHooksForTesting,
   resetNavigateBackTestHooksForTesting,
 } from "../src/index.ts";
-import type { NavigateBackTestHooks } from "../src/ui-action-tools.js";
+import type { NavigateBackTestHooks } from "../src/ui-action-back.js";
 
 // Per-test cleanup: prevents mock state leakage between tests
 afterEach(() => {

@@ -12,11 +12,13 @@ export {
   scrollAndResolveUiTargetWithMaestroTool,
   scrollOnlyWithMaestroTool,
   scrollAndTapElementWithMaestroTool,
+} from "./ui-action-tools.js";
+export {
   navigateBackWithMaestroTool,
   setNavigateBackTestHooksForTesting,
   resetNavigateBackTestHooksForTesting,
   type NavigateBackTestHooks,
-} from "./ui-action-tools.js";
+} from "./ui-action-back.js";
 export { waitForUiStableWithMaestro } from "./ui-stability.js";
 export {
   buildResolutionNextSuggestions,
