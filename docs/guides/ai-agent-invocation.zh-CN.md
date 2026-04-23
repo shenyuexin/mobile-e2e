@@ -142,6 +142,20 @@
 
 仅当焦点已明确、且没有更好的 selector 时，才考虑 `type_text`。
 
+### 3.4.1 返回上一页 / 后退导航
+
+`navigate_back`
+
+平台差异显著：
+
+- **Android**：确定性路径，通过 `adb shell input keyevent 4` 发送 KEYEVENT_BACK。支持级别 `full`。注意：在首页连续调用可能退出当前 app。
+- **iOS**：无系统级后退原语。支持两种策略：
+  - `selector_tap`（默认）：提供返回按钮 selector，通过点击 app 内返回按钮实现。支持级别 `conditional`。
+  - `edge_swipe`：从屏幕左边缘向右滑动。支持级别 `conditional`，依赖 axe（模拟器）或 WDA（真机）后端。
+- **iOS `target: "system"` 不支持**：会返回 `unsupportedOperation` 错误。
+
+建议：Android flow 中可直接使用；iOS flow 中优先用 `inspect_ui` 发现返回按钮 selector 后再调用。
+
 ### 3.5 执行关键动作并拿到可解释证据
 
 `perform_action_with_evidence`
@@ -210,6 +224,7 @@
 
 - `tap_element`
 - `type_into_element`
+- `navigate_back` — Android: `adb keyevent 4`（full）；iOS: selector-based app back button tap 或 edge swipe（conditional），system back 不支持
 
 滚动辅助（Android only）：
 

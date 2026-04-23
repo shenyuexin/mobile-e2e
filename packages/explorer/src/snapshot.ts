@@ -51,6 +51,9 @@ export function createSnapshotter(mcp: McpToolInterface) {
       const inspectData = inspectResult.data as unknown as Record<string, unknown>;
       const platformHooks = resolveExplorerPlatformHooks(config.platform);
       const uiTree = platformHooks.parseInspectUi(inspectData, { fallbackToDataRoot: true }) as UiHierarchy;
+      const pageContext = typeof inspectData.pageContext === "object" && inspectData.pageContext !== null
+        ? inspectData.pageContext
+        : undefined;
 
       // Take screenshot
       const screenshotResult = await mcp.takeScreenshot();
@@ -82,6 +85,7 @@ export function createSnapshotter(mcp: McpToolInterface) {
         loadTimeMs: Date.now() - tapStart,
         stabilityScore: 1.0,
         appId,
+        pageContext: pageContext as PageSnapshot["pageContext"],
         isExternalApp,
       };
     },

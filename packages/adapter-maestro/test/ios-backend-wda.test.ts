@@ -30,6 +30,29 @@ test("probeAvailability returns unavailable when WDA is not running", async () =
   assert.ok(result.error?.includes("not reachable") || result.error?.includes("failed"));
 });
 
+test("probePreflightReadiness uses WDA /status instead of /source", async () => {
+  const backend = new WdaRealDeviceBackend();
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    calls.push(String(input));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ value: { sessionId: "abc12345" } }),
+    } as Response;
+  }) as typeof fetch;
+
+  try {
+    const result = await backend.probePreflightReadiness("device-123");
+    assert.equal(result.available, true);
+    assert.deepEqual(calls, ["http://localhost:8100/status"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("buildTapCommand returns WDA HTTP descriptor", () => {
   const backend = new WdaRealDeviceBackend();
   const cmd = backend.buildTapCommand("device-123", 100, 200);
@@ -66,6 +89,7 @@ test("buildScreenshotCommand returns WDA HTTP descriptor", () => {
 
 test("transformWdaSource strips XCUIElementType prefix and maps fields", () => {
   const backend = new WdaRealDeviceBackend();
+  type WdaSourceInput = Parameters<typeof backend.transformWdaSource>[0];
   const wdaSource = {
     type: "XCUIElementTypeButton",
     name: "Submit",
@@ -74,8 +98,8 @@ test("transformWdaSource strips XCUIElementType prefix and maps fields", () => {
     rect: { x: 50, y: 100, width: 200, height: 50 },
     isEnabled: true,
     children: [],
-  };
-  const transformed = backend.transformWdaSource(wdaSource as any);
+  } satisfies WdaSourceInput;
+  const transformed = backend.transformWdaSource(wdaSource);
   assert.equal(transformed.type, "Button");
   assert.equal(transformed.AXLabel, "Submit");
   assert.equal(transformed.title, "Submit button");
@@ -87,14 +111,15 @@ test("transformWdaSource strips XCUIElementType prefix and maps fields", () => {
 
 test("transformWdaSource handles nested children", () => {
   const backend = new WdaRealDeviceBackend();
+  type WdaSourceInput = Parameters<typeof backend.transformWdaSource>[0];
   const wdaSource = {
     type: "XCUIElementTypeCell",
     name: "Cell 1",
     children: [
       { type: "XCUIElementTypeStaticText", name: "Text", children: [] },
     ],
-  };
-  const transformed = backend.transformWdaSource(wdaSource as any);
+  } satisfies WdaSourceInput;
+  const transformed = backend.transformWdaSource(wdaSource);
   assert.equal(transformed.type, "Cell");
   assert.equal(transformed.custom_actions.length, 1);
   assert.equal(transformed.children.length, 1);
@@ -104,12 +129,13 @@ test("transformWdaSource handles nested children", () => {
 
 test("transformWdaSource handles non-clickable types", () => {
   const backend = new WdaRealDeviceBackend();
+  type WdaSourceInput = Parameters<typeof backend.transformWdaSource>[0];
   const wdaSource = {
     type: "XCUIElementTypeStaticText",
     name: "Label",
     children: [],
-  };
-  const transformed = backend.transformWdaSource(wdaSource as any);
+  } satisfies WdaSourceInput;
+  const transformed = backend.transformWdaSource(wdaSource);
   assert.equal(transformed.type, "StaticText");
   assert.deepEqual(transformed.custom_actions, []);
 });

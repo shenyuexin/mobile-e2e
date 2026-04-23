@@ -13,6 +13,15 @@ export interface AccessProfile {
   deny: string[];
 }
 
+/**
+ * Policy context for interruption-related operations.
+ * Loaded by MCP server and passed to adapter for policy-aware resolution.
+ */
+export interface InterruptionPolicyContext {
+  accessProfile: AccessProfile;
+  policyProfileName: string;
+}
+
 export interface AccessPolicyConfig {
   profiles: Record<string, AccessProfile>;
 }

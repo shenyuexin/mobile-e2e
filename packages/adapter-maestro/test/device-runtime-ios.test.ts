@@ -76,6 +76,13 @@ test("buildIosLogLevelPredicate returns no-filter note for V level", () => {
   assert.equal(result.actualApplied, false);
 });
 
+test("buildIosLogLevelPredicate returns undefined for invalid level (default case)", () => {
+  const result = buildIosLogLevelPredicate("X" as "V" | "D" | "I" | "W" | "E" | "F");
+  assert.equal(result.levelPredicate, undefined);
+  assert.equal(result.actualApplied, false);
+  assert.equal(result.levelNote, undefined);
+});
+
 // ── extractIosSimulatorProcessId ────────────────────────────────────────────
 
 test("extractIosSimulatorProcessId extracts PID from launchctl output", () => {
@@ -89,6 +96,24 @@ test("extractIosSimulatorProcessId extracts PID from launchctl output", () => {
 test("extractIosSimulatorProcessId returns undefined for no match", () => {
   const output = `PID\tStatus\tLabel
 67890\t0\tcom.other.service`;
+  const result = extractIosSimulatorProcessId(output, "com.example.app");
+  assert.equal(result, undefined);
+});
+
+test("extractIosSimulatorProcessId handles carriage returns in output", () => {
+  const output = "PID\tStatus\tLabel\r\n12345\t0\tcom.example.app\r\n";
+  const result = extractIosSimulatorProcessId(output, "com.example.app");
+  assert.equal(result, "12345");
+});
+
+test("extractIosSimulatorProcessId returns undefined for empty output", () => {
+  const result = extractIosSimulatorProcessId("", "com.example.app");
+  assert.equal(result, undefined);
+});
+
+test("extractIosSimulatorProcessId returns undefined when PID is not numeric", () => {
+  const output = `PID\tStatus\tLabel
+abc\t0\tcom.example.app`;
   const result = extractIosSimulatorProcessId(output, "com.example.app");
   assert.equal(result, undefined);
 });
@@ -114,6 +139,23 @@ test("extractIosPhysicalProcessId handles app names with special regex chars", (
   assert.equal(result, "999");
 });
 
+test("extractIosPhysicalProcessId handles carriage returns in output", () => {
+  const output = "10446   /private/var/containers/Bundle/Application/UUID/ExampleApp.app/ExampleApp\r\n11452   /System/Library/CoreServices/SpringBoard.app/SpringBoard\r\n";
+  const result = extractIosPhysicalProcessId(output, "ExampleApp");
+  assert.equal(result, "10446");
+});
+
+test("extractIosPhysicalProcessId returns undefined for empty output", () => {
+  const result = extractIosPhysicalProcessId("", "ExampleApp");
+  assert.equal(result, undefined);
+});
+
+test("extractIosPhysicalProcessId matches case-insensitively", () => {
+  const output = `10446   /private/var/containers/Bundle/Application/UUID/exampleapp.app/exampleapp`;
+  const result = extractIosPhysicalProcessId(output, "ExampleApp");
+  assert.equal(result, "10446");
+});
+
 // ── extractIosPhysicalAppName ───────────────────────────────────────────────
 
 test("extractIosPhysicalAppName extracts app name from devicectl output", () => {
@@ -137,6 +179,22 @@ OtherApp    com.other.app           2.0       2`;
 test("extractIosPhysicalAppName handles empty output", () => {
   const result = extractIosPhysicalAppName("", "com.example.app");
   assert.equal(result, undefined);
+});
+
+test("extractIosPhysicalAppName handles carriage returns in output", () => {
+  const output = "Apps installed:\r\nName        Bundle Identifier       Version   Bundle Version\r\n-------     ---------------------   -------   --------------\r\nExampleApp  com.example.app         1.0       1\r\n";
+  const result = extractIosPhysicalAppName(output, "com.example.app");
+  assert.equal(result, "ExampleApp");
+});
+
+test("extractIosPhysicalAppName returns first match when multiple apps share bundle id prefix", () => {
+  const output = `Apps installed:
+Name        Bundle Identifier       Version   Bundle Version
+-------     ---------------------   -------   --------------
+ExampleApp  com.example.app         1.0       1
+ExampleAppPro  com.example.app.pro   2.0       2`;
+  const result = extractIosPhysicalAppName(output, "com.example.app");
+  assert.equal(result, "ExampleApp");
 });
 
 test("isIosPhysicalDeviceId distinguishes simulator UUIDs from real-device UDIDs", () => {

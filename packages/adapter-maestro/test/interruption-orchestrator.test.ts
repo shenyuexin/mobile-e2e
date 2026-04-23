@@ -116,3 +116,53 @@ test("pickEventSource returns first signal source", () => {
 test("pickEventSource falls back to state_summary for empty signals", () => {
   assert.equal(pickEventSource([]), "state_summary");
 });
+
+test("buildResumeCheckpoint preserves each actionType in multi-action context", () => {
+  const actionTypes: import("@mobile-e2e-mcp/contracts").SupportedActionType[] = [
+    "tap_element",
+    "type_into_element",
+    "scroll_and_tap_element",
+    "wait_for_ui",
+  ];
+
+  const checkpoints = actionTypes.map((actionType, i) =>
+    buildResumeCheckpoint({
+      actionId: `action-${i}`,
+      sessionId: "session-multi",
+      platform: i % 2 === 0 ? "android" : "ios",
+      actionType,
+    })
+  );
+
+  checkpoints.forEach((checkpoint, i) => {
+    assert.equal(checkpoint.actionType, actionTypes[i]);
+  });
+});
+
+test("hasStateDrift returns true when readiness changes", () => {
+  const before = { appPhase: "home", readiness: "stable" as const };
+  const after = { appPhase: "home", readiness: "loading" as const };
+  assert.equal(hasStateDrift(before, after), true);
+});
+
+test("hasStateDrift returns true when screenId changes", () => {
+  const before = { appPhase: "home", readiness: "stable" as const, screenId: "screen-a" };
+  const after = { appPhase: "home", readiness: "stable" as const, screenId: "screen-b" };
+  assert.equal(hasStateDrift(before, after), true);
+});
+
+test("hasStateDrift returns true when blockingSignals changes", () => {
+  const before = { appPhase: "home", readiness: "stable" as const, blockingSignals: [] };
+  const after = { appPhase: "home", readiness: "stable" as const, blockingSignals: ["permission_prompt"] };
+  assert.equal(hasStateDrift(before, after), true);
+});
+
+test("hasStateDrift returns false when all fields match including optional fields", () => {
+  const state = {
+    appPhase: "home",
+    readiness: "stable" as const,
+    screenId: "screen-a",
+    blockingSignals: ["overlay"],
+  };
+  assert.equal(hasStateDrift(state, { ...state }), false);
+});

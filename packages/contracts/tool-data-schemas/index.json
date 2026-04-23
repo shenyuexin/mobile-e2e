@@ -22,6 +22,9 @@
     },
     "get_session_state": {
       "$ref": "./get_session_state.schema.json"
+    },
+    "navigate_back": {
+      "$ref": "./navigate_back.schema.json"
     }
   },
   "metadata": {

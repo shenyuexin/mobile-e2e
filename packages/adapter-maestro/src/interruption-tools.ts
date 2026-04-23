@@ -25,10 +25,10 @@ import {
   appendSessionTimelineEvent,
   isHighRiskInterruptionActionAllowed,
   isToolAllowedByProfile,
-  loadAccessProfile,
   loadInterruptionPolicyConfig,
   loadSessionRecord,
   persistInterruptionEvent,
+  type InterruptionPolicyContext,
 } from "@mobile-e2e-mcp/core";
 import { DEFAULT_RUNNER_PROFILE, resolveRepoPath } from "./harness-config.js";
 import { classifyInterruptionFromSignals } from "./interruption-classifier.js";
@@ -266,6 +266,7 @@ export async function classifyInterruptionWithMaestro(
 
 export async function resolveInterruptionWithMaestro(
   input: ResolveInterruptionInput,
+  policyContext?: InterruptionPolicyContext,
 ): Promise<ToolResult<ResolveInterruptionData>> {
   const startTime = Date.now();
   const repoRoot = resolveRepoPath();
@@ -343,8 +344,7 @@ export async function resolveInterruptionWithMaestro(
   });
 
   const matchedRule = decision.plan.matchedRule;
-  const policyProfileName = sessionRecord?.session.policyProfile ?? "sample-harness-default";
-  const accessProfile = await loadAccessProfile(repoRoot, policyProfileName);
+  const accessProfile = policyContext?.accessProfile;
   if (matchedRule && accessProfile) {
     const highRiskCheck = isHighRiskInterruptionActionAllowed(matchedRule, accessProfile);
     if (!highRiskCheck.allowed) {

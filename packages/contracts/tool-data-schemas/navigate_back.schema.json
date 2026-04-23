@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mobile-e2e-mcp.dev/schemas/tool-data/navigate_back.schema.json",
+  "title": "NavigateBackData",
+  "description": "Output payload for navigate_back — returns platform-specific back navigation result with evidence.",
+  "type": "object",
+  "required": ["dryRun", "target", "executedStrategy", "supportLevel", "fallbackUsed"],
+  "properties": {
+    "dryRun": { "type": "boolean" },
+    "target": { "type": "string", "enum": ["app", "system"] },
+    "executedStrategy": {
+      "type": "string",
+      "enum": ["android_keyevent", "ios_selector_tap", "ios_edge_swipe", "unsupported"]
+    },
+    "supportLevel": {
+      "type": "string",
+      "enum": ["full", "conditional", "partial", "unsupported"]
+    },
+    "fallbackUsed": { "type": "boolean" },
+    "command": { "type": ["string", "null"] },
+    "exitCode": { "type": ["integer", "null"] },
+    "preStateSummary": { "type": ["string", "null"] },
+    "stateChanged": { "type": ["boolean", "string"] },
+    "capabilityNote": { "type": ["string", "null"] },
+    "postBackVerified": { "type": "boolean" },
+    "postBackStableAfterMs": { "type": "number" },
+    "postBackPageIdentity": {
+      "type": "object",
+      "properties": {
+        "treeHash": { "type": ["string", "null"] },
+        "visibleElementCount": { "type": "number" },
+        "hasBackAffordance": { "type": "boolean" },
+        "backAffordanceLabel": { "type": ["string", "null"] },
+        "primaryHeading": { "type": ["string", "null"] },
+        "identitySource": { "type": ["string", "null"] },
+        "identityConfidence": { "type": "number" },
+        "isTopLevel": { "type": "boolean" },
+        "probableParentScreenId": { "type": ["string", "null"] }
+      }
+    },
+    "pageTreeHashUnchanged": { "type": "boolean" },
+    "preBackTreeHash": { "type": ["string", "null"] },
+    "postBackTreeHash": { "type": ["string", "null"] }
+  }
+}

@@ -5,6 +5,7 @@
  * Types must be stable and well-documented.
  */
 
+import type { PageContext } from "@mobile-e2e-mcp/contracts";
 import type { McpToolInterface } from "./mcp-adapter.js";
 
 // ---------------------------------------------------------------------------
@@ -235,6 +236,8 @@ export interface PageSnapshot {
   stabilityScore: number;
   /** Bundle ID of the app that owns this screen (for app switching detection). */
   appId?: string;
+  /** Harness-detected page context, if inspect_ui surfaced it. */
+  pageContext?: PageContext;
   /** Whether this screen belongs to an external app (e.g., Safari opened from link). */
   isExternalApp?: boolean;
   /** Whether this page was reached but intentionally not expanded further. */

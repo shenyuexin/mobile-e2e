@@ -1,9 +1,8 @@
 import type { ReasonCode } from "./reason-codes.js";
+import type { Platform, RunnerProfile, CapabilitySupportLevel } from "./types/platform.js";
 
-export type Platform = "android" | "ios";
+export type { Platform, RunnerProfile, CapabilitySupportLevel } from "./types/platform.js";
 export type ToolStatus = "success" | "failed" | "partial";
-export type RunnerProfile = "phase1" | "native_android" | "native_ios" | "flutter_android";
-export type CapabilitySupportLevel = "full" | "conditional" | "partial" | "unsupported";
 export type ManualHandoffReason = "otp_required" | "captcha_required" | "consent_required" | "protected_page" | "secure_input_required" | "unknown";
 export type ProtectedPageObservability = "normal" | "ui_tree_only" | "screenshot_limited" | "limited";
 export type ExecutionEvidenceKind = "ui_dump" | "screenshot" | "screen_recording" | "log" | "crash_signal" | "diagnostics_bundle" | "debug_summary" | "performance_trace" | "performance_summary" | "performance_export";
@@ -1035,6 +1034,7 @@ export interface GetScreenSummaryData {
   screenSummary: StateSummary;
   evidence?: ExecutionEvidence[];
   content?: string;
+  pageContext?: import("./page-context.js").PageContext;
   uiSummary?: InspectUiSummary;
   logSummary?: LogSummary;
   crashSummary?: LogSummary;
@@ -1110,6 +1110,8 @@ export interface PerformActionWithEvidenceData {
   evidenceDelta: EvidenceDeltaSummary;
   preStateSummary?: StateSummary;
   postStateSummary?: StateSummary;
+  preActionPageContext?: import("./page-context.js").PageContext;
+  preActionInterruptionHint?: import("./types.js").InterruptionClassification;
   postActionRefreshAttempted?: boolean;
   retryRecommendationTier?: "none" | "inspect_only" | "refine_selector" | "wait_then_retry" | "refresh_context" | "recover_first" | "handoff_required";
   retryRecommendation?: RetryRecommendation;
@@ -1766,6 +1768,7 @@ export interface InspectUiData {
   evidence?: ExecutionEvidence[];
   platformSupportNote?: string;
   content?: string;
+  pageContext?: import("./page-context.js").PageContext;
   summary?: InspectUiSummary;
 }
 export type WaitForUiMode = "visible" | "gone" | "unique";

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
-import { persistActionRecord } from "@mobile-e2e-mcp/core";
+import { persistActionRecord, recordFailureSignature, recordBaselineEntry } from "@mobile-e2e-mcp/core";
 import { suggestKnownRemediationWithMaestro } from "../src/index.ts";
 import { resolveRepoPath } from "../src/harness-config.js";
 
@@ -273,5 +273,300 @@ test("suggestKnownRemediationWithMaestro populates skillGuidance when attributio
   assert.ok(
     remediation.data.remediation.includes(remediation.data.skillGuidance!.firstFix),
     `Expected remediation to include skill guidance firstFix: ${remediation.data.skillGuidance!.firstFix}`,
+  );
+});
+
+test("suggestKnownRemediationWithMaestro includes indexed remediation from failure signature", async () => {
+  const sessionId = `remediation-indexed-${Date.now()}`;
+  const actionId = `indexed-action-${Date.now()}`;
+  const indexedActionId = `indexed-sig-${Date.now()}`;
+  const artifactsDir = path.join(repoRoot, "artifacts", "maestro-actions", sessionId);
+  await mkdir(artifactsDir, { recursive: true });
+
+  await writeFile(
+    path.join(artifactsDir, "tap.execution.md"),
+    [
+      "# Tap execution evidence",
+      "",
+      "- startupPhase: runner_execution",
+      "- reasonCode: ADAPTER_ERROR",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  await persistActionRecord(repoRoot, {
+    actionId,
+    sessionId,
+    intent: { actionType: "tap_element", text: "Submit", value: "" },
+    outcome: {
+      actionId,
+      actionType: "tap_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: false,
+      fallbackUsed: false,
+      retryCount: 1,
+      outcome: "failed",
+      postState: {
+        appPhase: "unknown",
+        readiness: "waiting_ui",
+        blockingSignals: [],
+      },
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "maestro-actions", sessionId, "tap.execution.md"),
+        supportLevel: "partial",
+        description: "Indexed remediation test evidence",
+      },
+    ],
+    lowLevelStatus: "failed",
+    lowLevelReasonCode: REASON_CODES.adapterError,
+    updatedAt: new Date().toISOString(),
+  });
+
+  // Seed the failure index with a known remediation using a distinct actionId
+  // to avoid overwrite by explainLastFailureWithMaestro's internal recordFailureSignature call.
+  await recordFailureSignature(repoRoot, {
+    actionId: indexedActionId,
+    sessionId,
+    signature: {
+      actionType: "tap_element",
+      screenId: "submit-screen",
+      affectedLayer: "ui_state",
+      topSignal: undefined,
+      interruptionCategory: undefined,
+      readiness: "waiting_ui",
+      progressMarker: undefined,
+      stateChangeCategory: undefined,
+    },
+    causalSignals: ["selector did not resolve to a visible element"],
+    replayValue: "low",
+    checkpointDivergence: "outcome_mismatch",
+    fallbackUsed: false,
+    evidenceFingerprint: undefined,
+    baselineRelation: "drifted_checkpoint",
+    remediation: [
+      "Indexed hint: verify the target element exists in the current screen hierarchy before tapping.",
+      "Indexed hint: use wait_for_ui with a visibility predicate before retrying.",
+    ],
+    updatedAt: new Date().toISOString(),
+  });
+
+  // Pass the seeded actionId explicitly so indexed remediation lookup finds our entry.
+  const remediation = await suggestKnownRemediationWithMaestro({ sessionId, actionId: indexedActionId, platform: "android" });
+
+  assert.equal(remediation.status, "success");
+  assert.ok(
+    remediation.data.remediation.length > 0,
+    "Expected remediation array to be populated when indexed remediation exists",
+  );
+  assert.ok(
+    remediation.data.remediation.some((item) => /indexed hint|selector exists|wait_for_ui/i.test(item)),
+    `Expected indexed remediation hint, got: ${JSON.stringify(remediation.data.remediation)}`,
+  );
+});
+
+test("suggestKnownRemediationWithMaestro includes similar-failures hint when matching signatures exist", async () => {
+  const sessionId = `remediation-similar-${Date.now()}`;
+  const actionId = `similar-action-${Date.now()}`;
+  const olderActionId = `older-similar-action-${Date.now() - 1000}`;
+  const artifactsDir = path.join(repoRoot, "artifacts", "maestro-actions", sessionId);
+  await mkdir(artifactsDir, { recursive: true });
+
+  await writeFile(
+    path.join(artifactsDir, "tap.execution.md"),
+    [
+      "# Tap execution evidence",
+      "",
+      "- reasonCode: ADAPTER_ERROR",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  await persistActionRecord(repoRoot, {
+    actionId,
+    sessionId,
+    intent: { actionType: "tap_element", text: "Login", value: "" },
+    outcome: {
+      actionId,
+      actionType: "tap_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: false,
+      fallbackUsed: false,
+      retryCount: 0,
+      outcome: "failed",
+      postState: {
+        appPhase: "unknown",
+        readiness: "waiting_ui",
+        blockingSignals: [],
+      },
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "maestro-actions", sessionId, "tap.execution.md"),
+        supportLevel: "partial",
+        description: "Similar failures test evidence",
+      },
+    ],
+    lowLevelStatus: "failed",
+    lowLevelReasonCode: REASON_CODES.adapterError,
+    updatedAt: new Date().toISOString(),
+  });
+
+  // Seed an older failure signature with matching characteristics
+  await recordFailureSignature(repoRoot, {
+    actionId: olderActionId,
+    sessionId: `older-session-${Date.now() - 2000}`,
+    signature: {
+      actionType: "tap_element",
+      screenId: "submit-screen",
+      affectedLayer: "ui_state",
+      topSignal: undefined,
+      interruptionCategory: undefined,
+      readiness: "waiting_ui",
+      progressMarker: undefined,
+      stateChangeCategory: undefined,
+    },
+    causalSignals: ["element not visible"],
+    replayValue: "low",
+    checkpointDivergence: "outcome_mismatch",
+    fallbackUsed: false,
+    evidenceFingerprint: undefined,
+    baselineRelation: "drifted_checkpoint",
+    remediation: ["Older incident: check element visibility before tapping."],
+    updatedAt: new Date().toISOString(),
+  });
+
+  const remediation = await suggestKnownRemediationWithMaestro({ sessionId, platform: "android" });
+
+  assert.equal(remediation.status, "success");
+  // When similar failures exist, the remediation should include the similarity hint
+  assert.ok(
+    remediation.data.remediation.some((item) => /resembles|previous incidents|closest matching|similar/i.test(item)),
+    `Expected similar-failures hint, got: ${JSON.stringify(remediation.data.remediation)}`,
+  );
+});
+
+test("suggestKnownRemediationWithMaestro includes baseline-divergence hint when baseline exists", async () => {
+  const sessionId = `remediation-baseline-${Date.now()}`;
+  const baselineActionId = `baseline-success-${Date.now()}`;
+  const currentActionId = `current-failed-${Date.now()}`;
+  const artifactsDir = path.join(repoRoot, "artifacts", "maestro-actions", sessionId);
+  await mkdir(artifactsDir, { recursive: true });
+
+  // Write a successful baseline action record
+  await writeFile(
+    path.join(artifactsDir, "tap_baseline.execution.md"),
+    [
+      "# Tap execution evidence (baseline)",
+      "",
+      "- reasonCode: OK",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  await persistActionRecord(repoRoot, {
+    actionId: baselineActionId,
+    sessionId,
+    intent: { actionType: "tap_element", text: "Submit", value: "" },
+    outcome: {
+      actionId: baselineActionId,
+      actionType: "tap_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: true,
+      fallbackUsed: false,
+      retryCount: 0,
+      outcome: "success",
+      progressMarker: "full",
+      postState: {
+        appPhase: "idle",
+        readiness: "waiting_ui",
+        blockingSignals: [],
+        screenId: "baseline-screen",
+      },
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "maestro-actions", sessionId, "tap_baseline.execution.md"),
+        supportLevel: "partial",
+        description: "Baseline success evidence",
+      },
+    ],
+    lowLevelStatus: "ok",
+    lowLevelReasonCode: REASON_CODES.ok,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await recordBaselineEntry(repoRoot, {
+    actionId: baselineActionId,
+    actionType: "tap_element",
+    selector: { text: "Submit" },
+    screenId: "baseline-screen",
+    appId: undefined,
+    outcome: "success",
+    updatedAt: new Date().toISOString(),
+  });
+
+  // Write a failed current action record with different screen
+  await writeFile(
+    path.join(artifactsDir, "tap_current.execution.md"),
+    [
+      "# Tap execution evidence (current)",
+      "",
+      "- reasonCode: ADAPTER_ERROR",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  await persistActionRecord(repoRoot, {
+    actionId: currentActionId,
+    sessionId,
+    intent: { actionType: "tap_element", text: "Submit", value: "" },
+    outcome: {
+      actionId: currentActionId,
+      actionType: "tap_element",
+      resolutionStrategy: "deterministic",
+      stateChanged: false,
+      fallbackUsed: false,
+      retryCount: 0,
+      outcome: "failed",
+      postState: {
+        appPhase: "unknown",
+        readiness: "waiting_ui",
+        blockingSignals: [],
+        screenId: "different-screen",
+      },
+    },
+    evidenceDelta: {},
+    evidence: [
+      {
+        kind: "log",
+        path: path.posix.join("artifacts", "maestro-actions", sessionId, "tap_current.execution.md"),
+        supportLevel: "partial",
+        description: "Current failed evidence",
+      },
+    ],
+    lowLevelStatus: "failed",
+    lowLevelReasonCode: REASON_CODES.adapterError,
+    updatedAt: new Date().toISOString(),
+  });
+
+  const remediation = await suggestKnownRemediationWithMaestro({ sessionId, actionId: currentActionId, platform: "android" });
+
+  assert.equal(remediation.status, "success");
+  // When baseline divergence exists, the remediation should include the divergence hint
+  assert.ok(
+    remediation.data.remediation.some((item) => /diverges|successful baseline|differences/i.test(item)),
+    `Expected baseline-divergence hint, got: ${JSON.stringify(remediation.data.remediation)}`,
   );
 });

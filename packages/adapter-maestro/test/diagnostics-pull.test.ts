@@ -56,6 +56,24 @@ test("boundedRemoteFileRead returns read_failed when cat fails and pull fallback
   assert.ok(result.errorMessage?.includes("Permission denied"));
 });
 
+test("boundedRemoteFileRead returns permission_denied when cat fails with No such file and pull fallback disabled", async () => {
+  mockRunner(() => ({
+    exitCode: 1,
+    stdout: "",
+    stderr: "cat: /data/nonexistent.txt: No such file or directory",
+  }));
+
+  const result = await diagnosticsPull.boundedRemoteFileRead("/repo", {
+    deviceId: "emulator-5554",
+    remotePath: "/data/nonexistent.txt",
+    allowPullFallback: false,
+  });
+
+  assert.equal(result.status, "permission_denied");
+  assert.equal(result.readMethod, "shell_cat");
+  assert.ok(result.errorMessage?.includes("No such file"));
+});
+
 test("boundedRemoteFileRead returns timeout when shell cat times out", async () => {
   mockRunner(() => ({
     exitCode: null,
@@ -126,6 +144,33 @@ test("boundedRemoteFileReadBatch respects maxFiles limit", async () => {
   assert.ok(results.length <= 2, `Expected at most 2 results, got ${results.length}`);
 });
 
+test("boundedRemoteFileReadBatch reads 3 files successfully with mocked executeRunner", async () => {
+  let callIndex = 0;
+  mockRunner((command: string[]) => {
+    callIndex++;
+    // Size check commands (stat/wc) return small sizes
+    if (command.some((c) => c.includes("stat") || c.includes("wc"))) {
+      return { exitCode: 0, stdout: `${100 + callIndex}`, stderr: "" };
+    }
+    // Cat commands return distinct content per file
+    if (command.some((c) => c.includes("cat"))) {
+      return { exitCode: 0, stdout: `content-${callIndex}`, stderr: "" };
+    }
+    return { exitCode: 1, stdout: "", stderr: "unknown" };
+  });
+
+  const results = await diagnosticsPull.boundedRemoteFileReadBatch("/repo", {
+    deviceId: "emulator-5554",
+    remotePaths: ["/data/anr/one.txt", "/data/anr/two.txt", "/data/anr/three.txt"],
+    totalBudgetMs: 10000,
+    timeoutMs: 3000,
+  });
+
+  assert.equal(results.length, 3, `Expected 3 results, got ${results.length}`);
+  assert.ok(results.every((r) => r.status === "success"), "All 3 files should succeed");
+  assert.ok(results.every((r) => r.bytesRead > 0), "All results should have bytesRead > 0");
+});
+
 // ── checkRemoteFileSize (mocked) ────────────────────────────────────────────
 
 test("checkRemoteFileSize returns number when stat succeeds", async () => {
@@ -148,6 +193,32 @@ test("checkRemoteFileSize returns too_large when size exceeds limit", async () =
 
   const result = await diagnosticsPull.checkRemoteFileSize("emulator-5554", "/data/anr/traces.txt", 5000);
   assert.equal(result, "too_large");
+});
+
+test("checkRemoteFileSize falls through stat to wc -c when stat fails", async () => {
+  let callCount = 0;
+  mockRunner(() => {
+    callCount++;
+    // First call (stat) fails, second call (wc -c) succeeds
+    if (callCount === 1) {
+      return { exitCode: 1, stdout: "", stderr: "stat: not found" };
+    }
+    return { exitCode: 0, stdout: "4096\n", stderr: "" };
+  });
+
+  const result = await diagnosticsPull.checkRemoteFileSize("emulator-5554", "/data/anr/traces.txt", 5000);
+  assert.equal(result, 4096);
+});
+
+test("checkRemoteFileSize falls through all 3 levels and returns check_failed", async () => {
+  mockRunner(() => ({
+    exitCode: 1,
+    stdout: "",
+    stderr: "command failed",
+  }));
+
+  const result = await diagnosticsPull.checkRemoteFileSize("emulator-5554", "/data/anr/traces.txt", 5000);
+  assert.equal(result, "check_failed");
 });
 
 // ── parseAnrTraceMetadata (already good — keep existing tests) ──────────────
