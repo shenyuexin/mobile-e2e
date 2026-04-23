@@ -44,6 +44,8 @@ import {
   shouldSkipPage,
 } from "./circuit-breaker.js";
 import { generateReport } from "./report.js";
+import { decidePageContextAction } from "./page-context-router.js";
+import { decideHeuristicPageAction } from "./page-context-heuristic.js";
 
 // ---------------------------------------------------------------------------
 // Sampling helpers — high-fanout collection page representative-child flow
@@ -190,6 +192,56 @@ type NavValidation =
   | { navigated: true; isModalOverlay?: boolean }
   | { navigated: false; reason: string; shouldDismissDialog?: boolean };
 
+type ExplorerPageAction = {
+  type: "dfs" | "gated";
+  reason: string;
+  isInterruption?: boolean;
+  interruptionType?: string;
+  recoveryMethod?: string;
+  ruleFamily?: string;
+};
+
+function decideExplorerPageAction(
+  snapshot: PageSnapshot,
+  config: ExplorerConfig,
+): ExplorerPageAction {
+  const routerDecision = decidePageContextAction(snapshot.pageContext, config);
+  switch (routerDecision.type) {
+    case "dfs":
+      return {
+        type: "dfs",
+        reason: routerDecision.reason,
+        isInterruption: routerDecision.isInterruption,
+        interruptionType: routerDecision.interruptionType,
+        recoveryMethod: routerDecision.recoveryMethod,
+        ruleFamily: routerDecision.ruleFamily,
+      };
+    case "gated":
+      return {
+        type: "gated",
+        reason: routerDecision.reason,
+        isInterruption: routerDecision.isInterruption,
+        interruptionType: routerDecision.interruptionType,
+        recoveryMethod: routerDecision.recoveryMethod,
+        ruleFamily: routerDecision.ruleFamily,
+      };
+    case "defer-to-heuristic":
+      break;
+  }
+  return decideHeuristicPageAction(snapshot);
+}
+
+function markSnapshotAsGated(
+  snapshot: PageSnapshot,
+  decision: ExplorerPageAction,
+  policy: string,
+): void {
+  snapshot.explorationStatus = "reached-not-expanded";
+  snapshot.stoppedByPolicy = policy;
+  snapshot.ruleFamily = decision.ruleFamily;
+  snapshot.recoveryMethod = decision.recoveryMethod ?? "backtrack-cancel-first";
+}
+
 function hasClickableLabel(
   clickableElements: Array<{ label: string }>,
   expectedLabel: string,
@@ -221,20 +273,6 @@ function isStatefulFormEntry(
   const hasDomainSignal = matchesStatefulKeyword(title, domainKeywords) || matchesStatefulKeyword(label, domainKeywords);
 
   return hasEntrySignal && hasDomainSignal;
-}
-
-function isDismissibleNicknameDialog(snapshot: PageSnapshot): boolean {
-  if (snapshot.appId !== "com.bbk.account") {
-    return false;
-  }
-
-  const title = snapshot.screenTitle?.trim().toLowerCase();
-  if (title !== "account nickname") {
-    return false;
-  }
-
-  return hasClickableLabel(snapshot.clickableElements, "Cancel")
-    && hasClickableLabel(snapshot.clickableElements, "OK");
 }
 
 /**
@@ -603,6 +641,20 @@ export async function explore(
       currentStateNode = stateGraph.registerState(snapshot, frame.state.structureHash ?? "");
       recordPageSuccess(circuitBreaker); // reset per-page counter for new page
 
+      const pageAction = decideExplorerPageAction(snapshot, config);
+      if (pageAction.type === "gated") {
+        console.log(
+          `[PAGE-CONTEXT] gated page at depth=${frame.depth}, title="${snapshot.screenTitle ?? snapshot.screenId}", ` +
+          `reason="${pageAction.reason}"`,
+        );
+        markSnapshotAsGated(snapshot, pageAction, `pageContext:${pageAction.ruleFamily ?? "heuristic"}`);
+        stack.pop();
+        if (frame.depth > 0) {
+          await backtracker.navigateBack(frame.parentTitle);
+        }
+        continue;
+      }
+
       // --- Sampling check: high-fanout collection pages (smoke mode) ---
       const matchedRule = matchSamplingRule(
         config.samplingRules,
@@ -857,27 +909,29 @@ export async function explore(
         `to="${nextStateSnapshot.screenTitle ?? nextStateSnapshot.screenId}"`,
       );
 
-      if (isDismissibleNicknameDialog(nextStateSnapshot)) {
+      const pageAction = decideExplorerPageAction(nextStateSnapshot, config);
+      if (pageAction.type === "gated") {
         console.log(
-          `[MODAL-DISMISS] Recognized dismissible nickname dialog in ${nextStateSnapshot.appId}; ` +
-          `recording visit and dismissing via Cancel-first backtrack`,
+          `[PAGE-CONTEXT] gated page after tap "${element.label.slice(0, 40)}": ` +
+          `title="${nextStateSnapshot.screenTitle ?? nextStateSnapshot.screenId}", reason="${pageAction.reason}"`,
         );
+        markSnapshotAsGated(nextStateSnapshot, pageAction, `pageContext:${pageAction.ruleFamily ?? "heuristic"}`);
 
         visited.register({ alreadyVisited: false }, nextStateSnapshot, [...frame.path, element.label]);
         transitionLifecycle.transitionCommitted += 1;
-        const modalStateNode = stateGraph.registerState(
+        const gatedStateNode = stateGraph.registerState(
           nextStateSnapshot,
           hashUiStructure(nextStateSnapshot.uiTree),
         );
         stateGraph.registerTransition({
           from: currentStateNode.id,
-          to: modalStateNode.id,
+          to: gatedStateNode.id,
           kind: "cancel",
           intentLabel: element.label,
           committed: true,
           attempts: elementRetries + 1,
         });
-        currentStateNode = modalStateNode;
+        currentStateNode = gatedStateNode;
 
         await backtracker.navigateBack(frame.state.screenTitle ?? frame.parentTitle);
         continue;

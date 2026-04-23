@@ -139,6 +139,7 @@ For AI/code-analysis workflows, use this order:
 For MCP tool usage and invocation sequencing after installation, use:
 
 - [`docs/guides/ai-agent-invocation.zh-CN.md`](docs/guides/ai-agent-invocation.zh-CN.md) — canonical tool-selection and invocation guide
+- [`docs/guides/agent-policy-prompt-sync.md`](docs/guides/agent-policy-prompt-sync.md) — agent policy prompt sync and current OpenCode config layering
 - [`docs/guides/golden-path.md`](docs/guides/golden-path.md) — first-run closed loop
 - [`docs/guides/flow-generation.md`](docs/guides/flow-generation.md) — record/export/replay topic guide
 - [`docs/guides/ui-stabilization-timing.md`](docs/guides/ui-stabilization-timing.md) — UI stabilization timing: why settle delays matter, per-action timing guide, flow authoring best practices
@@ -146,6 +147,26 @@ For MCP tool usage and invocation sequencing after installation, use:
 Why: packed context may omit some files (binary assets, ignored paths, etc.), so final conclusions must be verified against live files.
 
 Agent guardrail: if you are extending capability surface rather than making a tiny local fix, do not start implementation from memory. Re-read the engineering guideline in the current session and map the change across contracts, core/governance, adapter runtime, MCP exposure, docs, and tests.
+
+### Repo-owned agent policy prompts
+
+This repo keeps canonical policy prompt sources under `agent_policies/` and runtime-facing prompt build/sync scripts under `scripts/agent-prompts/`.
+
+Quick commands:
+
+```bash
+pnpm exec tsx scripts/agent-prompts/build-agent-prompt.ts --agent prometheus
+pnpm agent-prompts:sync
+pnpm agent-prompts:check
+```
+
+Current configuration split:
+
+- repo `opencode.json` → repo-local instruction loading
+- `~/.config/opencode/opencode.json` → global providers/plugins/models
+- `~/.config/opencode/oh-my-openagent.json` → runtime agent registry and `prompt_append`
+
+For the current setup, `exploratory` is treated as a policy build target, not a standalone runtime agent role. Details: [`docs/guides/agent-policy-prompt-sync.md`](docs/guides/agent-policy-prompt-sync.md)
 
 ## Monorepo at a Glance
 
@@ -207,7 +228,7 @@ Tool registry/signature dispatch live in `packages/mcp-server/src/server.ts`, wh
 
 ## Complete MCP Tool Catalog (Current)
 
-The server currently exposes **63 tools**. For AI agents, this is the current tool surface.
+The server currently exposes **64 tools**. For AI agents, this is the current tool surface.
 
 ### 1) Session & lifecycle
 
@@ -227,7 +248,7 @@ The server currently exposes **63 tools**. For AI agents, this is the current to
 
 ### 5) Evidence, observability, and diagnostics
 
-`take_screenshot`, `record_screen`, `get_logs`, `get_crash_signals`, `collect_diagnostics`, `collect_debug_evidence`, `get_screen_summary`, `get_session_state`, `capture_js_console_logs`, `capture_js_network_events`, `list_js_debug_targets`, `capture_element_screenshot`, `compare_visual_baseline`
+`take_screenshot`, `record_screen`, `get_logs`, `get_crash_signals`, `collect_diagnostics`, `collect_debug_evidence`, `get_screen_summary`, `get_session_state`, `get_page_context`, `capture_js_console_logs`, `capture_js_network_events`, `list_js_debug_targets`, `capture_element_screenshot`, `compare_visual_baseline`
 
 ### 6) Interruption handling
 

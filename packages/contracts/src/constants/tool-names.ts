@@ -55,6 +55,7 @@ export const TOOL_NAMES = {
   waitForUiStable: "wait_for_ui_stable",
   getScreenSummary: "get_screen_summary",
   getSessionState: "get_session_state",
+  getPageContext: "get_page_context",
 
   // UI actions
   tap: "tap",

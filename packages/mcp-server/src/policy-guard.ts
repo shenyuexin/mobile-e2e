@@ -1,6 +1,7 @@
 import { resolveRepoPath } from "@mobile-e2e-mcp/adapter-maestro";
-import { isToolAllowedByProfile, loadAccessProfile, loadSessionRecord } from "@mobile-e2e-mcp/core";
-import { REASON_CODES, type StartSessionInput, type ToolResult, TOOL_NAMES } from "@mobile-e2e-mcp/contracts";
+import type { AccessProfile, InterruptionPolicyContext } from "@mobile-e2e-mcp/core";
+import { isHighRiskInterruptionActionAllowed, isToolAllowedByProfile, loadAccessProfile, loadSessionRecord } from "@mobile-e2e-mcp/core";
+import { REASON_CODES, type InterruptionPolicyRuleV2, type StartSessionInput, type ToolResult, TOOL_NAMES } from "@mobile-e2e-mcp/contracts";
 
 const DEFAULT_POLICY_PROFILE = "sample-harness-default";
 
@@ -75,4 +76,41 @@ export async function enforcePolicyForTool<TInput>(toolName: string, input: TInp
 
 export async function validateStartSessionInput(input: StartSessionInput): Promise<void> {
   await validatePolicyProfile(input.policyProfile);
+}
+
+export function requiredScopesForInterruptionTool(toolName: string): readonly string[] {
+  switch (toolName) {
+    case TOOL_NAMES.resolveInterruption:
+      return ["interrupt", "interrupt-high-risk"];
+    case TOOL_NAMES.detectInterruption:
+    case TOOL_NAMES.classifyInterruption:
+    case TOOL_NAMES.resumeInterruptedAction:
+      return ["interrupt"];
+    default:
+      return [];
+  }
+}
+
+export async function loadInterruptionPolicyContext(sessionId: string): Promise<InterruptionPolicyContext | undefined> {
+  const repoRoot = resolveRepoPath();
+  const sessionRecord = await loadSessionRecord(repoRoot, sessionId);
+  const policyProfileName = sessionRecord?.session.policyProfile ?? DEFAULT_POLICY_PROFILE;
+  const accessProfile = await loadAccessProfile(repoRoot, policyProfileName);
+  if (!accessProfile) {
+    return undefined;
+  }
+  return { accessProfile, policyProfileName };
+}
+
+export function checkInterruptionRulePolicy(
+  matchedRule: InterruptionPolicyRuleV2,
+  accessProfile: AccessProfile,
+): { allowed: boolean; reason?: string } {
+  return isHighRiskInterruptionActionAllowed(matchedRule, accessProfile);
+}
+
+export function checkInterruptionTapScope(
+  accessProfile: AccessProfile,
+): boolean {
+  return isToolAllowedByProfile(accessProfile, TOOL_NAMES.tapElement);
 }

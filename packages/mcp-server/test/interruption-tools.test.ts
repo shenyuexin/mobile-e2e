@@ -37,12 +37,21 @@ test("detect_interruption returns signals array with known structure", async () 
     dryRun: true,
   });
   assert.ok(["success", "partial"].includes(detected.status));
-  assert.ok(Array.isArray(detected.data.signals));
-  // Each signal should have source, key, confidence fields
+
+  // Top-level data shape
+  assert.ok(typeof detected.data.detected === "boolean", "data.detected should be boolean");
+  assert.ok(typeof detected.data.sessionRecordFound === "boolean", "data.sessionRecordFound should be boolean");
+  assert.ok(Array.isArray(detected.data.signals), "data.signals should be array");
+
+  // Each signal must have source, key, confidence; value is optional string
+  const validSignalSources = ["ui_tree", "state_summary", "runtime", "visual"];
   for (const signal of detected.data.signals) {
     assert.ok(typeof signal.source === "string", "signal.source should be string");
+    assert.ok(validSignalSources.includes(signal.source), `signal.source should be valid InterruptionSignalSource: ${signal.source}`);
     assert.ok(typeof signal.key === "string", "signal.key should be string");
+    assert.ok(signal.value === undefined || typeof signal.value === "string", "signal.value should be string or undefined");
     assert.ok(typeof signal.confidence === "number", "signal.confidence should be number");
+    assert.ok(signal.confidence >= 0 && signal.confidence <= 1, "signal.confidence should be 0-1");
   }
 
   await server.invoke("end_session", { sessionId });
@@ -68,17 +77,17 @@ test("classify_interruption returns valid classification type", async () => {
     dryRun: true,
   });
   assert.ok(["success", "partial"].includes(classified.status));
-  // Classification type should be a known InterruptionType
-  const validTypes = ["permission_prompt", "action_sheet", "system_alert", "overlay", "keyboard_blocking", "unknown"];
+
+  const validTypes = ["system_alert", "action_sheet", "permission_prompt", "app_modal", "overlay", "keyboard_blocking", "unknown"];
   assert.ok(
     validTypes.includes(classified.data.classification.type),
     `Invalid classification type: ${classified.data.classification.type}`,
   );
   assert.ok(typeof classified.data.classification.confidence === "number");
+  assert.ok(classified.data.classification.confidence >= 0 && classified.data.classification.confidence <= 1);
   assert.ok(Array.isArray(classified.data.classification.rationale));
-
-  await server.invoke("end_session", { sessionId });
-  await cleanupSessionArtifact(sessionId);
+  assert.ok(typeof classified.data.found === "boolean", "data.found should be boolean");
+  assert.ok(Array.isArray(classified.data.signals), "data.signals should be array");
 });
 
 test("resolve_interruption returns known resolution status", async () => {
@@ -99,17 +108,15 @@ test("resolve_interruption returns known resolution status", async () => {
     platform: "android",
     dryRun: true,
   });
-  assert.ok(["success", "partial", "failed"].includes(resolved.status));
-  // Status should be a known resolution value (not just any string)
-  const validStatuses = ["resolved", "escalated", "unresolved", "dismissed", "not_needed"];
+  assert.ok(["success", "failed"].includes(resolved.status));
+
+  const validStatuses = ["resolved", "denied", "not_needed", "failed"];
   assert.ok(
     validStatuses.includes(resolved.data.status),
     `Unexpected resolution status: ${resolved.data.status}`,
   );
-  assert.ok(resolved.data.strategy === undefined || typeof resolved.data.strategy === "string");
-
-  await server.invoke("end_session", { sessionId });
-  await cleanupSessionArtifact(sessionId);
+  assert.ok(typeof resolved.data.strategy === "string", "data.strategy should be string");
+  assert.ok(typeof resolved.data.attempted === "boolean", "data.attempted should be boolean");
 });
 
 test("resume_interrupted_action preserves checkpoint fields", async () => {
@@ -140,12 +147,19 @@ test("resume_interrupted_action preserves checkpoint fields", async () => {
     },
   });
   assert.ok(["success", "partial", "failed"].includes(resumed.status));
-  assert.equal(resumed.data.checkpoint?.actionType, "wait_for_ui");
-  assert.deepEqual(resumed.data.checkpoint?.selector, { text: "Home" });
-  assert.equal(resumed.data.checkpoint?.platform, "android");
 
-  await server.invoke("end_session", { sessionId });
-  await cleanupSessionArtifact(sessionId);
+  assert.ok(typeof resumed.data.attempted === "boolean", "data.attempted should be boolean");
+  assert.ok(typeof resumed.data.resumed === "boolean", "data.resumed should be boolean");
+  assert.ok(typeof resumed.data.driftDetected === "boolean", "data.driftDetected should be boolean");
+
+  const checkpoint = resumed.data.checkpoint;
+  assert.ok(checkpoint !== undefined, "data.checkpoint should be present");
+  assert.equal(checkpoint.actionType, "wait_for_ui");
+  assert.deepEqual(checkpoint.selector, { text: "Home" });
+  assert.equal(checkpoint.platform, "android");
+  assert.equal(checkpoint.actionId, "checkpoint-action");
+  assert.equal(checkpoint.sessionId, sessionId);
+  assert.ok(typeof checkpoint.createdAt === "string", "checkpoint.createdAt should be string");
 });
 
 test("interruption tools reject invalid sessionId", async () => {

@@ -202,7 +202,7 @@
 
 ### 5）证据、可观测与诊断
 
-`take_screenshot`、`record_screen`、`get_logs`、`get_crash_signals`、`collect_diagnostics`、`collect_debug_evidence`、`get_screen_summary`、`get_session_state`、`capture_js_console_logs`、`capture_js_network_events`、`list_js_debug_targets`、`capture_element_screenshot`、`compare_visual_baseline`
+`take_screenshot`、`record_screen`、`get_logs`、`get_crash_signals`、`collect_diagnostics`、`collect_debug_evidence`、`get_screen_summary`、`get_session_state`、`get_page_context`、`capture_js_console_logs`、`capture_js_network_events`、`list_js_debug_targets`、`capture_element_screenshot`、`compare_visual_baseline`
 
 ### 6）中断处理
 

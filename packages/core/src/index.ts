@@ -70,6 +70,7 @@ export {
 export type {
   AccessPolicyConfig,
   AccessProfile,
+  InterruptionPolicyContext,
   NetworkRetryPolicyDecision,
   InterruptionPolicyConfig,
   InterruptionResolutionPlan,

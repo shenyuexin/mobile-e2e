@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { Platform } from "@mobile-e2e-mcp/contracts";
+import type { Platform, QueryUiInput, QueryUiSelector, RunnerProfile } from "@mobile-e2e-mcp/contracts";
 import { normalizeQueryUiSelector } from "./ui-model.js";
 
 interface UiSelectorLikeInput {
@@ -56,4 +56,32 @@ export function buildUnknownUiDumpOutputPath(params: {
 
 export function buildMissingPlatformSuggestion(toolName: string): string {
   return `Provide platform explicitly, or call ${toolName} with an active sessionId so MCP can resolve platform from session context.`;
+}
+
+/**
+ * Build the options object for iOS hierarchy snapshot capture.
+ *
+ * Eliminates the repeated object literal across inspect_ui, query_ui,
+ * resolve_ui_target, and wait_for_ui iOS branches.
+ */
+export function buildIosSnapshotOptions(
+  base: {
+    sessionId: string;
+    runnerProfile: RunnerProfile;
+    harnessConfigPath?: string;
+    deviceId: string;
+    outputPath?: string;
+  },
+  query?: QueryUiSelector,
+): QueryUiInput {
+  return {
+    sessionId: base.sessionId,
+    platform: "ios",
+    runnerProfile: base.runnerProfile,
+    harnessConfigPath: base.harnessConfigPath,
+    deviceId: base.deviceId,
+    outputPath: base.outputPath,
+    dryRun: false,
+    ...query,
+  };
 }

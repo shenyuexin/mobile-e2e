@@ -115,6 +115,17 @@ function buildValidPayload(toolName: string): Record<string, unknown> {
           readiness: "ready",
         },
       };
+    case "navigate_back":
+      return {
+        dryRun: true,
+        target: "app",
+        executedStrategy: "android_keyevent",
+        supportLevel: "full",
+        fallbackUsed: false,
+        preBackTreeHash: "abc123",
+        postBackTreeHash: "def456",
+        pageTreeHashUnchanged: false,
+      };
     default:
       return {};
   }
@@ -143,6 +154,7 @@ test("tool-data-schemas directory exists and contains schemas", async () => {
     "rank_failure_candidates.schema.json",
     "describe_capabilities.schema.json",
     "get_session_state.schema.json",
+    "navigate_back.schema.json",
   ];
 
   for (const expected of expectedSchemas) {

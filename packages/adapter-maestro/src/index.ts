@@ -38,6 +38,8 @@ import {
   type GetSessionStateInput,
   type GetLogsData,
   type GetLogsInput,
+  type GetPageContextData,
+  type GetPageContextInput,
   type InspectUiData,
   type ResolveUiTargetData,
   type ResolveUiTargetInput,
@@ -169,6 +171,7 @@ import {
   recordBaselineEntry,
   recordFailureSignature,
   resolveInterruptionPlan,
+  type InterruptionPolicyContext,
   type PersistedActionRecord,
 } from "@mobile-e2e-mcp/core";
 import { spawn } from "node:child_process";
@@ -303,6 +306,7 @@ import {
   buildDiagnosisBriefing as buildDiagnosisBriefingFromDiagnosticsTools,
   collectDebugEvidenceWithRuntime,
 } from "./diagnostics-tools.js";
+import { getPageContextWithMaestro as getPageContextWithMaestroFromPageContextTools } from "./page-context-tools.js";
 import {
   collectBasicRunResultWithRuntime,
   runFlowWithRuntime,
@@ -418,6 +422,7 @@ export { classifyInterruptionFromSignals } from "./interruption-classifier.js";
 export { detectInterruptionFromSummary } from "./interruption-detector.js";
 export { buildInterruptionEvent, decideInterruptionResolution } from "./interruption-resolver.js";
 export { buildInterruptionTimelineEvent, buildResumeCheckpoint, hasStateDrift, pickEventSource, summarizeInterruptionDetail } from "./interruption-orchestrator.js";
+export type { InterruptionPolicyContext } from "@mobile-e2e-mcp/core";
 export { classifyDoctorOutcome, isDoctorCriticalFailure } from "./doctor-runtime.js";
 export {
   probeNetworkReadiness,
@@ -557,6 +562,12 @@ export async function getSessionStateWithMaestro(
   return getSessionStateWithMaestroFromSessionState(input);
 }
 
+export async function getPageContextWithMaestro(
+  input: GetPageContextInput,
+): Promise<ToolResult<GetPageContextData>> {
+  return getPageContextWithMaestroFromPageContextTools(input);
+}
+
 export async function detectInterruptionWithMaestro(
   input: DetectInterruptionInput,
 ): Promise<ToolResult<DetectInterruptionData>> {
@@ -571,8 +582,9 @@ export async function classifyInterruptionWithMaestro(
 
 export async function resolveInterruptionWithMaestro(
   input: ResolveInterruptionInput,
+  policyContext?: InterruptionPolicyContext,
 ): Promise<ToolResult<ResolveInterruptionData>> {
-  return resolveInterruptionWithMaestroFromInterruptionTools(input);
+  return resolveInterruptionWithMaestroFromInterruptionTools(input, policyContext);
 }
 
 export async function resumeInterruptedActionWithMaestro(
