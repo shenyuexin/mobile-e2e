@@ -27,7 +27,6 @@ import type {
   PageSnapshot,
   PageState,
   SamplingRule,
-  SamplingRuleMatch,
   TransitionLifecycleSummary,
 } from "./types.js";
 import { PageRegistry, hashUiStructure } from "./page-registry.js";
@@ -41,7 +40,6 @@ import {
   recordPageFailure,
   resetCircuit,
   isCircuitOpen,
-  shouldSkipPage,
 } from "./circuit-breaker.js";
 import { generateReport } from "./report.js";
 import { decidePageContextAction } from "./page-context-router.js";
@@ -242,12 +240,12 @@ function markSnapshotAsGated(
   snapshot.recoveryMethod = decision.recoveryMethod ?? "backtrack-cancel-first";
 }
 
-function hasClickableLabel(
-  clickableElements: Array<{ label: string }>,
-  expectedLabel: string,
-): boolean {
-  const normalized = expectedLabel.trim().toLowerCase();
-  return clickableElements.some((element) => element.label.trim().toLowerCase() === normalized);
+function normalizeNavText(value: string | undefined): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function pageTypeOf(snapshot: { pageContext?: { type?: string } } | undefined): string {
+  return snapshot?.pageContext?.type ?? "unknown";
 }
 
 function matchesStatefulKeyword(value: string | undefined, keywords: string[]): boolean {
@@ -282,14 +280,25 @@ function isStatefulFormEntry(
  * R2-E — system dialog detection with structural check + keyword threshold >=3.
  */
 function validateNavigation(
-  nextSnapshot: { screenId: string; uiTree: Record<string, unknown> },
-  prevState: { screenId: string },
+  nextSnapshot: { screenId: string; screenTitle?: string; uiTree: Record<string, unknown> },
+  prevState: { screenId: string; screenTitle?: string },
+  actionLabel?: string,
 ): NavValidation {
   // Check 1: screenId changed — page content is different
   if (nextSnapshot.screenId === prevState.screenId) {
     return {
       navigated: false,
       reason: "screenId unchanged — element had no navigation effect",
+    };
+  }
+
+  const nextTitle = normalizeNavText(nextSnapshot.screenTitle);
+  const prevTitle = normalizeNavText(prevState.screenTitle);
+  const action = normalizeNavText(actionLabel);
+  if (nextTitle && prevTitle && nextTitle === prevTitle && action === prevTitle) {
+    return {
+      navigated: false,
+      reason: "screen title unchanged after tapping page-title-like element — treating as self-loop",
     };
   }
 
@@ -490,7 +499,9 @@ export async function explore(
 
   // Initial snapshot
   const initialSnapshot = await snapshotter.captureSnapshot(config);
-  console.log(`[ENGINE] Home page: screenId=${initialSnapshot.screenId}, screenTitle="${initialSnapshot.screenTitle || '(empty)'}", clickable=${initialSnapshot.clickableElements.length}`);
+  console.log(
+    `[ENGINE] Home page: screenId=${initialSnapshot.screenId}, screenTitle="${initialSnapshot.screenTitle || '(empty)'}", clickable=${initialSnapshot.clickableElements.length}, pageType=${pageTypeOf(initialSnapshot)}`,
+  );
   if (initialSnapshot.clickableElements.length > 0) {
     const first = initialSnapshot.clickableElements[0];
     console.log(`[ENGINE] First element: label="${first.label}", elementType="${first.elementType}"`);
@@ -518,6 +529,7 @@ export async function explore(
   stack[0].state = {
     screenId: initialSnapshot.screenId,
     screenTitle: initialSnapshot.screenTitle,
+    pageContextType: pageTypeOf(initialSnapshot),
     structureHash: initialStructureHash,
   };
   // Populate home page's clickable elements
@@ -585,16 +597,60 @@ export async function explore(
           });
 
           if (frame.depth === 0) {
-            stateGraph.registerTransition({
-              from: currentStateNode.id,
-              kind: "home",
-              intentLabel: "home-recovery",
-              committed: false,
-              attempts: recovered ? 1 : 0,
-              failureReason: "ensureFrameAligned mismatch",
-            });
-            recoveryAbortReason = `Home recovery failed at "${frame.state.screenTitle || "unknown"}"`;
-            break;
+            if (frame.elementIndex >= frame.elements.length) {
+              console.log(
+                `[FRAME-GUARD] Home page elements exhausted. Exploration complete.`,
+              );
+              break;
+            }
+
+            console.log(
+              `[FRAME-GUARD] Home page recovery failed. Attempting launch_app to restart...`,
+            );
+            try {
+              await mcp.launchApp({ appId: config.appId });
+              await mcp.waitForUiStable({ timeoutMs: 3000 });
+
+              const returnSnapshot = await snapshotter.captureSnapshot(config);
+              console.log(
+                `[FRAME-GUARD] launchApp returned to: ${returnSnapshot.screenTitle || "(unknown)"}`,
+              );
+
+              frame.state = {
+                screenId: returnSnapshot.screenId,
+                screenTitle: returnSnapshot.screenTitle,
+                structureHash: hashUiStructure(returnSnapshot.uiTree),
+              };
+              backtracker.registerPage(returnSnapshot.screenId, returnSnapshot.uiTree);
+
+              const alignedAfterLaunch = await backtracker.isOnExpectedPage(
+                frame.state.screenId ?? "unknown",
+                frame.state.screenTitle,
+                frame.state.structureHash,
+              );
+              if (!alignedAfterLaunch) {
+                console.log(
+                  `[FRAME-GUARD] launchApp did not restore home page. Aborting.`,
+                );
+                recoveryAbortReason = `Home recovery failed: launchApp did not restore expected page`;
+                break;
+              }
+              console.log(
+                `[FRAME-GUARD] Home page recovered via launchApp. Continuing exploration.`,
+              );
+            } catch (err) {
+              console.log(`[FRAME-GUARD] launchApp failed: ${err}. Aborting.`);
+              stateGraph.registerTransition({
+                from: currentStateNode.id,
+                kind: "home",
+                intentLabel: "home-recovery",
+                committed: false,
+                attempts: recovered ? 1 : 0,
+                failureReason: "ensureFrameAligned mismatch",
+              });
+              recoveryAbortReason = `Home recovery failed at "${frame.state.screenTitle || "unknown"}"`;
+              break;
+            }
           }
 
           console.log(
@@ -636,6 +692,7 @@ export async function explore(
       frame.state = {
         screenId: snapshot.screenId,
         screenTitle: snapshot.screenTitle,
+        pageContextType: pageTypeOf(snapshot),
         structureHash: hashUiStructure(snapshot.uiTree),
       };
       currentStateNode = stateGraph.registerState(snapshot, frame.state.structureHash ?? "");
@@ -967,8 +1024,24 @@ export async function explore(
         continue;
       }
 
-      // Check for app switching via appId change (non-link elements that open external apps)
-      const isAppSwitched = nextStateSnapshot.appId !== undefined &&
+      // Validate navigation (R1-#2, R3-G)
+      const navValidation = validateNavigation(
+        {
+          screenId: nextStateSnapshot.screenId,
+          screenTitle: nextStateSnapshot.screenTitle,
+          uiTree: nextStateSnapshot.uiTree as Record<string, unknown>,
+        },
+        {
+          screenId: frame.state.screenId ?? "",
+          screenTitle: frame.state.screenTitle,
+        },
+        element.label,
+      );
+
+      // Check for app switching via appId change — only when the page actually navigated.
+      // This prevents false positives when stale currentAppId differs from the current page.
+      const isAppSwitched = navValidation.navigated &&
+                            nextStateSnapshot.appId !== undefined &&
                             nextStateSnapshot.appId !== currentAppId;
       if (isAppSwitched) {
         console.log(
@@ -977,19 +1050,8 @@ export async function explore(
         currentAppId = nextStateSnapshot.appId ?? currentAppId; // Update current app identity
       }
 
-      // Validate navigation (R1-#2, R3-G)
-      const navValidation = validateNavigation(
-        {
-          screenId: nextStateSnapshot.screenId,
-          uiTree: nextStateSnapshot.uiTree as Record<string, unknown>,
-        },
-        { screenId: frame.state.screenId ?? "" },
-      );
-
-      if (!navValidation.navigated && !isAppSwitched) {
+      if (!navValidation.navigated) {
         if (navValidation.shouldDismissDialog) {
-          // TODO: implement handleSystemDialog
-          // For now, log and skip
           console.log(
             `[ACTION-RESULT] action=tap_element, label="${element.label.slice(0, 40)}", ` +
             `expected="${expectedAfterAction}", ` +
@@ -1024,7 +1086,7 @@ export async function explore(
       }
 
       // Check for app switching (US-002) — mark as external if not in target app
-      const isExternalApp = isAppSwitched || 
+      const isExternalApp = isAppSwitched ||
         (nextStateSnapshot.appId !== undefined && nextStateSnapshot.appId !== targetAppId);
       if (isExternalApp) {
         console.log(

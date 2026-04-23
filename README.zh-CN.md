@@ -51,6 +51,7 @@
 - **Deterministic-first harness**：优先稳定定位与可解释重试，再进入 OCR/CV 兜底
 - **Failure-intelligence harness**：失败有原因码、证据产物、候选根因与修复建议
 - **Governance-aware harness**：策略 profile、可审计 session、受控工具面
+- **Explorer harness**：基于 DFS 的自动页面遍历，包含状态图、熔断器与结构化覆盖率报告
 - **Real-device demo harness**：有真实可复现脚本与录屏，不是纸面架构
 
 ## Appium / Maestro 与本 Harness 的关系
