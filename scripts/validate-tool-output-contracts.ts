@@ -147,6 +147,7 @@ const TIER1_TOOLS = [
   "rank_failure_candidates",
   "describe_capabilities",
   "get_session_state",
+  "navigate_back",
 ];
 
 function buildSyntheticPayload(toolName: string): Record<string, unknown> {
@@ -255,6 +256,17 @@ function buildSyntheticPayload(toolName: string): Record<string, unknown> {
           readiness: "ready",
           blockingSignals: [],
         },
+      };
+    case "navigate_back":
+      return {
+        dryRun: true,
+        target: "app",
+        executedStrategy: "android_keyevent",
+        supportLevel: "full",
+        fallbackUsed: false,
+        preBackTreeHash: "abc123",
+        postBackTreeHash: "def456",
+        pageTreeHashUnchanged: false,
       };
     default:
       return {};
