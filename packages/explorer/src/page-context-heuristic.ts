@@ -100,9 +100,44 @@ export function isDismissibleNicknameDialog(snapshot: PageSnapshot): boolean {
 	);
 }
 
+function isProtectedAuthSurface(snapshot: PageSnapshot): boolean {
+	const appId = snapshot.appId?.trim().toLowerCase() ?? "";
+	const title = snapshot.screenTitle?.trim().toLowerCase() ?? "";
+	const labels = snapshot.clickableElements.map((el) => el.label.trim().toLowerCase());
+
+	if (appId === "com.android.systemui") {
+		return labels.includes("use password") || labels.includes("tap to cancel authentication");
+	}
+
+	if (appId === "com.android.settings" && title === "enter lock screen") {
+		return true;
+	}
+
+	if (
+		appId === "com.android.settings" &&
+		title === "scan to quickly" &&
+		(labels.includes("password") || labels.includes("disconnect"))
+	) {
+		return true;
+	}
+
+	return false;
+}
+
 export function decideHeuristicPageAction(
 	snapshot: PageSnapshot,
 ): HeuristicPageDecision {
+	if (isProtectedAuthSurface(snapshot)) {
+		return {
+			type: "gated",
+			reason: "uiTree heuristic: protected authentication surface detected — manual auth boundary, not suitable for DFS",
+			isInterruption: true,
+			interruptionType: "auth_boundary",
+			recoveryMethod: "backtrack-cancel-first",
+			ruleFamily: "heuristic_auth_boundary",
+		};
+	}
+
 	if (isSystemDialog(snapshot)) {
 		return {
 			type: "gated",

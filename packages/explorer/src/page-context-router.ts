@@ -64,6 +64,18 @@ export function decidePageContextAction(
 		};
 	}
 
+	const blockedPackages = _config.blockedOwnerPackages ?? [];
+	if (pageContext.ownerPackage && blockedPackages.includes(pageContext.ownerPackage)) {
+		return {
+			type: "gated",
+			reason: `ownerPackage=${pageContext.ownerPackage} matches blockedOwnerPackages — external app sandbox, not suitable for DFS`,
+			isInterruption: true,
+			interruptionType: "external_app",
+			recoveryMethod: "backtrack-cancel-first",
+			ruleFamily: "owner_package_gate",
+		};
+	}
+
 	if (pageContext.detectionSource !== "deterministic") {
 		return {
 			type: "defer-to-heuristic",

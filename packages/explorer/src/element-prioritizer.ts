@@ -161,6 +161,14 @@ const EXTERNAL_LINK_PATTERNS = [
   /manual/i,
 ];
 
+const NAVIGATION_CONTROL_PATTERNS = [
+  /^back$/i,
+  /^cancel$/i,
+  /^done$/i,
+  /^close$/i,
+  /^xmark$/i,
+];
+
 /**
  * Check if an element is likely an external link (opens another app).
  * 
@@ -409,19 +417,61 @@ function isDecorative(node: UiHierarchy): boolean {
 
 /**
  * Get a human-readable label for a UI element.
- * Uses fallback chain: contentDesc > accessibilityLabel > text > visibleTexts > className.
+ * Uses fallback chain: contentDesc > accessibilityLabel > text > visibleTexts.
+ * For container elements without direct text, recursively checks child nodes
+ * to aggregate readable labels (common in Android list-item layouts where
+ * the clickable wrapper has no text but children do).
  */
 export function getElementLabel(el: UiHierarchy): string {
+  return getSemanticLabel(el) || el.className || el.elementType || "unknown";
+}
+
+function getSemanticLabel(el: UiHierarchy): string | undefined {
+  const direct =
+    el.contentDesc ||
+    el.accessibilityLabel ||
+    el.label ||
+    el.text ||
+    el.visibleTexts?.[0];
+  if (direct) return direct;
+
+  if (el.children) {
+    for (const child of el.children) {
+      const childLabel = getSemanticLabel(child);
+      if (childLabel) return childLabel;
+    }
+  }
+
+  return undefined;
+}
+
+function getDirectSemanticLabel(el: UiHierarchy): string | undefined {
   return (
     el.contentDesc ||
     el.accessibilityLabel ||
     el.label ||
     el.text ||
-    el.visibleTexts?.[0] ||
-    el.className ||
-    el.elementType ||
-    "unknown"
+    el.visibleTexts?.[0]
   );
+}
+
+function isNavigationControlLabel(label: string): boolean {
+  return NAVIGATION_CONTROL_PATTERNS.some((pattern) => pattern.test(label.trim()));
+}
+
+function isAndroidElement(el: UiHierarchy): boolean {
+  return (el.className || el.elementType || "").startsWith("android.");
+}
+
+function isAmbiguousAndroidResourceId(el: UiHierarchy): boolean {
+  if (!isAndroidElement(el) || !el.resourceId) {
+    return false;
+  }
+
+  return [
+    /(^|:)id\/list$/i,
+    /(^|:)id\/preference_access_point$/i,
+  ].some((pattern) => pattern.test(el.resourceId ?? ""));
 }
 
 /**
@@ -449,8 +499,25 @@ export function findClickableElements(
       if (isDestructive(el, config.destructiveActionPolicy)) return false;
       // Exclude search trigger buttons (open search mode, not a navigable page)
       if (isSearchTrigger(el)) return false;
-      // TEMP: Skip Apple Account to prioritize General exploration
+      const elLabel = getElementLabel(el);
       if ((el.resourceId || '').includes('primaryAppleAccount')) return false;
+      if ((el.resourceId || '').includes('account_category')) return false;
+      if ((el.resourceId || '').includes('historic_record')) return false;
+      if (isAndroidElement(el) && /(^wi-fi([,\s]|$))|(scan to connect to wi-fi)/i.test(elLabel)) {
+        return false;
+      }
+      if (isNavigationControlLabel(elLabel)) return false;
+      const containerClassPattern = /^(android\.(view|widget)\.)?(FrameLayout|LinearLayout|RelativeLayout|ViewGroup|View)$/;
+      const hasStableId = !!(
+        el.resourceId ||
+        el.contentDesc ||
+        el.accessibilityLabel ||
+        el.text ||
+        getSemanticLabel(el)
+      );
+      if (containerClassPattern.test(el.className || '') && !hasStableId) {
+        return false;
+      }
       return true;
     })
     .map((el) => toClickableTarget(el));
@@ -465,20 +532,23 @@ export function findClickableElements(
  * Detection: Button with "search" or "dictate" label (iOS Dictate button opens search overlay).
  */
 function isSearchTrigger(el: UiHierarchy): boolean {
-  const label = (el.text || el.accessibilityLabel || el.contentDesc || "").toLowerCase();
+  const label = (getSemanticLabel(el) || "").toLowerCase();
 
-  // Direct match: label is "search" or "dictate"
   if ((label === "search" || label === "dictate") && (el.className === "Button" || el.accessibilityRole === "AXButton")) {
     return true;
   }
 
-  // Fallback: button with search-related identifiers
-  if (el.className === "Button" || el.accessibilityRole === "AXButton") {
-    const allText = [el.text, el.accessibilityLabel, el.contentDesc, el.elementType]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    if (allText.includes("search") || allText.includes("dictate")) return true;
+  const allText = [label, el.elementType]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (allText.includes("search") || allText.includes("dictate")) {
+    return true;
+  }
+
+  const resId = (el.resourceId || "").toLowerCase();
+  if (resId.includes("search") && el.clickable) {
+    return true;
   }
 
   return false;
@@ -508,7 +578,7 @@ export function buildSelector(el: UiHierarchy): ElementSelector {
   if (el.AXUniqueId) {
     return { resourceId: el.AXUniqueId };
   }
-  if (el.resourceId) {
+  if (el.resourceId && !isAmbiguousAndroidResourceId(el)) {
     return { resourceId: el.resourceId };
   }
   
@@ -520,16 +590,19 @@ export function buildSelector(el: UiHierarchy): ElementSelector {
     return { contentDesc: el.contentDesc };
   }
 
-  // Priority 3: Visible text content
-  const text = el.label || el.text || el.visibleTexts?.[0];
-  if (text) {
-    return { text, elementType: el.elementType ?? el.className };
+  const directText = getDirectSemanticLabel(el);
+  if (directText) {
+    return { text: directText, elementType: el.elementType ?? el.className };
   }
 
-  // Priority 4: Coordinate-based fallback
+  // Priority 3b: container elements with descendant labels should tap by center point,
+  // because the wrapper itself often has no direct text selector on Android.
   if (el.frame) {
     return {
-      position: { x: el.frame.x, y: el.frame.y },
+      position: {
+        x: Math.round(el.frame.x + el.frame.width / 2),
+        y: Math.round(el.frame.y + el.frame.height / 2),
+      },
       elementType: el.elementType ?? el.className,
     };
   }

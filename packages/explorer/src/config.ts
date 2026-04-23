@@ -174,6 +174,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
   const timeoutMs = overrides.timeoutMs ?? 300_000;
   const reportDir = overrides.reportDir ?? "./explorer-reports";
   const samplingRules = overrides.samplingRules ?? DEFAULT_SAMPLING_RULES;
+  const blockedOwnerPackages = overrides.blockedOwnerPackages ?? ["com.bbk.account"];
 
   return {
     mode,
@@ -189,6 +190,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
     appId,
     reportDir,
     samplingRules,
+    blockedOwnerPackages,
   };
 }
 

@@ -6,7 +6,6 @@
  */
 
 import type { PageContext } from "@mobile-e2e-mcp/contracts";
-import type { McpToolInterface } from "./mcp-adapter.js";
 
 // ---------------------------------------------------------------------------
 // §3.1 Configuration Schema
@@ -126,6 +125,12 @@ export interface ExplorerConfig {
    * Configurable so users can increase it later if needed.
    */
   externalLinkMaxDepth?: number;
+  /** Owner packages to gate (skip DFS) when detected by pageContext.
+   *
+   * When the page context reports an ownerPackage in this list,
+   * the page is treated as an external app surface and not expanded.
+   */
+  blockedOwnerPackages?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +281,8 @@ export interface PageState {
   screenId?: string;
   /** Human-readable screen title for iOS back button targeting. */
   screenTitle?: string;
+  /** Normalized page-context type for runtime logging. */
+  pageContextType?: string;
   /** Structural hash of the UI tree (stable across dynamic text changes). */
   structureHash?: string;
 }
@@ -431,6 +438,8 @@ export interface PageEntry {
   screenId: string;
   /** Human-readable screen title. */
   screenTitle?: string;
+  /** Optional normalized page-context snapshot from the harness. */
+  pageContext?: PageContext;
   /** Depth in the exploration tree. */
   depth: number;
   /** Path of element labels leading to this page. */

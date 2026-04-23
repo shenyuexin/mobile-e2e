@@ -9,11 +9,11 @@
  */
 
 import type {
-  PageSnapshot,
-  ExplorerConfig,
   ClickableTarget,
-  UiHierarchy,
+  ExplorerConfig,
   McpToolInterface,
+  PageSnapshot,
+  UiHierarchy,
 } from "./types.js";
 import { findClickableElements } from "./element-prioritizer.js";
 import { resolveExplorerPlatformHooks } from "./explorer-platform.js";
@@ -39,7 +39,6 @@ export function createSnapshotter(mcp: McpToolInterface) {
     async captureSnapshot(config: ExplorerConfig): Promise<PageSnapshot> {
       const tapStart = Date.now();
 
-      // Inspect UI — unwrap ToolResult at the boundary
       const inspectResult = await mcp.inspectUi();
       if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
         throw new Error(
@@ -47,34 +46,30 @@ export function createSnapshotter(mcp: McpToolInterface) {
         );
       }
 
-      // The content field contains the raw UI tree as JSON string or the structured data
       const inspectData = inspectResult.data as unknown as Record<string, unknown>;
       const platformHooks = resolveExplorerPlatformHooks(config.platform);
-      const uiTree = platformHooks.parseInspectUi(inspectData, { fallbackToDataRoot: true }) as UiHierarchy;
-      const pageContext = typeof inspectData.pageContext === "object" && inspectData.pageContext !== null
-        ? inspectData.pageContext
-        : undefined;
+      const uiTree = platformHooks.parseInspectUi(inspectData, {
+        fallbackToDataRoot: true,
+      }) as UiHierarchy;
+      const pageContext =
+        typeof inspectData.pageContext === "object" && inspectData.pageContext !== null
+          ? inspectData.pageContext
+          : undefined;
 
-      // Take screenshot
       const screenshotResult = await mcp.takeScreenshot();
       const screenshotPath =
         screenshotResult.status === "success" || screenshotResult.status === "partial"
           ? getScreenshotPath(screenshotResult.data as unknown as Record<string, unknown>)
           : `${DEFAULT_SCREENSHOT_DIR}/screenshot-${Date.now()}.png`;
 
-      // Find clickable elements (needs config for destructive filtering)
       const clickableElements = findClickableElements(uiTree, config);
-
-      // Extract app identity from UI tree (for app switching detection)
       const appId = platformHooks.extractAppId(uiTree) ?? config.appId;
-      // Note: isExternalApp is determined in the engine by comparing
-      // against the initial page's appId, NOT config.appId.
-      // This is because iOS uses AXLabel (display name) not bundle ID.
-      const isExternalApp = false; // Engine will override based on targetAppId comparison
+      const isExternalApp = false;
 
       return {
         screenId: generateScreenId(uiTree),
         screenTitle: platformHooks.extractScreenTitle(uiTree),
+        pageContext: pageContext as PageSnapshot["pageContext"],
         uiTree,
         clickableElements,
         screenshotPath,
@@ -85,7 +80,6 @@ export function createSnapshotter(mcp: McpToolInterface) {
         loadTimeMs: Date.now() - tapStart,
         stabilityScore: 1.0,
         appId,
-        pageContext: pageContext as PageSnapshot["pageContext"],
         isExternalApp,
       };
     },
@@ -143,14 +137,53 @@ export function createTapExecutor(mcp: McpToolInterface) {
       const tapStart = Date.now();
 
       try {
-        // Build the query for tap_element
         const selector = element.selector;
+        if (
+          selector.position &&
+          !selector.resourceId &&
+          !selector.contentDesc &&
+          !selector.text
+        ) {
+          const tapResult = await mcp.tap({
+            x: selector.position.x,
+            y: selector.position.y,
+          });
+          if (tapResult.status !== "success" && tapResult.status !== "partial") {
+            return {
+              success: false,
+              error: new Error(`TAP_FAILED: ${tapResult.reasonCode}: ${element.label}`),
+            };
+          }
+
+          const settleTimeoutMs = Math.min(
+            5000,
+            Math.max(0, overallTimeoutMs - (Date.now() - tapStart)),
+          );
+
+          if (settleTimeoutMs <= 0) {
+            return {
+              success: false,
+              error: new Error(
+                `TIMEOUT: no time left for UI stabilization after tapping ${element.label}`,
+              ),
+            };
+          }
+
+          const stableResult = await mcp.waitForUiStable({ timeoutMs: settleTimeoutMs });
+          if (stableResult.status !== "success" && stableResult.status !== "partial") {
+            return {
+              success: false,
+              error: new Error(`TIMEOUT: UI did not stabilize after tapping ${element.label}`),
+            };
+          }
+
+          return { success: true, loadTimeMs: Date.now() - tapStart };
+        }
+
         const tapArgs: Record<string, unknown> = {};
-        // resourceId is supported on both iOS (AXUniqueId) and Android
         if (selector.resourceId) {
           tapArgs.resourceId = selector.resourceId;
         }
-        // contentDesc maps to accessibilityLabel on iOS, content-desc on Android
         if (selector.contentDesc) {
           tapArgs.contentDesc = selector.contentDesc;
         }
@@ -160,12 +193,7 @@ export function createTapExecutor(mcp: McpToolInterface) {
         if (selector.elementType) {
           tapArgs.className = selector.elementType;
         }
-        if (selector.position) {
-          // Position-based tap — not directly supported by tap_element
-          // but we can try with text/className fallback
-        }
 
-        // If we have no usable selector, fail early
         if (Object.keys(tapArgs).length === 0) {
           return {
             success: false,
@@ -177,14 +205,10 @@ export function createTapExecutor(mcp: McpToolInterface) {
         if (tapResult.status !== "success" && tapResult.status !== "partial") {
           return {
             success: false,
-            error: new Error(
-              `TAP_FAILED: ${tapResult.reasonCode}: ${element.label}`,
-            ),
+            error: new Error(`TAP_FAILED: ${tapResult.reasonCode}: ${element.label}`),
           };
         }
 
-        // Wait for UI to stabilize after the tap
-        // Timing baseline: wait_for_ui_stable takes ~1.4s on iOS 26.0
         const settleTimeoutMs = Math.min(
           5000,
           Math.max(0, overallTimeoutMs - (Date.now() - tapStart)),
@@ -193,7 +217,9 @@ export function createTapExecutor(mcp: McpToolInterface) {
         if (settleTimeoutMs <= 0) {
           return {
             success: false,
-            error: new Error(`TIMEOUT: no time left for UI stabilization after tapping ${element.label}`),
+            error: new Error(
+              `TIMEOUT: no time left for UI stabilization after tapping ${element.label}`,
+            ),
           };
         }
 
@@ -201,9 +227,7 @@ export function createTapExecutor(mcp: McpToolInterface) {
         if (stableResult.status !== "success" && stableResult.status !== "partial") {
           return {
             success: false,
-            error: new Error(
-              `TIMEOUT: UI did not stabilize after tapping ${element.label}`,
-            ),
+            error: new Error(`TIMEOUT: UI did not stabilize after tapping ${element.label}`),
           };
         }
 

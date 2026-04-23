@@ -51,6 +51,7 @@ If you're searching for terms like **mobile test harness**, **real-device Androi
 - **Deterministic-first harness**: stable selectors and structured retries before OCR/CV fallback
 - **Failure-intelligence harness**: reason codes, evidence artifacts, and remediation suggestions
 - **Governance-aware harness**: policy profiles, auditable sessions, and controlled tool surfaces
+- **Explorer harness**: DFS-based automatic page traversal with state graph, circuit breaker, and structured coverage reports
 - **Real-device demo harness**: reproducible scripts + videos for happy path and interruption recovery
 
 ## Appium / Maestro vs This Harness

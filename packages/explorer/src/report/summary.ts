@@ -8,13 +8,13 @@
  */
 
 import type {
-  PageEntry,
-  FailureEntry,
   ExplorerConfig,
-  TransitionLifecycleSummary,
+  FailureEntry,
+  PageEntry,
   StateGraphSummary,
-} from '../types.js';
-import type { ModuleGroup } from './modules.js';
+  TransitionLifecycleSummary,
+} from "../types.js";
+import type { ModuleGroup } from "./modules.js";
 
 /** Compact run entry for the index.json history file. */
 export interface RunIndexEntry {
@@ -43,7 +43,7 @@ export interface RunIndexEntry {
   /** Path to the summary.json for this run. */
   summaryPath: string;
   /** Whether the run completed fully or was aborted. */
-  status: 'complete' | 'partial';
+  status: "complete" | "partial";
   /** Whether the run was aborted. */
   aborted?: boolean;
   /** Reason for abortion, if applicable. */
@@ -81,22 +81,28 @@ export interface RunSummary {
     path: string[];
   }>;
   /** Page inventory. */
-    pages: Array<{
-      id: string;
-      screenId: string;
+  pages: Array<{
+    id: string;
+    screenId: string;
     screenTitle?: string;
+    pageContext?: {
+      type: string;
+      platform: string;
+      detectionSource: string;
+      confidence: number;
+    };
     depth: number;
     path: string[];
     arrivedFrom: string | null;
     viaElement: string | null;
-      loadTimeMs: number;
-      clickableCount: number;
-      hasFailure: boolean;
-      explorationStatus?: 'expanded' | 'reached-not-expanded';
-      stoppedByPolicy?: string;
-      ruleFamily?: string;
-      recoveryMethod?: string;
-    }>;
+    loadTimeMs: number;
+    clickableCount: number;
+    hasFailure: boolean;
+    explorationStatus?: "expanded" | "reached-not-expanded";
+    stoppedByPolicy?: string;
+    ruleFamily?: string;
+    recoveryMethod?: string;
+  }>;
   /** Present when the run was aborted. */
   aborted?: boolean;
   /** Present when the run was aborted. */
@@ -108,19 +114,46 @@ export interface RunSummary {
     /** Total children skipped due to sampling. */
     skippedChildren: number;
     /** Per-page sampling details for transparency in reports. */
-    details?: Record<string, {
-      screenTitle?: string;
-      totalChildren: number;
-      exploredChildren: number;
-      skippedChildren: number;
-      exploredLabels: string[];
-      skippedLabels: string[];
-    }>;
+    details?: Record<
+      string,
+      {
+        screenTitle?: string;
+        totalChildren: number;
+        exploredChildren: number;
+        skippedChildren: number;
+        exploredLabels: string[];
+        skippedLabels: string[];
+      }
+    >;
   };
   /** Transition lifecycle counters for navigation auditing. */
   transitionLifecycle?: TransitionLifecycleSummary;
   /** StateGraph aggregate counters. */
   stateGraph?: StateGraphSummary;
+  /** Page type distribution summary. */
+  pageTypeCounts?: PageTypeCounts;
+}
+
+/** Counts of pages by their detected page context type. */
+export interface PageTypeCounts {
+  /** Pages detected as normal_page. */
+  normalPages: number;
+  /** Pages detected as app_dialog. */
+  dialogPages: number;
+  /** Pages detected as system_alert_surface. */
+  alertPages: number;
+  /** Pages detected as action_sheet_surface. */
+  actionSheetPages: number;
+  /** Pages detected as app_modal. */
+  modalPages: number;
+  /** Pages detected as system_overlay. */
+  overlayPages: number;
+  /** Pages detected as permission_surface. */
+  permissionPages: number;
+  /** Pages detected as keyboard_surface. */
+  keyboardPages: number;
+  /** Pages with unknown or unclassified type. */
+  unknownPages: number;
 }
 
 /** Options passed to summary generation. */
@@ -137,14 +170,17 @@ export interface SummaryOpts {
   sampling?: {
     appliedPages: string[];
     skippedChildren: number;
-    details?: Record<string, {
-      screenTitle?: string;
-      totalChildren: number;
-      exploredChildren: number;
-      skippedChildren: number;
-      exploredLabels: string[];
-      skippedLabels: string[];
-    }>;
+    details?: Record<
+      string,
+      {
+        screenTitle?: string;
+        totalChildren: number;
+        exploredChildren: number;
+        skippedChildren: number;
+        exploredLabels: string[];
+        skippedLabels: string[];
+      }
+    >;
   };
   /** Transition lifecycle counters from the engine. */
   transitionLifecycle?: TransitionLifecycleSummary;
@@ -158,7 +194,7 @@ export interface SummaryOpts {
  * @param pages - All visited page entries
  * @param failures - All failure entries
  * @param modules - Inferred module groups
- * @param config - Explorer configuration
+ * @param _config - Explorer configuration
  * @param opts - Summary options
  * @returns RunSummary object ready for JSON serialization
  */
@@ -166,16 +202,16 @@ export function generateSummaryJson(
   pages: PageEntry[],
   failures: FailureEntry[],
   modules: ModuleGroup[],
-  config: ExplorerConfig,
+  _config: ExplorerConfig,
   opts: SummaryOpts,
 ): RunSummary {
-  const maxDepth = pages.length > 0
-    ? pages.reduce((max, p) => Math.max(max, p.depth), 0)
-    : 0;
+  const maxDepth =
+    pages.length > 0 ? pages.reduce((max, p) => Math.max(max, p.depth), 0) : 0;
 
   const summary: RunSummary = {
     runId: generateRunId(),
-    startedAt: opts.startedAt ?? new Date(Date.now() - opts.durationMs).toISOString(),
+    startedAt:
+      opts.startedAt ?? new Date(Date.now() - opts.durationMs).toISOString(),
     completedAt: new Date().toISOString(),
     durationMs: opts.durationMs,
     totalPages: pages.length,
@@ -196,6 +232,7 @@ export function generateSummaryJson(
       id: p.id,
       screenId: p.screenId,
       screenTitle: p.screenTitle,
+      pageContext: p.pageContext,
       depth: p.depth,
       path: p.path,
       arrivedFrom: p.arrivedFrom,
@@ -227,16 +264,68 @@ export function generateSummaryJson(
     summary.stateGraph = opts.stateGraph;
   }
 
+  summary.pageTypeCounts = countPageTypes(pages);
+
   return summary;
 }
 
 /** Generate a sanitized run ID from the current timestamp. */
 export function generateRunId(): string {
-  return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 }
 
 /** Count unique paths among the given pages. */
 export function countUniquePaths(pages: PageEntry[]): number {
-  const paths = new Set(pages.map((p) => p.path.join('/')));
+  const paths = new Set(pages.map((p) => p.path.join("/")));
   return paths.size;
+}
+
+/** Count pages by their detected page context type. */
+export function countPageTypes(pages: PageEntry[]): PageTypeCounts {
+  const counts: PageTypeCounts = {
+    normalPages: 0,
+    dialogPages: 0,
+    alertPages: 0,
+    actionSheetPages: 0,
+    modalPages: 0,
+    overlayPages: 0,
+    permissionPages: 0,
+    keyboardPages: 0,
+    unknownPages: 0,
+  };
+
+  for (const page of pages) {
+    const type = page.pageContext?.type ?? "unknown";
+    switch (type) {
+      case "normal_page":
+        counts.normalPages++;
+        break;
+      case "app_dialog":
+        counts.dialogPages++;
+        break;
+      case "system_alert_surface":
+        counts.alertPages++;
+        break;
+      case "action_sheet_surface":
+        counts.actionSheetPages++;
+        break;
+      case "app_modal":
+        counts.modalPages++;
+        break;
+      case "system_overlay":
+        counts.overlayPages++;
+        break;
+      case "permission_surface":
+        counts.permissionPages++;
+        break;
+      case "keyboard_surface":
+        counts.keyboardPages++;
+        break;
+      default:
+        counts.unknownPages++;
+        break;
+    }
+  }
+
+  return counts;
 }
