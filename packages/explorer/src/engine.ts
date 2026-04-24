@@ -28,6 +28,7 @@ import type {
   PageState,
   SamplingRule,
   TransitionLifecycleSummary,
+  ExplorerPlatform,
 } from "./types.js";
 import { PageRegistry, hashUiStructure } from "./page-registry.js";
 import { createSnapshotter, createTapExecutor } from "./snapshot.js";
@@ -318,6 +319,63 @@ function validateNavigation(
   return { navigated: true };
 }
 
+function findAncestorFrameIndex(
+  stack: Frame[],
+  snapshot: Pick<PageSnapshot, "screenId" | "appId">,
+): number {
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const sameScreen = stack[i].state.screenId === snapshot.screenId;
+    const sameAppIdentity =
+      snapshot.appId === undefined ||
+      stack[i].appId === undefined ||
+      stack[i].appId === snapshot.appId;
+    if (sameScreen && sameAppIdentity) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+function reconcileStackToSnapshot(
+  stack: Frame[],
+  snapshot: PageSnapshot,
+  targetAppId: string,
+): Frame | undefined {
+  if (stack.length === 0) {
+    return undefined;
+  }
+
+  const ancestorFrameIndex = findAncestorFrameIndex(stack, snapshot);
+  const resolvedIndex = ancestorFrameIndex >= 0
+    ? ancestorFrameIndex
+    : snapshot.appId === targetAppId
+      ? 0
+      : -1;
+
+  if (resolvedIndex < 0) {
+    return undefined;
+  }
+
+  while (stack.length - 1 > resolvedIndex) {
+    stack.pop();
+  }
+
+  const resumedFrame = stack[resolvedIndex];
+  resumedFrame.state = {
+    screenId: snapshot.screenId,
+    screenTitle: snapshot.screenTitle,
+    structureHash: hashUiStructure(snapshot.uiTree),
+  };
+  resumedFrame.appId = snapshot.appId ?? resumedFrame.appId ?? targetAppId;
+  resumedFrame.isExternalApp = false;
+  return resumedFrame;
+}
+
+function isAndroidExplorerPlatform(platform: ExplorerPlatform): boolean {
+  return platform.startsWith("android");
+}
+
 /**
  * Detect system-level dialogs that block exploration.
  *
@@ -521,6 +579,16 @@ export async function explore(
   // Track current app identity — updated on each navigation.
   // App switch handling only triggers when this value changes.
   let currentAppId = targetAppId;
+
+  const captureAndReconcileVisiblePage = async (): Promise<Frame | undefined> => {
+    const snapshot = await snapshotter.captureSnapshot(config);
+    backtracker.registerPage(snapshot.screenId, snapshot.uiTree);
+    const resumedFrame = reconcileStackToSnapshot(stack, snapshot, targetAppId);
+    if (resumedFrame) {
+      currentAppId = snapshot.appId ?? resumedFrame.appId ?? currentAppId;
+    }
+    return resumedFrame;
+  };
   
   visited.register({ alreadyVisited: false }, initialSnapshot, []);
   const initialStructureHash = hashUiStructure(initialSnapshot.uiTree);
@@ -577,6 +645,15 @@ export async function explore(
         );
 
         const recovered = await backtracker.navigateBack(frame.parentTitle);
+        const resumedAfterRecovery = isAndroidExplorerPlatform(config.platform) && (recovered || frame.isExternalApp)
+          ? await captureAndReconcileVisiblePage()
+          : undefined;
+        if (resumedAfterRecovery && resumedAfterRecovery !== frame) {
+          console.log(
+            `[FRAME-GUARD] recovered by reconciling to ancestor "${resumedAfterRecovery.state.screenTitle ?? resumedAfterRecovery.state.screenId ?? "(unknown)"}"`,
+          );
+          continue;
+        }
         const alignedAfterRecovery = recovered
           ? await backtracker.isOnExpectedPage(
             frame.state.screenId,
@@ -678,7 +755,15 @@ export async function explore(
       if (dedupResult.alreadyVisited) {
         stack.pop();
         if (frame.depth > 0) {
-          await backtracker.navigateBack(frame.parentTitle);
+          const recovered = await backtracker.navigateBack(frame.parentTitle);
+          const resumedFrame = recovered && isAndroidExplorerPlatform(config.platform)
+            ? await captureAndReconcileVisiblePage()
+            : undefined;
+          if (resumedFrame) {
+            console.log(
+              `[DEDUP-RETURN] Reconciled stack to page "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" at depth=${resumedFrame.depth}`,
+            );
+          }
           if (frame.isExternalApp) {
             currentAppId = targetAppId;
           }
@@ -804,6 +889,23 @@ export async function explore(
       
       // Handle return from external app pages (can't use navigate_back across apps)
       if (frame.isExternalApp) {
+        let resumedBySystemBack = false;
+        if (isAndroidExplorerPlatform(config.platform)) {
+          console.log(`[APP-SWITCH] Attempting Android system back before relaunch...`);
+          await backtracker.navigateBack();
+          const resumedFrame = await captureAndReconcileVisiblePage();
+          if (resumedFrame) {
+            console.log(
+              `[APP-SWITCH] Returned via system back at page "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" (app=${currentAppId})`,
+            );
+            resumedBySystemBack = true;
+          }
+        }
+
+        if (resumedBySystemBack) {
+          continue;
+        }
+
         console.log(`[APP-SWITCH] Returning to target app ${config.appId} via launchApp...`);
         try {
           await mcp.launchApp({ appId: config.appId });
@@ -811,31 +913,29 @@ export async function explore(
           // Update current app identity since we're back in target app
           currentAppId = targetAppId;
           console.log(`[APP-SWITCH] Returned to ${currentAppId} — launchApp preserves app state`);
-          
-          // Capture new snapshot to see what page we're on
-          const returnSnapshot = await snapshotter.captureSnapshot(config);
-          console.log(`[APP-SWITCH] Current page after return: ${returnSnapshot.screenTitle || '(unknown)'}`);
-          
-          // Re-register this page in backtracker with current structure
-          backtracker.registerPage(returnSnapshot.screenId, returnSnapshot.uiTree);
-          
-          // Update frame state to match current page
-          frame.state = {
-            screenId: returnSnapshot.screenId,
-            screenTitle: returnSnapshot.screenTitle,
-            structureHash: hashUiStructure(returnSnapshot.uiTree),
-          };
-          
-          // Mark frame as no longer external
-          frame.isExternalApp = false;
-          frame.appId = returnSnapshot.appId ?? config.appId;
+
+          const resumedFrame = await captureAndReconcileVisiblePage();
+          console.log(`[APP-SWITCH] Current page after return: ${resumedFrame?.state.screenTitle || '(unknown)'}`);
+          if (resumedFrame) {
+            console.log(
+              `[APP-SWITCH] Reconciled stack to page "${resumedFrame.state.screenTitle || '(unknown)'}" at depth=${resumedFrame.depth}`,
+            );
+          }
         } catch (err) {
           console.log(`[APP-SWITCH] launchApp failed, falling back to navigateBack: ${err}`);
           await backtracker.navigateBack(frame.parentTitle);
         }
       } else if (frame.depth > 0) {
         // Normal in-app backtrack
-        await backtracker.navigateBack(frame.parentTitle);
+        const recovered = await backtracker.navigateBack(frame.parentTitle);
+        const resumedFrame = recovered && isAndroidExplorerPlatform(config.platform)
+          ? await captureAndReconcileVisiblePage()
+          : undefined;
+        if (resumedFrame) {
+          console.log(
+            `[POP-RETURN] Reconciled stack to page "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" at depth=${resumedFrame.depth}`,
+          );
+        }
       }
       continue;
     }
@@ -933,6 +1033,19 @@ export async function explore(
           await mcp.launchApp({ appId: config.appId });
           await mcp.waitForUiStable({ timeoutMs: 2000 });
           currentAppId = targetAppId; // ← Correct: back to target app
+
+          const returnSnapshot = await snapshotter.captureSnapshot(config);
+          backtracker.registerPage(returnSnapshot.screenId, returnSnapshot.uiTree);
+          const resumedFrame = reconcileStackToSnapshot(
+            stack,
+            returnSnapshot,
+            targetAppId,
+          );
+          if (resumedFrame) {
+            console.log(
+              `[EXTERNAL-LINK] Reconciled stack to page "${resumedFrame.state.screenTitle || '(unknown)'}" at depth=${resumedFrame.depth}`,
+            );
+          }
         } else {
           console.log(`[EXTERNAL-LINK] No app switch detected (stayed in ${nextStateSnapshot.appId})`);
         }
@@ -1112,18 +1225,7 @@ export async function explore(
       // in-flow back transition and collapse stale descendants immediately.
       // This prevents recovery loops like Academy -> System Fonts where we
       // would otherwise keep the child frame alive and fail BACKTRACK_MISMATCH.
-      let ancestorFrameIndex = -1;
-      for (let i = stack.length - 1; i >= 0; i--) {
-        const sameScreen = stack[i].state.screenId === nextStateSnapshot.screenId;
-        const sameAppIdentity =
-          nextStateSnapshot.appId === undefined ||
-          stack[i].appId === undefined ||
-          stack[i].appId === nextStateSnapshot.appId;
-        if (sameScreen && sameAppIdentity) {
-          ancestorFrameIndex = i;
-          break;
-        }
-      }
+      const ancestorFrameIndex = findAncestorFrameIndex(stack, nextStateSnapshot);
       if (ancestorFrameIndex >= 0 && ancestorFrameIndex < stack.length - 1) {
         const remainingSiblingLabels = frame.elements
           .slice(frame.elementIndex)

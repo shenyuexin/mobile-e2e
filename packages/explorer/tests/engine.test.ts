@@ -86,6 +86,38 @@ function makePageInApp(appId: string, title: string, buttons: string[]): UiHiera
   };
 }
 
+function makeAndroidPageInApp(appId: string, title: string, buttons: string[]): UiHierarchy {
+  return {
+    className: "Application",
+    packageName: appId,
+    clickable: false,
+    enabled: true,
+    scrollable: false,
+    children: [
+      {
+        className: "android.widget.TextView",
+        text: title,
+        contentDesc: title,
+        packageName: appId,
+        clickable: false,
+        enabled: true,
+        scrollable: false,
+        children: [],
+      },
+      ...buttons.map((label) => ({
+        className: "android.view.ViewGroup",
+        text: label,
+        contentDesc: label,
+        packageName: appId,
+        clickable: true,
+        enabled: true,
+        scrollable: false,
+        children: [],
+      })),
+    ],
+  };
+}
+
 function createMockConfig(): ExplorerConfig {
   return {
     mode: "smoke",
@@ -104,6 +136,22 @@ function createMockConfig(): ExplorerConfig {
   };
 }
 
+function withDefaultMcp(
+  overrides: Omit<McpToolInterface, "tap" | "getScreenSummary"> &
+    Partial<Pick<McpToolInterface, "tap" | "getScreenSummary">>,
+): McpToolInterface {
+  return {
+    tap: async () => okResult({ tapped: true } as any),
+    getScreenSummary: async () =>
+      okResult({
+        title: "mock",
+        screenId: "mock-screen",
+        backAffordance: { hasBackAffordance: false },
+      } as any),
+    ...overrides,
+  } as McpToolInterface;
+}
+
 describe("explore engine recovery", () => {
   it("does not tap stale siblings when frame recovery fails", async () => {
     const pages = {
@@ -116,43 +164,41 @@ describe("explore engine recovery", () => {
     let currentPage: keyof typeof pages = "Settings";
     const tapLog: Array<{ page: string; label: string }> = [];
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => okResult({}),
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
-        if (currentPage === "Settings" && label === "General") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "About") {
-          currentPage = "About";
-        } else if (currentPage === "General" && label === "Dictionary") {
-          currentPage = "Dictionary";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        const target = args?.parentPageTitle;
-
-        if (currentPage === "General" && target === "Settings") {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-
-        if (currentPage === "About" && target === "General") {
-          return failedResult("NAVIGATE_BACK_FAILED");
-        }
-
+    const mcp = withDefaultMcp({ launchApp: async () => okResult({}),
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "General") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "About") {
+        currentPage = "About";
+      } else if (currentPage === "General" && label === "Dictionary") {
+        currentPage = "Dictionary";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      const target = args?.parentPageTitle;
+    
+      if (currentPage === "General" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+    
+      if (currentPage === "About" && target === "General") {
         return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+      }
+    
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     const result = await explore(createMockConfig(), mcp);
 
@@ -178,50 +224,48 @@ describe("explore engine recovery", () => {
     const tapLog: Array<{ page: string; label: string }> = [];
     const backLog: Array<{ page: string; target?: string }> = [];
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => okResult({}),
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
-        if (currentPage === "Settings" && label === "General") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "Fonts") {
-          currentPage = "Fonts";
-        } else if (currentPage === "Fonts" && label === "Back") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "Keyboard") {
-          currentPage = "Keyboard";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        backLog.push({ page: currentPage, target: args?.parentPageTitle });
-        const target = args?.parentPageTitle;
-
-        if (currentPage === "General" && target === "Fonts") {
-          currentPage = "Fonts";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Fonts" && target === "General") {
-          currentPage = "General";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "General" && target === "Settings") {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-
-        return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+    const mcp = withDefaultMcp({ launchApp: async () => okResult({}),
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "General") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "Fonts") {
+        currentPage = "Fonts";
+      } else if (currentPage === "Fonts" && label === "Back") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "Keyboard") {
+        currentPage = "Keyboard";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      backLog.push({ page: currentPage, target: args?.parentPageTitle });
+      const target = args?.parentPageTitle;
+    
+      if (currentPage === "General" && target === "Fonts") {
+        currentPage = "Fonts";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Fonts" && target === "General") {
+        currentPage = "General";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "General" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+    
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     const result = await explore(createMockConfig(), mcp);
 
@@ -251,45 +295,43 @@ describe("explore engine recovery", () => {
     let currentPage: keyof typeof pages = "Settings";
     const tapLog: Array<{ page: string; label: string }> = [];
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => okResult({}),
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
-        if (currentPage === "Settings" && label === "General") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "About") {
-          currentPage = "About";
-        } else if (currentPage === "About" && label === "Back") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "Keyboard") {
-          currentPage = "Keyboard";
-        } else if (currentPage === "About" && label === "iOS Version") {
-          currentPage = "iOS Version";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        const target = args?.parentPageTitle;
-        if (currentPage === "About" && (target === "Back" || target === "General")) {
-          currentPage = "General";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "General" && (target === "Back" || target === "Settings")) {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-        return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+    const mcp = withDefaultMcp({ launchApp: async () => okResult({}),
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "General") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "About") {
+        currentPage = "About";
+      } else if (currentPage === "About" && label === "Back") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "Keyboard") {
+        currentPage = "Keyboard";
+      } else if (currentPage === "About" && label === "iOS Version") {
+        currentPage = "iOS Version";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      const target = args?.parentPageTitle;
+      if (currentPage === "About" && (target === "Back" || target === "General")) {
+        currentPage = "General";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "General" && (target === "Back" || target === "Settings")) {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     await explore(createMockConfig(), mcp);
 
@@ -331,67 +373,65 @@ describe("explore engine recovery", () => {
       ],
     };
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => okResult({}),
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
-        if (currentPage === "Settings" && label === "General") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "Fonts") {
-          currentPage = "Fonts";
-        } else if (currentPage === "General" && label === "Keyboard") {
-          currentPage = "Keyboard";
-        } else if (currentPage === "Fonts" && label === "System Fonts") {
-          currentPage = "System Fonts";
-        } else if (currentPage === "Fonts" && label === "My Fonts") {
-          currentPage = "My Fonts";
-        } else if (currentPage === "System Fonts" && label === "Font A") {
-          currentPage = "Font A";
-        } else if (currentPage === "System Fonts" && label === "Font B") {
-          currentPage = "Font B";
-        } else if (currentPage === "Font A" && label === "System Fonts") {
-          currentPage = "System Fonts";
-        } else if (currentPage === "Font A" && label === "Plain") {
-          currentPage = "Plain";
-        } else if (currentPage === "Plain" && label === "Back") {
-          currentPage = "Font A";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        const target = args?.parentPageTitle;
-        if ((currentPage === "Font A" || currentPage === "Font B") && target === "System Fonts") {
-          currentPage = "System Fonts";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Plain" && target === "Font A") {
-          currentPage = "Font A";
-          return okResult({ navigated: true } as any);
-        }
-        if ((currentPage === "System Fonts" || currentPage === "My Fonts") && target === "Fonts") {
-          currentPage = "Fonts";
-          return okResult({ navigated: true } as any);
-        }
-        if ((currentPage === "Fonts" || currentPage === "Keyboard") && target === "General") {
-          currentPage = "General";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "General" && target === "Settings") {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-        return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+    const mcp = withDefaultMcp({ launchApp: async () => okResult({}),
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "General") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "Fonts") {
+        currentPage = "Fonts";
+      } else if (currentPage === "General" && label === "Keyboard") {
+        currentPage = "Keyboard";
+      } else if (currentPage === "Fonts" && label === "System Fonts") {
+        currentPage = "System Fonts";
+      } else if (currentPage === "Fonts" && label === "My Fonts") {
+        currentPage = "My Fonts";
+      } else if (currentPage === "System Fonts" && label === "Font A") {
+        currentPage = "Font A";
+      } else if (currentPage === "System Fonts" && label === "Font B") {
+        currentPage = "Font B";
+      } else if (currentPage === "Font A" && label === "System Fonts") {
+        currentPage = "System Fonts";
+      } else if (currentPage === "Font A" && label === "Plain") {
+        currentPage = "Plain";
+      } else if (currentPage === "Plain" && label === "Back") {
+        currentPage = "Font A";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      const target = args?.parentPageTitle;
+      if ((currentPage === "Font A" || currentPage === "Font B") && target === "System Fonts") {
+        currentPage = "System Fonts";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Plain" && target === "Font A") {
+        currentPage = "Font A";
+        return okResult({ navigated: true } as any);
+      }
+      if ((currentPage === "System Fonts" || currentPage === "My Fonts") && target === "Fonts") {
+        currentPage = "Fonts";
+        return okResult({ navigated: true } as any);
+      }
+      if ((currentPage === "Fonts" || currentPage === "Keyboard") && target === "General") {
+        currentPage = "General";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "General" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     const result = await explore(config, mcp);
 
@@ -431,51 +471,49 @@ describe("explore engine recovery", () => {
     let currentPage: keyof typeof pages = "Settings";
     const tapLog: Array<{ page: string; label: string }> = [];
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => okResult({}),
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
-        if (currentPage === "Settings" && label === "General") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "Fonts") {
-          currentPage = "Fonts";
-        } else if (currentPage === "General" && label === "Keyboard") {
-          currentPage = "Keyboard";
-        } else if (currentPage === "Fonts" && label === "System Fonts") {
-          currentPage = "System Fonts";
-        } else if (currentPage === "System Fonts" && label === "Academy Engraved LET") {
-          currentPage = "Academy Engraved LET";
-        } else if (currentPage === "Academy Engraved LET" && label === "System Fonts") {
-          currentPage = "System Fonts";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        const target = args?.parentPageTitle;
-        if (currentPage === "System Fonts" && target === "Fonts") {
-          currentPage = "Fonts";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Fonts" && target === "General") {
-          currentPage = "General";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "General" && target === "Settings") {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-        return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+    const mcp = withDefaultMcp({ launchApp: async () => okResult({}),
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "General") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "Fonts") {
+        currentPage = "Fonts";
+      } else if (currentPage === "General" && label === "Keyboard") {
+        currentPage = "Keyboard";
+      } else if (currentPage === "Fonts" && label === "System Fonts") {
+        currentPage = "System Fonts";
+      } else if (currentPage === "System Fonts" && label === "Academy Engraved LET") {
+        currentPage = "Academy Engraved LET";
+      } else if (currentPage === "Academy Engraved LET" && label === "System Fonts") {
+        currentPage = "System Fonts";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      const target = args?.parentPageTitle;
+      if (currentPage === "System Fonts" && target === "Fonts") {
+        currentPage = "Fonts";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Fonts" && target === "General") {
+        currentPage = "General";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "General" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     const result = await explore(createMockConfig(), mcp);
 
@@ -507,32 +545,30 @@ describe("explore engine recovery", () => {
       maxDepth: 5,
     };
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => okResult({}),
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
-        if (currentPage === "Settings" && label === "General") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "Language & Region") {
-          currentPage = "PREFERRED LANGUAGES";
-        } else if (currentPage === "PREFERRED LANGUAGES" && label === "Add Language…") {
-          currentPage = "IPHONE LANGUAGES";
-        } else if (currentPage === "Settings" && label === "Accessibility") {
-          currentPage = "Accessibility";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async () => failedResult("NAVIGATE_BACK_FAILED"),
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+    const mcp = withDefaultMcp({ launchApp: async () => okResult({}),
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "General") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "Language & Region") {
+        currentPage = "PREFERRED LANGUAGES";
+      } else if (currentPage === "PREFERRED LANGUAGES" && label === "Add Language…") {
+        currentPage = "IPHONE LANGUAGES";
+      } else if (currentPage === "Settings" && label === "Accessibility") {
+        currentPage = "Accessibility";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async () => failedResult("NAVIGATE_BACK_FAILED"),
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     const result = await explore(config, mcp);
 
@@ -553,40 +589,38 @@ describe("explore engine recovery", () => {
 
     let currentPage: keyof typeof pages = "Settings";
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => okResult({}),
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-
-        if (currentPage === "Settings" && label === "General") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "About") {
-          currentPage = "About";
-        } else if (currentPage === "About" && label === "Back") {
-          currentPage = "General";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        const target = args?.parentPageTitle;
-        if (currentPage === "About" && target === "General") {
-          currentPage = "General";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "General" && target === "Settings") {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-        return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+    const mcp = withDefaultMcp({ launchApp: async () => okResult({}),
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+    
+      if (currentPage === "Settings" && label === "General") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "About") {
+        currentPage = "About";
+      } else if (currentPage === "About" && label === "Back") {
+        currentPage = "General";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      const target = args?.parentPageTitle;
+      if (currentPage === "About" && target === "General") {
+        currentPage = "General";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "General" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     const result = await explore(createMockConfig(), mcp);
     const lifecycle = result.transitionLifecycle;
@@ -611,53 +645,51 @@ describe("explore engine recovery", () => {
     let currentPage: keyof typeof pages = "Settings";
     const tapLog: Array<{ page: string; label: string }> = [];
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => okResult({}),
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
-        if (currentPage === "Settings" && label === "General") {
-          currentPage = "General";
-        } else if (currentPage === "General" && label === "Fonts") {
-          currentPage = "Fonts";
-        } else if (currentPage === "Fonts" && label === "System Fonts") {
-          currentPage = "System Fonts";
-        } else if (currentPage === "Fonts" && label === "My Fonts") {
-          currentPage = "My Fonts";
-        } else if (currentPage === "System Fonts" && label === "Academy Engraved LET") {
-          currentPage = "Academy Engraved LET";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        const target = args?.parentPageTitle;
-        if (currentPage === "Academy Engraved LET" && target === "System Fonts") {
-          currentPage = "System Fonts";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "System Fonts" && target === "Fonts") {
-          currentPage = "Fonts";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Fonts" && target === "General") {
-          currentPage = "General";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "General" && target === "Settings") {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-        return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+    const mcp = withDefaultMcp({ launchApp: async () => okResult({}),
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "General") {
+        currentPage = "General";
+      } else if (currentPage === "General" && label === "Fonts") {
+        currentPage = "Fonts";
+      } else if (currentPage === "Fonts" && label === "System Fonts") {
+        currentPage = "System Fonts";
+      } else if (currentPage === "Fonts" && label === "My Fonts") {
+        currentPage = "My Fonts";
+      } else if (currentPage === "System Fonts" && label === "Academy Engraved LET") {
+        currentPage = "Academy Engraved LET";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      const target = args?.parentPageTitle;
+      if (currentPage === "Academy Engraved LET" && target === "System Fonts") {
+        currentPage = "System Fonts";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "System Fonts" && target === "Fonts") {
+        currentPage = "Fonts";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Fonts" && target === "General") {
+        currentPage = "General";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "General" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     await explore(createMockConfig(), mcp);
 
@@ -669,10 +701,11 @@ describe("explore engine recovery", () => {
 
   it("collapses descendant frames when external-app back returns to an ancestor page", async () => {
     const pages = {
-      Settings: makePageInApp("com.android.settings", "Settings", ["Account"]),
-      Profile: makePageInApp("com.bbk.account", "Profile", ["Profile picture"]),
-      "Profile picture": makePageInApp("com.bbk.account", "Profile picture", ["Profile picture settings"]),
-      "Profile picture settings": makePageInApp("com.bbk.account", "Profile picture settings", ["Back", "Change avatar"]),
+      Settings: makeAndroidPageInApp("com.android.settings", "Settings", ["Account", "Display"]),
+      Profile: makeAndroidPageInApp("com.bbk.account", "Profile", ["Profile picture"]),
+      "Profile picture": makeAndroidPageInApp("com.bbk.account", "Profile picture", ["Profile picture settings"]),
+      "Profile picture settings": makeAndroidPageInApp("com.bbk.account", "Profile picture settings", ["Back", "Change avatar"]),
+      Display: makeAndroidPageInApp("com.android.settings", "Display", []),
     } satisfies Record<string, UiHierarchy>;
 
     let currentPage: keyof typeof pages = "Settings";
@@ -686,60 +719,292 @@ describe("explore engine recovery", () => {
       maxPages: 10,
     };
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => {
-        currentPage = "Settings";
-        return okResult({});
-      },
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
+    const mcp = withDefaultMcp({ launchApp: async () => {
+      currentPage = "Settings";
+      return okResult({});
+    },
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
         if (currentPage === "Settings" && label === "Account") {
           currentPage = "Profile";
+        } else if (currentPage === "Settings" && label === "Display") {
+          currentPage = "Display";
         } else if (currentPage === "Profile" && label === "Profile picture") {
           currentPage = "Profile picture";
         } else if (currentPage === "Profile picture" && label === "Profile picture settings") {
-          currentPage = "Profile picture settings";
-        } else if (currentPage === "Profile picture settings" && label === "Back") {
-          currentPage = "Profile picture";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        const target = args?.parentPageTitle;
-        if (currentPage === "Profile picture settings" && (target === "Profile picture" || target === "Back")) {
-          currentPage = "Profile picture";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Profile picture" && target === "Profile") {
-          currentPage = "Profile";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Profile" && target === "Settings") {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-        return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+        currentPage = "Profile picture settings";
+      } else if (currentPage === "Profile picture settings" && label === "Back") {
+        currentPage = "Profile picture";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      const target = args?.parentPageTitle;
+      if (currentPage === "Profile picture settings" && (target === "Profile picture" || target === "Back")) {
+        currentPage = "Profile picture";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Profile picture" && target === "Profile") {
+        currentPage = "Profile";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Profile" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     const result = await explore(config, mcp);
 
     assert.equal(
-      result.failed.getEntries().some((entry) => entry.failureType === "BACKTRACK_MISMATCH"),
+      result.failed.getEntries().some((entry) => entry.path.join(" > ").includes("Account")),
       false,
     );
     assert.equal(
       tapLog.filter((entry) => entry.page === "Profile picture settings" && entry.label === "Change avatar").length,
       0,
+    );
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Settings" && entry.label === "Display"),
+      true,
+    );
+  });
+
+  it("resumes root siblings when external-app return lands on home page", async () => {
+    const pages = {
+      Settings: makeAndroidPageInApp("com.android.settings", "Settings", ["Bluetooth", "Display"]),
+      Bluetooth: makeAndroidPageInApp("com.android.settings", "Bluetooth", [
+        "Files received via Bluetooth",
+        "Other Bluetooth setting",
+      ]),
+      "No transfer history": makeAndroidPageInApp("com.android.bluetooth", "No transfer history", []),
+      Display: makeAndroidPageInApp("com.android.settings", "Display", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const config = {
+      ...createMockConfig(),
+      platform: "android-device" as const,
+      appId: "com.android.settings",
+      maxPages: 10,
+    };
+
+    const mcp = withDefaultMcp({ launchApp: async () => {
+      currentPage = "Settings";
+      return okResult({});
+    },
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "Bluetooth") {
+        currentPage = "Bluetooth";
+      } else if (currentPage === "Settings" && label === "Display") {
+        currentPage = "Display";
+      } else if (currentPage === "Bluetooth" && label === "Files received via Bluetooth") {
+        currentPage = "No transfer history";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      const target = args?.parentPageTitle;
+      if (currentPage === "Bluetooth" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Display" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
+
+    const result = await explore(config, mcp);
+
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Settings" && entry.label === "Display"),
+      true,
+    );
+    assert.equal(
+      result.failed.getEntries().some((entry) => entry.path.join(" > ").includes("Bluetooth")),
+      false,
+    );
+  });
+
+  it("uses Android system back to return from an external app before relaunching root", async () => {
+    const pages = {
+      Settings: makeAndroidPageInApp("com.android.settings", "Settings", ["Bluetooth", "Display"]),
+      Bluetooth: makeAndroidPageInApp("com.android.settings", "Bluetooth", [
+        "Files received via Bluetooth",
+        "Other Bluetooth setting",
+      ]),
+      "No transfer history": makeAndroidPageInApp("com.android.bluetooth", "No transfer history", []),
+      Display: makeAndroidPageInApp("com.android.settings", "Display", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+    const backLog: string[] = [];
+    let launchCalls = 0;
+
+    const config = {
+      ...createMockConfig(),
+      platform: "android-device" as const,
+      appId: "com.android.settings",
+      maxPages: 10,
+    };
+
+    const mcp = withDefaultMcp({ launchApp: async () => {
+      launchCalls += 1;
+      currentPage = "Settings";
+      return okResult({});
+    },
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+
+      if (currentPage === "Settings" && label === "Bluetooth") {
+        currentPage = "Bluetooth";
+      } else if (currentPage === "Settings" && label === "Display") {
+        currentPage = "Display";
+      } else if (currentPage === "Bluetooth" && label === "Files received via Bluetooth") {
+        currentPage = "No transfer history";
+      }
+
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async () => {
+      backLog.push(currentPage);
+      if (currentPage === "No transfer history") {
+        currentPage = "Bluetooth";
+        return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+      }
+      if (currentPage === "Bluetooth") {
+        currentPage = "Settings";
+        return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+      }
+      if (currentPage === "Display") {
+        currentPage = "Settings";
+        return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
+
+    const result = await explore(config, mcp);
+
+    assert.equal(backLog.includes("No transfer history"), true);
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Settings" && entry.label === "Display"),
+      true,
+    );
+    assert.equal(
+      result.failed.getEntries().some((entry) => entry.path.join(" > ").includes("Bluetooth")),
+      false,
+    );
+  });
+
+  it("accepts Android ancestor returns after transient phone selection flows", async () => {
+    const pages = {
+      Settings: makeAndroidPageInApp("com.android.settings", "Settings", ["SIMs & mobile network", "Display"]),
+      "Data connection": makeAndroidPageInApp("com.android.phone", "Data connection", [
+        "Default calling SIM",
+        "Data management",
+      ]),
+      "Dial primary": makeAndroidPageInApp("com.android.phone", "Dial", ["Default calling SIM"]),
+      "Default calling SIM": makeAndroidPageInApp("com.android.phone", "Default calling SIM", ["giffgaff"]),
+      "Dial secondary": makeAndroidPageInApp("com.android.phone", "Dial", []),
+      Display: makeAndroidPageInApp("com.android.settings", "Display", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const config = {
+      ...createMockConfig(),
+      platform: "android-device" as const,
+      appId: "com.android.settings",
+      maxPages: 12,
+    };
+
+    const mcp = withDefaultMcp({ launchApp: async () => {
+      currentPage = "Settings";
+      return okResult({});
+    },
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+
+      if (currentPage === "Settings" && label === "SIMs & mobile network") {
+        currentPage = "Data connection";
+      } else if (currentPage === "Settings" && label === "Display") {
+        currentPage = "Display";
+      } else if (currentPage === "Data connection" && label === "Default calling SIM") {
+        currentPage = "Dial primary";
+      } else if (currentPage === "Dial primary" && label === "Default calling SIM") {
+        currentPage = "Default calling SIM";
+      } else if (currentPage === "Default calling SIM" && label === "giffgaff") {
+        currentPage = "Dial secondary";
+      }
+
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      const target = args?.parentPageTitle;
+      if (currentPage === "Dial secondary" && !target) {
+        currentPage = "Data connection";
+        return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+      }
+      if (currentPage === "Data connection" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+      }
+      if (currentPage === "Display" && target === "Settings") {
+        currentPage = "Settings";
+        return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
+
+    const result = await explore(config, mcp);
+
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Data connection" && entry.label === "Data management"),
+      true,
+    );
+    assert.equal(
+      result.failed.getEntries().some((entry) => entry.failureType === "BACKTRACK_MISMATCH"),
+      false,
     );
   });
 
@@ -763,48 +1028,46 @@ describe("explore engine recovery", () => {
       maxPages: 10,
     };
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => {
+    const mcp = withDefaultMcp({ launchApp: async () => {
+      currentPage = "Settings";
+      return okResult({});
+    },
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "Account") {
+        currentPage = "Profile";
+      } else if (currentPage === "Profile" && label === "Profile picture") {
+        currentPage = "Profile picture";
+      } else if (currentPage === "Profile picture" && label === "Account nickname") {
+        currentPage = "Account nickname";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      backLog.push({ page: currentPage, target: args?.parentPageTitle });
+      if (currentPage === "Account nickname") {
+        currentPage = "Profile picture";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Profile picture" && args?.parentPageTitle === "Profile") {
+        currentPage = "Profile";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Profile" && args?.parentPageTitle === "Settings") {
         currentPage = "Settings";
-        return okResult({});
-      },
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
-        if (currentPage === "Settings" && label === "Account") {
-          currentPage = "Profile";
-        } else if (currentPage === "Profile" && label === "Profile picture") {
-          currentPage = "Profile picture";
-        } else if (currentPage === "Profile picture" && label === "Account nickname") {
-          currentPage = "Account nickname";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        backLog.push({ page: currentPage, target: args?.parentPageTitle });
-        if (currentPage === "Account nickname") {
-          currentPage = "Profile picture";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Profile picture" && args?.parentPageTitle === "Profile") {
-          currentPage = "Profile";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Profile" && args?.parentPageTitle === "Settings") {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-        return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+        return okResult({ navigated: true } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     const result = await explore(config, mcp);
 
@@ -843,48 +1106,46 @@ describe("explore engine recovery", () => {
       statefulFormPolicy: "skip" as const,
     };
 
-    const mcp: McpToolInterface = {
-      launchApp: async () => {
+    const mcp = withDefaultMcp({ launchApp: async () => {
+      currentPage = "Settings";
+      return okResult({});
+    },
+    waitForUiStable: async () => okResult({ stable: true }),
+    inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+    tapElement: async (args) => {
+      const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+      tapLog.push({ page: currentPage, label });
+    
+      if (currentPage === "Settings" && label === "Account") {
+        currentPage = "Profile";
+      } else if (currentPage === "Profile" && label === "Manage shipping addresses") {
+        currentPage = "Manage shipping addresses";
+      } else if (currentPage === "Manage shipping addresses" && label === "Create shipping address") {
+        currentPage = "Create shipping address";
+      }
+    
+      return okResult({ tapped: true } as any);
+    },
+    navigateBack: async (args) => {
+      backLog.push({ page: currentPage, target: args?.parentPageTitle });
+      if (currentPage === "Create shipping address") {
+        currentPage = "Manage shipping addresses";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Manage shipping addresses" && args?.parentPageTitle === "Profile") {
+        currentPage = "Profile";
+        return okResult({ navigated: true } as any);
+      }
+      if (currentPage === "Profile" && args?.parentPageTitle === "Settings") {
         currentPage = "Settings";
-        return okResult({});
-      },
-      waitForUiStable: async () => okResult({ stable: true }),
-      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
-      tapElement: async (args) => {
-        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
-        tapLog.push({ page: currentPage, label });
-
-        if (currentPage === "Settings" && label === "Account") {
-          currentPage = "Profile";
-        } else if (currentPage === "Profile" && label === "Manage shipping addresses") {
-          currentPage = "Manage shipping addresses";
-        } else if (currentPage === "Manage shipping addresses" && label === "Create shipping address") {
-          currentPage = "Create shipping address";
-        }
-
-        return okResult({ tapped: true } as any);
-      },
-      navigateBack: async (args) => {
-        backLog.push({ page: currentPage, target: args?.parentPageTitle });
-        if (currentPage === "Create shipping address") {
-          currentPage = "Manage shipping addresses";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Manage shipping addresses" && args?.parentPageTitle === "Profile") {
-          currentPage = "Profile";
-          return okResult({ navigated: true } as any);
-        }
-        if (currentPage === "Profile" && args?.parentPageTitle === "Settings") {
-          currentPage = "Settings";
-          return okResult({ navigated: true } as any);
-        }
-        return failedResult("NAVIGATE_BACK_FAILED");
-      },
-      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
-      recoverToKnownState: async () => okResult({ recovered: true } as any),
-      resetAppState: async () => okResult({ reset: true } as any),
-      requestManualHandoff: async () => okResult({ handedOff: true } as any),
-    };
+        return okResult({ navigated: true } as any);
+      }
+      return failedResult("NAVIGATE_BACK_FAILED");
+    },
+    takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+    recoverToKnownState: async () => okResult({ recovered: true } as any),
+    resetAppState: async () => okResult({ reset: true } as any),
+    requestManualHandoff: async () => okResult({ handedOff: true } as any), });
 
     const result = await explore(config, mcp);
     const createAddressEntry = result.visited.getEntries().find((entry) => entry.screenTitle === "Create shipping address");
