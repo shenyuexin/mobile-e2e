@@ -15,6 +15,8 @@
 import { createServer } from "../../packages/mcp-server/src/index.js";
 import { explore } from "../../packages/explorer/src/cli.js";
 import { execFile } from "node:child_process";
+import { mkdirSync, createWriteStream } from "node:fs";
+import { join } from "node:path";
 
 const mode = process.argv[2] === "full" ? "full" : "smoke";
 const appId = process.env.APP_ID?.trim() || "com.android.settings";
@@ -32,6 +34,60 @@ const maxDepth = process.env.EXPLORER_MAX_DEPTH?.trim()
   || (mode === "full" ? "8" : "5");
 const timeoutMs = process.env.EXPLORER_TIMEOUT_MS?.trim()
   || (mode === "full" ? "7200000" : "3600000");
+const runId = process.env.EXPLORER_RUN_ID?.trim()
+  || new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+
+process.env.EXPLORER_RUN_ID = runId;
+
+const runDir = join(outputDir, runId);
+mkdirSync(runDir, { recursive: true });
+const logPath = join(runDir, "log.txt");
+const logStream = createWriteStream(logPath, { flags: "a" });
+
+const originalConsole = {
+  log: console.log.bind(console),
+  error: console.error.bind(console),
+  warn: console.warn.bind(console),
+  info: console.info.bind(console),
+};
+
+function formatLogArg(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.stack || value.message;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function teeLog(level: "LOG" | "ERROR" | "WARN" | "INFO", args: unknown[]): void {
+  const line = args.map(formatLogArg).join(" ");
+  logStream.write(`[${new Date().toISOString()}] [${level}] ${line}\n`);
+}
+
+console.log = (...args: unknown[]) => {
+  teeLog("LOG", args);
+  originalConsole.log(...args);
+};
+console.error = (...args: unknown[]) => {
+  teeLog("ERROR", args);
+  originalConsole.error(...args);
+};
+console.warn = (...args: unknown[]) => {
+  teeLog("WARN", args);
+  originalConsole.warn(...args);
+};
+console.info = (...args: unknown[]) => {
+  teeLog("INFO", args);
+  originalConsole.info(...args);
+};
+
+async function flushLogStream(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    logStream.end(() => resolve());
+  });
+}
 
 function execAdb(args: string[], timeout = 5000): Promise<string> {
   return new Promise((resolve) => {
@@ -341,10 +397,11 @@ async function main(): Promise<void> {
   }
 
   await server.dispose?.();
+  await flushLogStream();
   process.exit(exitCode);
 }
 
 main().catch((err) => {
   console.error("Explorer Android physical-device test failed:", err);
-  process.exit(1);
+  flushLogStream().finally(() => process.exit(1));
 });

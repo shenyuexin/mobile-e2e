@@ -116,7 +116,7 @@ export async function runExplore(
 
   // --- Stage 4: Run explore engine ---
   console.log("[RUNNER] Stage 4/6: Running exploration engine...");
-  let explorationResult;
+  let explorationResult: Awaited<ReturnType<typeof explore>>;
   try {
     explorationResult = await explore(config, mcp);
     console.log(`[RUNNER]   Visited ${explorationResult.visited.count} pages, ${explorationResult.failed.getEntries().length} failures`);
@@ -135,6 +135,7 @@ export async function runExplore(
       abortReason: explorationResult.abortReason,
       durationMs,
       sampling: explorationResult.sampling,
+      runId: process.env.EXPLORER_RUN_ID,
     });
     const reportPath = `${config.reportDir}/index.json`;
     console.log(`[RUNNER]   Report written to ${config.reportDir}/`);
