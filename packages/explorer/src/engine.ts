@@ -679,9 +679,34 @@ export async function explore(
         stack.pop();
         if (frame.depth > 0) {
           await backtracker.navigateBack(frame.parentTitle);
+          if (frame.isExternalApp) {
+            currentAppId = targetAppId;
+          }
         }
         continue;
       }
+
+      const pageAction = decideExplorerPageAction(snapshot, config);
+      if (pageAction.type === "gated") {
+        console.log(
+          `[PAGE-CONTEXT] gated page at depth=${frame.depth}, title="${snapshot.screenTitle ?? snapshot.screenId}", ` +
+          `reason="${pageAction.reason}"`,
+        );
+        markSnapshotAsGated(snapshot, pageAction, `pageContext:${pageAction.ruleFamily ?? "heuristic"}`);
+        visited.register(dedupResult, snapshot, frame.path);
+        backtracker.registerPage(snapshot.screenId, snapshot.uiTree);
+        currentStateNode = stateGraph.registerState(snapshot, hashUiStructure(snapshot.uiTree));
+        recordPageSuccess(circuitBreaker);
+        stack.pop();
+        if (frame.depth > 0) {
+          await backtracker.navigateBack(frame.parentTitle);
+          if (frame.isExternalApp) {
+            currentAppId = targetAppId;
+          }
+        }
+        continue;
+      }
+
       visited.register(dedupResult, snapshot, frame.path);
       backtracker.registerPage(snapshot.screenId, snapshot.uiTree);
       frame.elements = prioritizeElements(snapshot.clickableElements).sort(compareExplorationOrder);
@@ -697,20 +722,6 @@ export async function explore(
       };
       currentStateNode = stateGraph.registerState(snapshot, frame.state.structureHash ?? "");
       recordPageSuccess(circuitBreaker); // reset per-page counter for new page
-
-      const pageAction = decideExplorerPageAction(snapshot, config);
-      if (pageAction.type === "gated") {
-        console.log(
-          `[PAGE-CONTEXT] gated page at depth=${frame.depth}, title="${snapshot.screenTitle ?? snapshot.screenId}", ` +
-          `reason="${pageAction.reason}"`,
-        );
-        markSnapshotAsGated(snapshot, pageAction, `pageContext:${pageAction.ruleFamily ?? "heuristic"}`);
-        stack.pop();
-        if (frame.depth > 0) {
-          await backtracker.navigateBack(frame.parentTitle);
-        }
-        continue;
-      }
 
       // --- Sampling check: high-fanout collection pages (smoke mode) ---
       const matchedRule = matchSamplingRule(
