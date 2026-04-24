@@ -48,6 +48,8 @@ export interface ReportOpts {
   transitionLifecycle?: TransitionLifecycleSummary;
   /** StateGraph aggregate counters from engine. */
   stateGraph?: StateGraphSummary;
+  /** Precomputed run id so callers can create the run directory before report generation. */
+  runId?: string;
 }
 
 /**
@@ -73,7 +75,7 @@ export async function generateReport(
 ): Promise<void> {
   const modules = inferModules(pages);
   const reportDir = config.reportDir;
-  const runId = generateRunId();
+  const runId = opts.runId ?? process.env.EXPLORER_RUN_ID ?? generateRunId();
   const runDir = join(reportDir, runId);
 
   // Ensure output directory exists
