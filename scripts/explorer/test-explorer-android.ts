@@ -207,6 +207,19 @@ async function ensureDeviceAwakeAndUnlocked(): Promise<void> {
   console.log(`[ENTRY] Foreground after unlock handling: ${after ?? "unknown"}`);
 }
 
+async function aggressivelyRecoverToUsableForeground(): Promise<void> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    console.log(`[ENTRY] Aggressive unlock attempt ${attempt}/3...`);
+    await ensureDeviceAwakeAndUnlocked();
+    await execAdb(["shell", "input", "keyevent", "4"], 5000);
+    await sleep(500);
+    await execAdb(["shell", "input", "keyevent", "3"], 5000);
+    await sleep(1200);
+    await execAdb(["shell", "wm", "dismiss-keyguard"], 5000);
+    await sleep(700);
+  }
+}
+
 async function launchSettingsViaAdbFallback(): Promise<void> {
   console.log("[ENTRY] Falling back to direct adb launch...");
   await execAdb(["shell", "am", "force-stop", appId], 8000);
@@ -282,11 +295,23 @@ async function launchSettingsAndVerifyForeground(server: ReturnType<typeof creat
   }
 
   if (looksLikeLockedSystemOverlay(evidence)) {
-    throw new Error(
-      `Android entry guard failed: device still appears locked or covered by system UI. ` +
-      `topActivity=${evidence.topActivity}, sampleTexts=${JSON.stringify(evidence.sampleTexts)}. ` +
-      `Unlock the Vivo device fully, keep it awake on the home screen, then rerun.`,
-    );
+    console.log("[ENTRY] Locked/system overlay still detected; performing aggressive recovery...");
+    await aggressivelyRecoverToUsableForeground();
+    await launchSettingsViaAdbFallback();
+    foreground = await getForegroundPackage();
+    console.log(`[ENTRY] Foreground after aggressive recovery: ${foreground ?? "unknown"}`);
+    evidence = await collectEntryEvidence(server, "after-aggressive-recovery");
+    if (looksLikeSettingsHome(evidence)) {
+      console.log("[ENTRY] Settings UI semantics detected after aggressive recovery.");
+      return;
+    }
+    if (looksLikeLockedSystemOverlay(evidence)) {
+      throw new Error(
+        `Android entry guard failed: device still appears locked or covered by system UI. ` +
+        `topActivity=${evidence.topActivity}, sampleTexts=${JSON.stringify(evidence.sampleTexts)}. ` +
+        `Unlock the Vivo device fully, keep it awake on the home screen, then rerun.`,
+      );
+    }
   }
 
   if (foreground !== appId) {
@@ -374,7 +399,8 @@ async function main(): Promise<void> {
 
   const server = createServer();
 
-  // await runMcpUiProbe(server);
+  await runMcpUiProbe(server);
+  process.env.EXPLORER_SKIP_PREFLIGHT_LAUNCH = "1";
 
   await explore(
     [

@@ -1586,7 +1586,7 @@ export interface CancelRecordSessionData {
   status: RecordSessionStatus;
   endedAt?: string;
 }
-export interface InspectUiInput { sessionId: string; platform?: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; outputPath?: string; dryRun?: boolean; }
+export interface InspectUiInput { sessionId: string; platform?: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; deviceId?: string; outputPath?: string; appId?: string; dryRun?: boolean; }
 export interface InspectUiQueryInput extends InspectUiInput, InspectUiQuery {}
 export interface QueryUiInput extends InspectUiQueryInput {}
 export interface InstallAppInput { sessionId: string; platform?: Platform; runnerProfile?: RunnerProfile; harnessConfigPath?: string; artifactPath?: string; deviceId?: string; dryRun?: boolean; }

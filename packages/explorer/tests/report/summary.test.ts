@@ -237,8 +237,9 @@ describe("generateSummaryJson", () => {
       durationMs: 5000,
     });
     assert.ok(summary.pageTypeCounts);
-    assert.equal(summary.pageTypeCounts?.normalPages, 2);
-    assert.equal(summary.pageTypeCounts?.modalPages, 1);
+		assert.equal(summary.pageTypeCounts?.normalPages, 2);
+		assert.equal(summary.pageTypeCounts?.formEditorPages, 0);
+		assert.equal(summary.pageTypeCounts?.modalPages, 1);
     assert.equal(summary.pageTypeCounts?.unknownPages, 1);
     assert.equal(summary.pageTypeCounts?.alertPages, 1);
     assert.equal(summary.pageTypeCounts?.dialogPages, 0);
@@ -255,8 +256,9 @@ describe("generateSummaryJson", () => {
       durationMs: 0,
     });
     assert.ok(summary.pageTypeCounts);
-    assert.equal(summary.pageTypeCounts?.normalPages, 0);
-    assert.equal(summary.pageTypeCounts?.unknownPages, 0);
+		assert.equal(summary.pageTypeCounts?.normalPages, 0);
+		assert.equal(summary.pageTypeCounts?.formEditorPages, 0);
+		assert.equal(summary.pageTypeCounts?.unknownPages, 0);
   });
 });
 
@@ -274,8 +276,9 @@ describe("countPageTypes", () => {
       makePage("p9", 0, [], false, "unknown"),
     ];
     const counts = countPageTypes(pages);
-    assert.equal(counts.normalPages, 1);
-    assert.equal(counts.dialogPages, 1);
+		assert.equal(counts.normalPages, 1);
+		assert.equal(counts.formEditorPages, 0);
+		assert.equal(counts.dialogPages, 1);
     assert.equal(counts.alertPages, 1);
     assert.equal(counts.actionSheetPages, 1);
     assert.equal(counts.modalPages, 1);
@@ -300,14 +303,16 @@ describe("countPageTypes", () => {
       explorationStatus: "expanded",
     };
     const counts = countPageTypes([page]);
-    assert.equal(counts.unknownPages, 1);
-    assert.equal(counts.normalPages, 0);
+		assert.equal(counts.unknownPages, 1);
+		assert.equal(counts.normalPages, 0);
+		assert.equal(counts.formEditorPages, 0);
   });
 
   it("returns zero for empty array", () => {
     const counts = countPageTypes([]);
-    assert.equal(counts.normalPages, 0);
-    assert.equal(counts.unknownPages, 0);
+		assert.equal(counts.normalPages, 0);
+		assert.equal(counts.formEditorPages, 0);
+		assert.equal(counts.unknownPages, 0);
     assert.equal(counts.dialogPages, 0);
   });
 });

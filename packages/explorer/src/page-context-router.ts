@@ -97,6 +97,26 @@ export function decidePageContextAction(
 				reason: "normal_page — proceed with standard DFS exploration",
 			};
 
+		case "form_editor":
+			return {
+				type: "gated",
+				reason:
+					"form_editor detected — editable settings form should not be deep-expanded by DFS",
+				recoveryMethod: "cancel-first",
+				ruleFamily: "form_editor",
+			};
+
+		case "popup_surface":
+			return {
+				type: "gated",
+				reason:
+					"popup_surface detected — transient picker/list overlay should not be DFS-expanded",
+				isInterruption: true,
+				interruptionType: "popup",
+				recoveryMethod: "backtrack-cancel-first",
+				ruleFamily: "popup_surface",
+			};
+
 		case "permission_surface":
 			return {
 				type: "gated",

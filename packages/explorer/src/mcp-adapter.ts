@@ -51,7 +51,7 @@ export interface NavigateBackArgs {
 export interface McpToolInterface {
   launchApp(args: { appId: string }): Promise<ToolResult<LaunchAppData>>;
   waitForUiStable(args: { timeoutMs: number }): Promise<ToolResult<WaitForUiStableData>>;
-  inspectUi(): Promise<ToolResult<InspectUiData>>;
+  inspectUi(args?: { appId?: string }): Promise<ToolResult<InspectUiData>>;
   tapElement(args: {
     resourceId?: string;
     contentDesc?: string;
@@ -106,8 +106,8 @@ export function createMcpAdapter(
         intervalMs: 300,
         consecutiveStable: 2,
       }) as Promise<ToolResult<WaitForUiStableData>>,
-    inspectUi: () =>
-      invoke("inspect_ui", { ...baseInput() }) as Promise<ToolResult<InspectUiData>>,
+    inspectUi: (args) =>
+      invoke("inspect_ui", { ...baseInput(), ...(args?.appId ? { appId: args.appId } : {}) }) as Promise<ToolResult<InspectUiData>>,
     tapElement: (args) =>
       invoke("tap_element", { ...baseInput(), ...args }) as Promise<ToolResult<TapElementData>>,
     navigateBack: (args?) => {

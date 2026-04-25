@@ -138,6 +138,8 @@ export interface RunSummary {
 export interface PageTypeCounts {
   /** Pages detected as normal_page. */
   normalPages: number;
+  /** Pages detected as form_editor. */
+  formEditorPages: number;
   /** Pages detected as app_dialog. */
   dialogPages: number;
   /** Pages detected as system_alert_surface. */
@@ -186,6 +188,8 @@ export interface SummaryOpts {
   transitionLifecycle?: TransitionLifecycleSummary;
   /** StateGraph aggregate counters from engine. */
   stateGraph?: StateGraphSummary;
+  /** Precomputed run id reused by the surrounding report directory. */
+  runId?: string;
 }
 
 /**
@@ -209,7 +213,7 @@ export function generateSummaryJson(
     pages.length > 0 ? pages.reduce((max, p) => Math.max(max, p.depth), 0) : 0;
 
   const summary: RunSummary = {
-    runId: generateRunId(),
+    runId: opts.runId ?? process.env.EXPLORER_RUN_ID ?? generateRunId(),
     startedAt:
       opts.startedAt ?? new Date(Date.now() - opts.durationMs).toISOString(),
     completedAt: new Date().toISOString(),
@@ -282,9 +286,10 @@ export function countUniquePaths(pages: PageEntry[]): number {
 
 /** Count pages by their detected page context type. */
 export function countPageTypes(pages: PageEntry[]): PageTypeCounts {
-  const counts: PageTypeCounts = {
-    normalPages: 0,
-    dialogPages: 0,
+	const counts: PageTypeCounts = {
+		normalPages: 0,
+		formEditorPages: 0,
+		dialogPages: 0,
     alertPages: 0,
     actionSheetPages: 0,
     modalPages: 0,
@@ -296,11 +301,14 @@ export function countPageTypes(pages: PageEntry[]): PageTypeCounts {
 
   for (const page of pages) {
     const type = page.pageContext?.type ?? "unknown";
-    switch (type) {
-      case "normal_page":
-        counts.normalPages++;
-        break;
-      case "app_dialog":
+		switch (type) {
+			case "normal_page":
+				counts.normalPages++;
+				break;
+			case "form_editor":
+				counts.formEditorPages++;
+				break;
+			case "app_dialog":
         counts.dialogPages++;
         break;
       case "system_alert_surface":

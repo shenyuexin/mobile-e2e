@@ -27,6 +27,7 @@ import type {
   PageSnapshot,
   PageState,
   SamplingRule,
+  SkipPageRule,
   TransitionLifecycleSummary,
   ExplorerPlatform,
 } from "./types.js";
@@ -44,7 +45,11 @@ import {
 } from "./circuit-breaker.js";
 import { generateReport } from "./report.js";
 import { decidePageContextAction } from "./page-context-router.js";
-import { decideHeuristicPageAction } from "./page-context-heuristic.js";
+import { formatPageContextDecisionLog } from "./page-context-router.js";
+import {
+  decideHeuristicPageAction,
+  isLowValueDeepContentPage,
+} from "./page-context-heuristic.js";
 
 // ---------------------------------------------------------------------------
 // Sampling helpers — high-fanout collection page representative-child flow
@@ -142,6 +147,41 @@ function normalizeSamplingPathSegment(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function matchSkipPageRule(
+  rules: SkipPageRule[] | undefined,
+  framePath: string[],
+  screenTitle: string | undefined,
+  screenId: string | undefined,
+): SkipPageRule | undefined {
+  if (!rules || rules.length === 0) return undefined;
+
+  for (const rule of rules) {
+    const m = rule.match;
+
+    if (m.screenId && screenId && m.screenId === screenId) return rule;
+
+    if (m.pathPrefix && m.pathPrefix.length > 0) {
+      const prefix = m.pathPrefix;
+      if (framePath.length === prefix.length) {
+        let matches = true;
+        for (let i = 0; i < prefix.length; i++) {
+          const framePart = normalizeSamplingPathSegment(framePath[i]);
+          const rulePart = normalizeSamplingPathSegment(prefix[i]);
+          if (!(framePart === rulePart || framePart.endsWith(`.${rulePart}`))) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) return rule;
+      }
+    }
+
+    if (m.screenTitle && screenTitle && m.screenTitle === screenTitle) return rule;
+  }
+
+  return undefined;
+}
+
 /** Sampling state tracked during exploration. */
 interface SamplingState {
   /** Pages where sampling was applied (screenId set). */
@@ -203,7 +243,33 @@ type ExplorerPageAction = {
 function decideExplorerPageAction(
   snapshot: PageSnapshot,
   config: ExplorerConfig,
+  depth?: number,
+  path?: string[],
 ): ExplorerPageAction {
+  const skipRule = matchSkipPageRule(
+    config.skipPages,
+    path ?? [],
+    snapshot.screenTitle,
+    snapshot.screenId,
+  );
+  if (skipRule) {
+    return {
+      type: "gated",
+      reason: skipRule.reason ?? `skipPages rule matched for "${snapshot.screenTitle ?? snapshot.screenId}"`,
+      recoveryMethod: "backtrack-cancel-first",
+      ruleFamily: "skip_pages",
+    };
+  }
+
+  if (isLowValueDeepContentPage(snapshot, config.platform, depth)) {
+    return {
+      type: "gated",
+      reason: `uiTree heuristic: low-value deep content page detected (title="${snapshot.screenTitle ?? "(unknown)"}") — pruning to preserve page budget`,
+      recoveryMethod: "backtrack-cancel-first",
+      ruleFamily: "heuristic_low_value_content",
+    };
+  }
+
   const routerDecision = decidePageContextAction(snapshot.pageContext, config);
   switch (routerDecision.type) {
     case "dfs":
@@ -227,7 +293,7 @@ function decideExplorerPageAction(
     case "defer-to-heuristic":
       break;
   }
-  return decideHeuristicPageAction(snapshot);
+  return decideHeuristicPageAction(snapshot, config.platform, depth);
 }
 
 function markSnapshotAsGated(
@@ -319,9 +385,17 @@ function validateNavigation(
   return { navigated: true };
 }
 
+function normalizeTitleForMatch(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isLikelyBundleId(value: string): boolean {
+  return value.includes(".") && !value.includes(" ");
+}
+
 function findAncestorFrameIndex(
   stack: Frame[],
-  snapshot: Pick<PageSnapshot, "screenId" | "appId">,
+  snapshot: Pick<PageSnapshot, "screenId" | "screenTitle" | "appId">,
 ): number {
   for (let i = stack.length - 1; i >= 0; i--) {
     const sameScreen = stack[i].state.screenId === snapshot.screenId;
@@ -331,6 +405,26 @@ function findAncestorFrameIndex(
       stack[i].appId === snapshot.appId;
     if (sameScreen && sameAppIdentity) {
       return i;
+    }
+  }
+
+  if (snapshot.screenTitle && !isLikelyBundleId(snapshot.screenTitle)) {
+    const normalizedSnapshotTitle = normalizeTitleForMatch(snapshot.screenTitle);
+    for (let i = stack.length - 1; i >= 0; i--) {
+      const frameTitle = stack[i].state.screenTitle;
+      if (frameTitle && !isLikelyBundleId(frameTitle) && normalizeTitleForMatch(frameTitle) === normalizedSnapshotTitle) {
+        const sameAppIdentity =
+          snapshot.appId === undefined ||
+          stack[i].appId === undefined ||
+          stack[i].appId === snapshot.appId;
+        if (sameAppIdentity) {
+          console.log(
+            `[FRAME-RESUME] screenId drift detected: matched by title "${frameTitle}" at depth=${i} ` +
+            `(snapshot screenId=${snapshot.screenId}, frame screenId=${stack[i].state.screenId})`,
+          );
+          return i;
+        }
+      }
     }
   }
 
@@ -347,33 +441,67 @@ function reconcileStackToSnapshot(
   }
 
   const ancestorFrameIndex = findAncestorFrameIndex(stack, snapshot);
-  const resolvedIndex = ancestorFrameIndex >= 0
-    ? ancestorFrameIndex
-    : snapshot.appId === targetAppId
-      ? 0
-      : -1;
 
-  if (resolvedIndex < 0) {
-    return undefined;
+  if (ancestorFrameIndex >= 0) {
+    while (stack.length - 1 > ancestorFrameIndex) {
+      stack.pop();
+    }
+
+    const resumedFrame = stack[ancestorFrameIndex];
+    resumedFrame.state = {
+      screenId: snapshot.screenId,
+      screenTitle: snapshot.screenTitle,
+      structureHash: hashUiStructure(snapshot.uiTree),
+    };
+    resumedFrame.appId = snapshot.appId ?? resumedFrame.appId ?? targetAppId;
+    resumedFrame.isExternalApp = false;
+    return resumedFrame;
   }
 
-  while (stack.length - 1 > resolvedIndex) {
-    stack.pop();
+  if (snapshot.appId === targetAppId) {
+    console.log(
+      `[FRAME-RESUME] No ancestor match for "${snapshot.screenTitle ?? snapshot.screenId}". ` +
+      `Resetting to root frame (was ${stack.length} frames).`,
+    );
+    while (stack.length > 1) {
+      stack.pop();
+    }
+    const rootFrame = stack[0];
+    rootFrame.state = {
+      screenId: snapshot.screenId,
+      screenTitle: snapshot.screenTitle,
+      structureHash: hashUiStructure(snapshot.uiTree),
+    };
+    rootFrame.appId = snapshot.appId ?? rootFrame.appId ?? targetAppId;
+    rootFrame.isExternalApp = false;
+    rootFrame.depth = 0;
+    rootFrame.path = [];
+    rootFrame.elementIndex = 0;
+    rootFrame.elements = [];
+    return rootFrame;
   }
 
-  const resumedFrame = stack[resolvedIndex];
-  resumedFrame.state = {
-    screenId: snapshot.screenId,
-    screenTitle: snapshot.screenTitle,
-    structureHash: hashUiStructure(snapshot.uiTree),
-  };
-  resumedFrame.appId = snapshot.appId ?? resumedFrame.appId ?? targetAppId;
-  resumedFrame.isExternalApp = false;
-  return resumedFrame;
+  return undefined;
 }
 
 function isAndroidExplorerPlatform(platform: ExplorerPlatform): boolean {
   return platform.startsWith("android");
+}
+
+async function attemptCancelFirstRecovery(mcp: McpToolInterface): Promise<boolean> {
+  const attempts = [
+    { text: "Cancel" },
+    { contentDesc: "Cancel" },
+  ];
+
+  for (const args of attempts) {
+    const result = await mcp.tapElement(args);
+    if (result.status === "success" || result.status === "partial") {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -556,7 +684,7 @@ export async function explore(
   }
 
   // Initial snapshot
-  const initialSnapshot = await snapshotter.captureSnapshot(config);
+  let initialSnapshot = await snapshotter.captureSnapshot(config);
   console.log(
     `[ENGINE] Home page: screenId=${initialSnapshot.screenId}, screenTitle="${initialSnapshot.screenTitle || '(empty)'}", clickable=${initialSnapshot.clickableElements.length}, pageType=${pageTypeOf(initialSnapshot)}`,
   );
@@ -589,6 +717,57 @@ export async function explore(
     }
     return resumedFrame;
   };
+
+  const returnToTargetAppFromForeignPage = async (): Promise<void> => {
+    let resumedBySystemBack = false;
+    if (isAndroidExplorerPlatform(config.platform)) {
+      console.log(`[APP-SWITCH] Attempting Android system back before relaunch...`);
+      await backtracker.navigateBack();
+      const resumedFrame = await captureAndReconcileVisiblePage();
+      if (resumedFrame && currentAppId === targetAppId) {
+        console.log(
+          `[APP-SWITCH] Returned via system back at page "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" (app=${currentAppId})`,
+        );
+        resumedBySystemBack = true;
+      }
+    }
+
+    if (resumedBySystemBack) {
+      return;
+    }
+
+    console.log(`[APP-SWITCH] Returning to target app ${config.appId} via launchApp...`);
+    await mcp.launchApp({ appId: config.appId });
+    await mcp.waitForUiStable({ timeoutMs: 3000 });
+    currentAppId = targetAppId;
+    console.log(`[APP-SWITCH] Returned to ${currentAppId} — launchApp preserves app state`);
+
+    const resumedFrame = await captureAndReconcileVisiblePage();
+    console.log(`[APP-SWITCH] Current page after return: ${resumedFrame?.state.screenTitle || '(unknown)'}`);
+    if (resumedFrame) {
+      console.log(
+        `[APP-SWITCH] Reconciled stack to page "${resumedFrame.state.screenTitle || '(unknown)'}" at depth=${resumedFrame.depth}`,
+      );
+    }
+  };
+
+  const initialPageAction = decideExplorerPageAction(initialSnapshot, config, 0, []);
+  if (initialPageAction.type === "gated") {
+    console.log(formatPageContextDecisionLog(initialPageAction));
+    markSnapshotAsGated(
+      initialSnapshot,
+      initialPageAction,
+      `pageContext:${initialPageAction.ruleFamily ?? "heuristic"}`,
+    );
+
+    if (initialPageAction.recoveryMethod === "cancel-first") {
+      await attemptCancelFirstRecovery(mcp);
+      const recoveredSnapshot = await snapshotter.captureSnapshot(config);
+      if (recoveredSnapshot.screenId !== initialSnapshot.screenId) {
+        initialSnapshot = recoveredSnapshot;
+      }
+    }
+  }
   
   visited.register({ alreadyVisited: false }, initialSnapshot, []);
   const initialStructureHash = hashUiStructure(initialSnapshot.uiTree);
@@ -771,7 +950,7 @@ export async function explore(
         continue;
       }
 
-      const pageAction = decideExplorerPageAction(snapshot, config);
+      const pageAction = decideExplorerPageAction(snapshot, config, frame.depth, frame.path);
       if (pageAction.type === "gated") {
         console.log(
           `[PAGE-CONTEXT] gated page at depth=${frame.depth}, title="${snapshot.screenTitle ?? snapshot.screenId}", ` +
@@ -1090,7 +1269,7 @@ export async function explore(
         `to="${nextStateSnapshot.screenTitle ?? nextStateSnapshot.screenId}"`,
       );
 
-      const pageAction = decideExplorerPageAction(nextStateSnapshot, config);
+      const pageAction = decideExplorerPageAction(nextStateSnapshot, config, frame.depth + 1, [...frame.path, element.label]);
       if (pageAction.type === "gated") {
         console.log(
           `[PAGE-CONTEXT] gated page after tap "${element.label.slice(0, 40)}": ` +
@@ -1114,6 +1293,19 @@ export async function explore(
         });
         currentStateNode = gatedStateNode;
 
+        let recoveredViaCancel = false;
+        if (pageAction.recoveryMethod === "cancel-first") {
+          recoveredViaCancel = await attemptCancelFirstRecovery(mcp);
+          if (recoveredViaCancel) {
+            const resumedFrame = await captureAndReconcileVisiblePage();
+            if (resumedFrame) {
+              console.log(
+                `[PAGE-CONTEXT] cancel-first recovered to "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" at depth=${resumedFrame.depth}`,
+              );
+              continue;
+            }
+          }
+        }
         await backtracker.navigateBack(frame.state.screenTitle ?? frame.parentTitle);
         continue;
       }
@@ -1217,6 +1409,57 @@ export async function explore(
           `[APP-SWITCH] In external app: ${nextStateSnapshot.appId} (via "${element.label}")`,
         );
         nextStateSnapshot.isExternalApp = true;
+
+        markSnapshotAsGated(
+          nextStateSnapshot,
+          {
+            type: "gated",
+            reason: `foreign app ${nextStateSnapshot.appId} detected — target-app-only exploration rule`,
+            recoveryMethod: "backtrack-cancel-first",
+            ruleFamily: "foreign_app_boundary",
+          },
+          "singleTargetAppPolicy:foreign-app",
+        );
+
+        visited.register({ alreadyVisited: false }, nextStateSnapshot, [...frame.path, element.label]);
+        transitionLifecycle.transitionCommitted += 1;
+        const gatedStateNode = stateGraph.registerState(
+          nextStateSnapshot,
+          hashUiStructure(nextStateSnapshot.uiTree),
+        );
+        stateGraph.registerTransition({
+          from: currentStateNode.id,
+          to: gatedStateNode.id,
+          kind: "cancel",
+          intentLabel: element.label,
+          committed: true,
+          attempts: elementRetries + 1,
+        });
+        currentStateNode = gatedStateNode;
+
+        let resumedBySystemBack = false;
+        if (isAndroidExplorerPlatform(config.platform)) {
+          console.log(`[APP-SWITCH] Attempting Android system back before relaunch...`);
+          await backtracker.navigateBack();
+          const resumedFrame = await captureAndReconcileVisiblePage();
+          if (resumedFrame && currentAppId === targetAppId) {
+            console.log(
+              `[APP-SWITCH] Returned via system back at page "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" (app=${currentAppId})`,
+            );
+            resumedBySystemBack = true;
+          }
+        }
+
+        if (!resumedBySystemBack) {
+          console.log(`[APP-SWITCH] Returning to target app ${config.appId} via launchApp...`);
+          await mcp.launchApp({ appId: config.appId });
+          await mcp.waitForUiStable({ timeoutMs: 3000 });
+          currentAppId = targetAppId;
+          const resumedFrame = await captureAndReconcileVisiblePage();
+          console.log(`[APP-SWITCH] Current page after return: ${resumedFrame?.state.screenTitle || '(unknown)'}`);
+        }
+
+        continue;
       }
 
       const nextStateStructureHash = hashUiStructure(nextStateSnapshot.uiTree);

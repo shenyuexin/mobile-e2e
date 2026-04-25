@@ -40,6 +40,11 @@ export interface SamplingRule {
   excludeActions?: string[];
 }
 
+export interface SkipPageRule {
+  match: SamplingRuleMatch;
+  reason?: string;
+}
+
 /** Credentials for auto-login auth mode. */
 export interface TestCredentials {
   /** Accessibility ID or selector for the username/identifier field. */
@@ -131,6 +136,7 @@ export interface ExplorerConfig {
    * the page is treated as an external app surface and not expanded.
    */
   blockedOwnerPackages?: string[];
+  skipPages?: SkipPageRule[];
 }
 
 // ---------------------------------------------------------------------------

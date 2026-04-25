@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync } from "fs";
 import { homedir, platform } from "os";
 import { join } from "path";
-import type { AuthConfig, DestructiveActionPolicy, ExplorerConfig, ExplorerPlatform, FailureStrategy, ExplorationMode, SamplingRule, StatefulFormPolicy } from "./types.js";
+import type { AuthConfig, DestructiveActionPolicy, ExplorerConfig, ExplorerPlatform, FailureStrategy, ExplorationMode, SamplingRule, SkipPageRule, StatefulFormPolicy } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Default sampling rules for high-fanout collection pages (smoke mode).
@@ -24,6 +24,17 @@ export const DEFAULT_SAMPLING_RULES: SamplingRule[] = [
     maxChildrenToValidate: 1,
     stopAfterFirstSuccessfulNavigation: true,
     excludeActions: ["Download"],
+  },
+];
+
+export const DEFAULT_SKIP_PAGES: SkipPageRule[] = [
+  {
+    match: { pathPrefix: ["Bluetooth", "Other devices"] },
+    reason: "Bluetooth device search triggers system pairing dialogs",
+  },
+  {
+    match: { screenTitle: "SIMs & mobile network" },
+    reason: "Stateful mobile network settings",
   },
 ];
 
@@ -175,6 +186,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
   const reportDir = overrides.reportDir ?? "./explorer-reports";
   const samplingRules = overrides.samplingRules ?? DEFAULT_SAMPLING_RULES;
   const blockedOwnerPackages = overrides.blockedOwnerPackages ?? ["com.bbk.account"];
+  const skipPages = overrides.skipPages ?? DEFAULT_SKIP_PAGES;
 
   return {
     mode,
@@ -191,6 +203,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
     reportDir,
     samplingRules,
     blockedOwnerPackages,
+    skipPages,
   };
 }
 

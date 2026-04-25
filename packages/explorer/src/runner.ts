@@ -103,7 +103,7 @@ export async function runExplore(
   const mcp = createMcpAdapter(server, sessionCtx);
   try {
     const authResult = await checkAuth(
-      { auth: config.auth, appId: config.appId },
+      { auth: config.auth, appId: config.appId, platform: config.platform },
       mcp,
     );
     if (!authResult.success) {

@@ -286,8 +286,8 @@ export function createBacktracker(
         };
       };
 
-      const waitForSettle = async (): Promise<boolean> => {
-        const settleResult = await mcp.waitForUiStable({ timeoutMs: 3000 });
+      const waitForSettle = async (timeoutMs = 3000): Promise<boolean> => {
+        const settleResult = await mcp.waitForUiStable({ timeoutMs });
         if (settleResult.status !== "success" && settleResult.status !== "partial") {
           logWarn(`waitForUiStable failed: status=${settleResult.status}, reason=${settleResult.reasonCode}`);
         }
@@ -390,6 +390,8 @@ export function createBacktracker(
         selector: BacktrackTapSelector,
       ): Promise<boolean> => {
         const before = await captureCurrentPageContext();
+        const affordance = await detectBackAffordance();
+        const isDialogContext = affordance.isDialogLike ?? false;
         const tapResult = await mcp.tapElement(selector);
         const selectorLabel = selector.contentDesc ?? selector.text ?? "<unknown-selector>";
         const detail =
@@ -401,8 +403,9 @@ export function createBacktracker(
           return false;
         }
 
-        if (!(await waitForSettle())) {
-          logWarn(`${detail} => settle failed`);
+        const settleTimeout = isDialogContext ? 5000 : 3000;
+        if (!(await waitForSettle(settleTimeout))) {
+          logWarn(`${detail} => settle failed (timeout=${settleTimeout}ms, dialogContext=${isDialogContext})`);
           return false;
         }
 
