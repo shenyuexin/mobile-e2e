@@ -1008,6 +1008,89 @@ describe("explore engine recovery", () => {
     );
   });
 
+  it("does not DFS-expand foreign app pages and resumes target-app siblings", async () => {
+    const pages = {
+      Settings: makeAndroidPageInApp("com.android.settings", "Settings", ["Bluetooth", "Display"]),
+      Bluetooth: makeAndroidPageInApp("com.android.settings", "Bluetooth", ["Files received via Bluetooth"]),
+      "No transfer history": makeAndroidPageInApp("com.android.bluetooth", "No transfer history", ["Delete history"]),
+      Display: makeAndroidPageInApp("com.android.settings", "Display", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+    const backLog: string[] = [];
+
+    const config = {
+      ...createMockConfig(),
+      platform: "android-device" as const,
+      appId: "com.android.settings",
+      maxPages: 10,
+    };
+
+    const mcp = withDefaultMcp({
+      launchApp: async () => {
+        currentPage = "Settings";
+        return okResult({});
+      },
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "Bluetooth") {
+          currentPage = "Bluetooth";
+        } else if (currentPage === "Settings" && label === "Display") {
+          currentPage = "Display";
+        } else if (currentPage === "Bluetooth" && label === "Files received via Bluetooth") {
+          currentPage = "No transfer history";
+        } else if (currentPage === "No transfer history" && label === "Delete history") {
+          throw new Error("should not explore inside external app");
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async () => {
+        backLog.push(currentPage);
+        if (currentPage === "No transfer history") {
+          currentPage = "Bluetooth";
+          return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+        }
+        if (currentPage === "Bluetooth") {
+          currentPage = "Settings";
+          return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+        }
+        if (currentPage === "Display") {
+          currentPage = "Settings";
+          return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    });
+
+    const result = await explore(config, mcp);
+    const externalPage = result.visited
+      .getEntries()
+      .find((entry) => entry.screenTitle === "No transfer history");
+
+    assert.ok(externalPage);
+    assert.equal(externalPage?.explorationStatus, "reached-not-expanded");
+    assert.equal(externalPage?.ruleFamily, "foreign_app_boundary");
+    assert.equal(backLog.includes("No transfer history"), true);
+    assert.equal(
+      tapLog.some((entry) => entry.page === "No transfer history" && entry.label === "Delete history"),
+      false,
+    );
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Settings" && entry.label === "Display"),
+      true,
+    );
+  });
+
   it("dismisses Account nickname dialog via Cancel-first backtrack instead of exploring inside it", async () => {
     const pages = {
       Settings: makePageInApp("com.android.settings", "Settings", ["Account"]),

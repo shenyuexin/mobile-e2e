@@ -39,7 +39,7 @@ export function createSnapshotter(mcp: McpToolInterface) {
     async captureSnapshot(config: ExplorerConfig): Promise<PageSnapshot> {
       const tapStart = Date.now();
 
-      const inspectResult = await mcp.inspectUi();
+      const inspectResult = await mcp.inspectUi({ appId: config.appId });
       if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
         throw new Error(
           `inspect_ui failed: ${inspectResult.reasonCode}: ${inspectResult.nextSuggestions?.join("; ")}`,

@@ -32,8 +32,16 @@ function normalizeContainerRole(
 	const sampleNodes = uiSummary?.sampleNodes ?? [];
 	for (const node of sampleNodes) {
 		const className = node.className?.toLowerCase();
+		const resourceId = node.resourceId?.toLowerCase();
 		if (!className) continue;
 		if (className.includes("alert")) return "alert";
+		if (
+			className.includes("popup") ||
+			className.includes("listpopup") ||
+			resourceId?.includes("list_popup")
+		) {
+			return "popup";
+		}
 		if (
 			className.includes("sheet") ||
 			className.includes("bottomsheet") ||
@@ -45,6 +53,44 @@ function normalizeContainerRole(
 		if (className.includes("keyboard")) return "keyboard";
 	}
 	return undefined;
+}
+
+function detectFormEditor(
+	params: DetectPageContextParams,
+	ownerPackage: string | undefined,
+): boolean {
+	if (params.platform !== "android") {
+		return false;
+	}
+
+	const appId = params.appId?.trim().toLowerCase();
+	const owner = ownerPackage?.trim().toLowerCase();
+	if (!appId || !owner || appId !== owner) {
+		return false;
+	}
+
+	const texts = new Set(
+		(params.stateSummary.topVisibleTexts ?? []).map((value) => value.trim().toLowerCase()),
+	);
+	const hasCancelDoneChrome = texts.has("cancel") && texts.has("done");
+	if (!hasCancelDoneChrome) {
+		return false;
+	}
+
+	const sampleNodes = params.uiSummary?.sampleNodes ?? [];
+	const hasEditableField = sampleNodes.some((node) => {
+		const className = node.className?.toLowerCase() ?? "";
+		return className.includes("edittext") || className.includes("spinner");
+	});
+
+	const hasConfigLabels = ["network name", "password", "security", "ap band"].some(
+		(label) => texts.has(label),
+	);
+
+	const title = params.stateSummary.screenTitle?.trim().toLowerCase() ?? "";
+	const hasEditorTitle = title.includes("configuration") || title.includes("network name");
+
+	return hasEditableField && (hasConfigLabels || hasEditorTitle);
 }
 
 export function resolveRuntimeFlavor(
@@ -104,6 +150,8 @@ export async function detectPageContext(
 	let type: PageContext["type"] = "normal_page";
 	if (blockingSignals.has("permission_prompt")) {
 		type = "permission_surface";
+	} else if (detectFormEditor(params, ownerPackage)) {
+		type = "form_editor";
 	} else if (
 		hasForeignIosOwner &&
 		isAppleOwnedBundle &&
@@ -119,6 +167,8 @@ export async function detectPageContext(
 		type = "system_overlay";
 	} else if (containerRole === "sheet") {
 		type = "action_sheet_surface";
+	} else if (containerRole === "popup") {
+		type = "popup_surface";
 	} else if (containerRole === "alert") {
 		type = "system_alert_surface";
 	} else if (containerRole === "dialog") {

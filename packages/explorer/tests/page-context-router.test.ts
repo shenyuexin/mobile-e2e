@@ -85,6 +85,27 @@ describe("decidePageContextAction", () => {
 		});
 	});
 
+	describe("form_editor", () => {
+		it("gates form_editor with cancel-first recovery", () => {
+			const ctx = makePageContext({ type: "form_editor" as PageContext["type"] });
+			const result = decidePageContextAction(ctx, baseConfig);
+			assert.equal(result.type, "gated");
+			assert.equal(result.ruleFamily, "form_editor");
+			assert.equal(result.recoveryMethod, "cancel-first");
+		});
+	});
+
+	describe("popup_surface", () => {
+		it("gates popup_surface with backtrack-cancel-first recovery", () => {
+			const ctx = makePageContext({ type: "popup_surface" as PageContext["type"] });
+			const result = decidePageContextAction(ctx, baseConfig);
+			assert.equal(result.type, "gated");
+			assert.equal(result.ruleFamily, "popup_surface");
+			assert.equal(result.recoveryMethod, "backtrack-cancel-first");
+			assert.equal(result.interruptionType, "popup");
+		});
+	});
+
 	describe("interruption surfaces", () => {
 		it("gates permission_surface", () => {
 			const ctx = makePageContext({ type: "permission_surface" });

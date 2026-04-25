@@ -50,15 +50,16 @@ export interface InspectUiToolDeps {
 }
 
 function buildInspectUiStateSummary(summary?: InspectUiSummary) {
+	const texts = summary?.sampleNodes
+		?.flatMap((node) => [node.text, node.contentDesc])
+		.filter((value): value is string => Boolean(value))
+		.slice(0, 12);
 	return {
 		appPhase: "unknown" as const,
 		readiness: "unknown" as const,
 		blockingSignals: [] as string[],
 		screenTitle: summary?.sampleNodes?.find((node) => node.text)?.text,
-		topVisibleTexts: summary?.sampleNodes
-			?.map((node) => node.text)
-			.filter((value): value is string => Boolean(value))
-			.slice(0, 6),
+		topVisibleTexts: texts,
 	};
 }
 
@@ -198,7 +199,8 @@ export async function inspectUiWithMaestroTool(
 					platform,
 					stateSummary: buildInspectUiStateSummary(summary),
 					uiSummary: summary,
-					appIdentitySource: "unknown",
+					appId: input.appId,
+					appIdentitySource: input.appId ? "input_override" : "unknown",
 					deviceId,
 				})
 			: undefined;
@@ -333,7 +335,8 @@ export async function inspectUiWithMaestroTool(
 				platform,
 				stateSummary: buildInspectUiStateSummary(summary),
 				uiSummary: summary,
-				appIdentitySource: "unknown",
+				appId: input.appId,
+				appIdentitySource: input.appId ? "input_override" : "unknown",
 				deviceId,
 			})
 		: undefined;

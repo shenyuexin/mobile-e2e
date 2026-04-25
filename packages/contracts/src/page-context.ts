@@ -2,6 +2,8 @@ import type { ExecutionEvidence, InterruptionType, Platform, RunnerProfile, Stat
 
 export type PageContextType =
   | "normal_page"
+  | "form_editor"
+  | "popup_surface"
   | "app_dialog"
   | "system_alert_surface"
   | "action_sheet_surface"

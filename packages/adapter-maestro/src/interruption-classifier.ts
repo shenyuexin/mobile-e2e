@@ -161,6 +161,8 @@ export function classifyInterruptionFromPageContext(
 	};
 
 	const contextToSignalKey: Partial<Record<PageContext["type"], string>> = {
+		form_editor: "visible_text",
+		popup_surface: "container_role",
 		permission_surface: "permission_prompt",
 		system_alert_surface: "visible_text",
 		action_sheet_surface: "container_role",

@@ -136,3 +136,114 @@ test("detectPageContext treats foreign iOS simulator dialog surface as system al
   assert.equal(result.pageContext.type, "system_alert_surface");
   assert.equal(result.pageContext.ownerBundle, "com.apple.springboard");
 });
+
+test("detectPageContext classifies Android hotspot configuration editor as form_editor", async () => {
+  const result = await detectPageContext({
+    platform: "android",
+    stateSummary: {
+      appPhase: "ready",
+      readiness: "ready",
+      blockingSignals: [],
+      topVisibleTexts: [
+        "Hotspot configuration",
+        "Network name",
+        "Password",
+        "Security",
+        "Cancel",
+        "Done",
+      ],
+    },
+    uiSummary: {
+      totalNodes: 12,
+      clickableNodes: 4,
+      scrollableNodes: 0,
+      nodesWithText: 8,
+      nodesWithContentDesc: 1,
+      sampleNodes: [
+        {
+          clickable: false,
+          enabled: true,
+          scrollable: false,
+          text: "Hotspot configuration",
+          className: "android.widget.TextView",
+          packageName: "com.android.settings",
+        },
+        {
+          clickable: true,
+          enabled: true,
+          scrollable: false,
+          text: "vivo X200 Pro",
+          className: "android.widget.EditText",
+          packageName: "com.android.settings",
+        },
+        {
+          clickable: true,
+          enabled: true,
+          scrollable: false,
+          text: "3fbww65f7my25gt",
+          className: "android.widget.EditText",
+          packageName: "com.android.settings",
+        },
+        {
+          clickable: true,
+          enabled: true,
+          scrollable: false,
+          text: "WPA2 PSK",
+          className: "android.widget.Spinner",
+          packageName: "com.android.settings",
+        },
+      ],
+    },
+    appId: "com.android.settings",
+    appIdentitySource: "session",
+    deviceId: "android-device-1",
+  });
+
+  assert.equal(result.pageContext.type, "form_editor");
+  assert.equal(result.pageContext.ownerPackage, "com.android.settings");
+});
+
+test("detectPageContext classifies Android popup picker list as popup_surface", async () => {
+  const result = await detectPageContext({
+    platform: "android",
+    stateSummary: {
+      appPhase: "ready",
+      readiness: "ready",
+      blockingSignals: [],
+      topVisibleTexts: ["2.4 GHz band", "5 GHz band"],
+    },
+    uiSummary: {
+      totalNodes: 4,
+      clickableNodes: 0,
+      scrollableNodes: 0,
+      nodesWithText: 2,
+      nodesWithContentDesc: 0,
+      sampleNodes: [
+        {
+          clickable: false,
+          enabled: true,
+          scrollable: false,
+          text: "2.4 GHz band",
+          className: "android.widget.TextView",
+          resourceId: "com.android.settings:id/list_popup_item",
+          packageName: "com.android.settings",
+        },
+        {
+          clickable: false,
+          enabled: true,
+          scrollable: false,
+          text: "5 GHz band",
+          className: "android.widget.TextView",
+          resourceId: "com.android.settings:id/list_popup_item",
+          packageName: "com.android.settings",
+        },
+      ],
+    },
+    appId: "com.android.settings",
+    appIdentitySource: "input_override",
+    deviceId: "android-device-1",
+  });
+
+  assert.equal(result.pageContext.type, "popup_surface");
+  assert.equal(result.pageContext.ownerPackage, "com.android.settings");
+});
