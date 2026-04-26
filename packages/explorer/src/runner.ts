@@ -4,15 +4,22 @@
  * Flow: create session -> load config -> pre-flight auth -> create MCP adapter -> run explore engine -> generate report -> cleanup
  */
 
-import type { ExplorerConfig, ExplorerPlatform, ExplorationMode, FailureStrategy, DestructiveActionPolicy, AuthConfig } from "./types.js";
-import type { InvokableServer } from "./mcp-adapter.js";
-import { explore, FailureLog } from "./engine.js";
-import { createMcpAdapter, type SessionContext } from "./mcp-adapter.js";
-import { generateReport } from "./report.js";
+import type { Platform, RunnerProfile } from "@mobile-e2e-mcp/contracts";
 import { checkAuth } from "./auth-preflight.js";
 import { ConfigStore } from "./config-store.js";
 import { buildDefaultConfig } from "./config.js";
-import type { Platform, RunnerProfile } from "@mobile-e2e-mcp/contracts";
+import { explore } from "./engine.js";
+import type { InvokableServer } from "./mcp-adapter.js";
+import { createMcpAdapter, type SessionContext } from "./mcp-adapter.js";
+import { generateReport } from "./report.js";
+import type {
+  AuthConfig,
+  DestructiveActionPolicy,
+  ExplorerConfig,
+  ExplorerPlatform,
+  ExplorationMode,
+  FailureStrategy,
+} from "./types.js";
 
 /** Map ExplorerPlatform to MCP Platform */
 function toMcpPlatform(platform: ExplorerPlatform): Platform {
@@ -134,10 +141,10 @@ export async function runExplore(
       partial: explorationResult.aborted ?? false,
       abortReason: explorationResult.abortReason,
       durationMs,
+      startedAt: new Date(startTime).toISOString(),
       sampling: explorationResult.sampling,
       runId: process.env.EXPLORER_RUN_ID,
     });
-    const reportPath = `${config.reportDir}/index.json`;
     console.log(`[RUNNER]   Report written to ${config.reportDir}/`);
   } catch (err) {
     console.error(`[RUNNER] Report generation failed: ${err}`);

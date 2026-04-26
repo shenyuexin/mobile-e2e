@@ -5,21 +5,21 @@
  * config snapshot, and index management.
  */
 
-import { writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
-  PageEntry,
-  FailureEntry,
   ExplorerConfig,
-  TransitionLifecycleSummary,
+  FailureEntry,
+  PageEntry,
   StateGraphSummary,
+  TransitionLifecycleSummary,
 } from '../types.js';
-import { inferModules } from './modules.js';
-import { generateSummaryJson, generateRunId, type RunIndexEntry } from './summary.js';
-import { generateMarkdown } from './markdown.js';
-import { generateMermaidGraph, generateMermaidGraphLargeApp, isLargeApp } from './mermaid.js';
 import { generateAsciiTree } from './ascii.js';
 import { updateIndex } from './index-manager.js';
+import { generateMarkdown } from './markdown.js';
+import { generateMermaidGraph, generateMermaidGraphLargeApp, isLargeApp } from './mermaid.js';
+import { inferModules } from './modules.js';
+import { generateSummaryJson, resolveRunId, type RunIndexEntry } from './summary.js';
 
 /** Options for report generation. */
 export interface ReportOpts {
@@ -75,14 +75,21 @@ export async function generateReport(
 ): Promise<void> {
   const modules = inferModules(pages);
   const reportDir = config.reportDir;
-  const runId = opts.runId ?? process.env.EXPLORER_RUN_ID ?? generateRunId();
+  const runId = resolveRunId({
+    runId: opts.runId,
+    startedAt: opts.startedAt,
+    envRunId: process.env.EXPLORER_RUN_ID,
+  });
   const runDir = join(reportDir, runId);
 
   // Ensure output directory exists
   mkdirSync(runDir, { recursive: true });
 
   // Generate summary.json
-  const summary = generateSummaryJson(pages, failures, modules, config, opts);
+  const summary = generateSummaryJson(pages, failures, modules, config, {
+    ...opts,
+    runId,
+  });
   writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2), 'utf-8');
 
   // Generate report.md

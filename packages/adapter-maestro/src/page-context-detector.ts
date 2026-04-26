@@ -73,9 +73,6 @@ function detectFormEditor(
 		(params.stateSummary.topVisibleTexts ?? []).map((value) => value.trim().toLowerCase()),
 	);
 	const hasCancelDoneChrome = texts.has("cancel") && texts.has("done");
-	if (!hasCancelDoneChrome) {
-		return false;
-	}
 
 	const sampleNodes = params.uiSummary?.sampleNodes ?? [];
 	const hasEditableField = sampleNodes.some((node) => {
@@ -90,7 +87,47 @@ function detectFormEditor(
 	const title = params.stateSummary.screenTitle?.trim().toLowerCase() ?? "";
 	const hasEditorTitle = title.includes("configuration") || title.includes("network name");
 
-	return hasEditableField && (hasConfigLabels || hasEditorTitle);
+	// Original strict form editor: editable fields + config labels/editor title
+	if (hasCancelDoneChrome && hasEditableField && (hasConfigLabels || hasEditorTitle)) {
+		return true;
+	}
+
+	// List-selection editors (e.g., "Add apps", "Choose apps", "Select contacts")
+	// These pages use ListView/RecyclerView instead of EditText.
+	const hasListSelection = sampleNodes.some((node) => {
+		const className = node.className?.toLowerCase() ?? "";
+		const resourceId = node.resourceId?.toLowerCase() ?? "";
+		return (
+			className.includes("listview") ||
+			className.includes("recyclerview") ||
+			resourceId.includes("listview") ||
+			resourceId.includes("recyclerview")
+		);
+	});
+	const hasSelectionTitle = /(?:add|select|choose|pick)\s+(?:apps?|items?|contacts?)/.test(title);
+	const hasAppPickerText = sampleNodes.some((node) => {
+		const text = (node.text ?? node.contentDesc ?? "").trim().toLowerCase();
+		return /\b(add|choose|select)\s+(apps?|items?|contacts?)\b/.test(text);
+	});
+
+	if (hasListSelection && (hasSelectionTitle || hasAppPickerText)) {
+		return true;
+	}
+
+	// Settings-specific shortcut: if we see explicit "Add apps" text in the sample nodes,
+	// treat it as a list-selection editor even when the ListView container node is not
+	// present in sampleNodes (sampleNodes is capped at 25 and may miss the container).
+	if (appId === "com.android.settings" && hasAppPickerText) {
+		return true;
+	}
+
+	// Fallback: for Android Settings, any cancel+done page is likely an editor or picker
+	// that should not be deep-expanded by DFS.
+	if (appId === "com.android.settings" && hasCancelDoneChrome) {
+		return true;
+	}
+
+	return false;
 }
 
 export function resolveRuntimeFlavor(

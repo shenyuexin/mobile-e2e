@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync } from "fs";
 import { homedir, platform } from "os";
 import { join } from "path";
-import type { AuthConfig, DestructiveActionPolicy, ExplorerConfig, ExplorerPlatform, FailureStrategy, ExplorationMode, SamplingRule, SkipPageRule, StatefulFormPolicy } from "./types.js";
+import type { AuthConfig, DestructiveActionPolicy, ExplorerConfig, ExplorerPlatform, FailureStrategy, ExplorationMode, SamplingRule, SkipPageRule, SkipElementRule, StatefulFormPolicy } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Default sampling rules for high-fanout collection pages (smoke mode).
@@ -35,6 +35,29 @@ export const DEFAULT_SKIP_PAGES: SkipPageRule[] = [
   {
     match: { screenTitle: "SIMs & mobile network" },
     reason: "Stateful mobile network settings",
+  },
+];
+
+export const DEFAULT_SKIP_ELEMENTS: SkipElementRule[] = [
+  {
+    match: { pathPrefix: ["Bluetooth"], elementLabel: "Other devices" },
+    reason: "Bluetooth device search triggers system pairing dialogs",
+  },
+  {
+    match: { screenTitle: "SIMs & mobile network" },
+    reason: "Stateful mobile network settings",
+  },
+  {
+    match: { screenTitle: "More connections" },
+    reason: "Temporarily skip due to flakiness,",
+  },
+  {
+    match: { elementLabel: "Help" },
+    reason: "Help/FAQ pages typically contain low-value leaf content",
+  },
+  {
+    match: { elementLabelPattern: "^(How do I|What do I|Why do|Cannot|Car kit)" },
+    reason: "FAQ items are typically leaf nodes with no navigation value",
   },
 ];
 
@@ -187,6 +210,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
   const samplingRules = overrides.samplingRules ?? DEFAULT_SAMPLING_RULES;
   const blockedOwnerPackages = overrides.blockedOwnerPackages ?? ["com.bbk.account"];
   const skipPages = overrides.skipPages ?? DEFAULT_SKIP_PAGES;
+  const skipElements = overrides.skipElements ?? DEFAULT_SKIP_ELEMENTS;
 
   return {
     mode,
@@ -204,6 +228,7 @@ export function buildDefaultConfig(overrides: Partial<ExplorerConfig> = {}): Exp
     samplingRules,
     blockedOwnerPackages,
     skipPages,
+    skipElements,
   };
 }
 

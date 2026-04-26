@@ -5,18 +5,17 @@
  * Uses a mocked MCP adapter to avoid real device interaction.
  */
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { tmpdir } from "os";
-import { join } from "path";
-import { rmSync, mkdirSync, existsSync, readdirSync } from "fs";
-import type { ExplorerConfig, McpToolInterface } from "../../src/types.js";
-import type { ToolResult } from "@mobile-e2e-mcp/contracts";
-import { buildDefaultConfig } from "../../src/config.js";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it } from "node:test";
 import { ConfigStore } from "../../src/config-store.js";
-import { PageRegistry } from "../../src/page-registry.js";
+import { buildDefaultConfig } from "../../src/config.js";
 import { FailureLog } from "../../src/engine.js";
+import { PageRegistry } from "../../src/page-registry.js";
 import { generateReport } from "../../src/report.js";
+import type { ExplorerConfig, McpToolInterface } from "../../src/types.js";
 
 // ---------------------------------------------------------------------------
 // Mock MCP Adapter
@@ -126,13 +125,60 @@ describe("Pipeline integration", () => {
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name);
     assert.equal(runDirs.length, 1);
-    const runDir = join(dir, runDirs[0]!);
+    const [runDirName] = runDirs;
+    assert.ok(runDirName);
+    const runDir = join(dir, runDirName);
     assert.ok(existsSync(join(runDir, "summary.json")));
     assert.ok(existsSync(join(runDir, "report.md")));
     assert.ok(existsSync(join(runDir, "graph.mmd")));
     assert.ok(existsSync(join(runDir, "tree.txt")));
 
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("uses startedAt-derived runId consistently when no explicit runId is provided", async () => {
+    const dir = join(tmpdir(), `explorer-pipeline-started-at-${Date.now()}`);
+    mkdirSync(dir, { recursive: true });
+
+    const config = createMockConfig(dir);
+    const registry = new PageRegistry();
+    const failures = new FailureLog();
+    const startedAt = "2026-04-28T03:04:05.678Z";
+
+    const previousRunId = process.env.EXPLORER_RUN_ID;
+    delete process.env.EXPLORER_RUN_ID;
+
+    try {
+      await generateReport(
+        registry.getEntries(),
+        failures.getEntries(),
+        config,
+        { partial: false, durationMs: 1000, startedAt },
+      );
+
+      const runDirs = readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+
+      assert.deepEqual(runDirs, ["2026-04-28T11-04-05"]);
+
+      const [runDirName] = runDirs;
+      assert.ok(runDirName);
+
+      const summary = JSON.parse(
+        readFileSync(join(dir, runDirName, "summary.json"), "utf-8"),
+      ) as { runId: string; startedAt: string };
+
+      assert.equal(summary.runId, "2026-04-28T11-04-05");
+      assert.equal(summary.startedAt, "2026-04-28T11:04:05.678+08:00");
+    } finally {
+      if (previousRunId === undefined) {
+        delete process.env.EXPLORER_RUN_ID;
+      } else {
+        process.env.EXPLORER_RUN_ID = previousRunId;
+      }
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("ConfigStore save/load roundtrip with valid config", () => {

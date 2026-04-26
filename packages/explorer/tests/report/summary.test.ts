@@ -12,6 +12,7 @@ import {
   countUniquePaths,
   generateRunId,
   generateSummaryJson,
+  sanitizeRunIdTimestamp,
 } from "../../src/report/summary.js";
 import type { ExplorerConfig, FailureEntry, PageEntry } from "../../src/types.js";
 
@@ -221,6 +222,13 @@ describe("generateSummaryJson", () => {
     assert.ok(runId.length > 0);
     assert.ok(!runId.includes(":"));
     assert.ok(!runId.includes("."));
+  });
+
+  it("converts UTC timestamps into +08 runIds", () => {
+    assert.equal(
+      sanitizeRunIdTimestamp("2026-04-28T03:38:20.759Z"),
+      "2026-04-28T11-38-20",
+    );
   });
 
   it("includes pageTypeCounts distribution", () => {

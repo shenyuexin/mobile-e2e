@@ -20,6 +20,7 @@ import { hashUiStructure } from "./page-registry.js";
 export function createBacktracker(
   mcp: McpToolInterface,
   platform: "ios-simulator" | "ios-device" | "android-emulator" | "android-device" = "ios-simulator",
+  appId?: string,
 ) {
   const platformHooks = resolveExplorerPlatformHooks(platform);
   // Cache of known screenId -> structureHash mappings
@@ -28,7 +29,7 @@ export function createBacktracker(
   // Learned successful back point per (page, expected-parent) context.
   const backPointCache = new Map<string, { x: number; y: number; name: string }>();
 
-  const captureCurrentPageContext = async (): Promise<{ screenId?: string; title?: string }> => {
+  const captureCurrentPageContext = async (): Promise<{ screenId?: string; title?: string; appId?: string }> => {
     const inspectResult = await mcp.inspectUi();
     if (inspectResult.status !== "success" && inspectResult.status !== "partial") {
       return {};
@@ -42,6 +43,7 @@ export function createBacktracker(
     return {
       screenId: generateScreenId(uiTree),
       title: extractScreenTitleFromUiTree(uiTree),
+      appId: platformHooks.extractAppId(uiTree),
     };
   };
 
@@ -286,7 +288,7 @@ export function createBacktracker(
         };
       };
 
-      const waitForSettle = async (timeoutMs = 3000): Promise<boolean> => {
+      const waitForSettle = async (timeoutMs = 2000): Promise<boolean> => {
         const settleResult = await mcp.waitForUiStable({ timeoutMs });
         if (settleResult.status !== "success" && settleResult.status !== "partial") {
           logWarn(`waitForUiStable failed: status=${settleResult.status}, reason=${settleResult.reasonCode}`);
@@ -357,13 +359,48 @@ export function createBacktracker(
           return false;
         }
 
-        if (!(await waitForSettle())) {
+        const postBackVerified = resultData.postBackVerified === true;
+        if (!postBackVerified && !(await waitForSettle(1500))) {
           logWarn(`${detail} => settle failed`);
           return false;
         }
 
         const after = await captureCurrentPageContext();
         if (!verifyBackTransition(before, after, parentTitle)) {
+          // If the screen changed but we didn't reach the expected parent,
+          // the navigation stack may have grown by 2+ pages from a single tap.
+          // Attempt chained back navigation (up to 2 additional backs).
+          if (verifyScreenChanged(before, after) && parentTitle) {
+            const maxChainedBacks = 2;
+            let currentBefore = after;
+            for (let i = 0; i < maxChainedBacks; i++) {
+              logTrace(
+                `back landed on "${currentBefore.title}" instead of expected parent "${parentTitle}", ` +
+                `attempting chained back ${i + 1}/${maxChainedBacks}...`,
+              );
+              const chainedResult = await mcp.navigateBack(args);
+              if (!isSuccessfulBackResult(chainedResult)) break;
+              if (!(await waitForSettle(1500))) break;
+              const chainedAfter = await captureCurrentPageContext();
+              if (verifyBackTransition(currentBefore, chainedAfter, parentTitle)) {
+                logTrace(
+                  `${detail} => success after chained back ${i + 1} ` +
+                  `(before=${before.title ?? "unknown"}[${before.screenId ?? "n/a"}], ` +
+                  `after=${chainedAfter.title ?? "unknown"}[${chainedAfter.screenId ?? "n/a"}], ` +
+                  `expectedParent=${parentTitle ?? "<none>"})`,
+                );
+                const strategy = toCachedBackStrategy(method, args);
+                const cacheKey = buildBackPointCacheKey(before, parentTitle);
+                if (strategy) {
+                  cacheSemanticStrategy(cacheKey, strategy);
+                }
+                return true;
+              }
+              if (!verifyScreenChanged(currentBefore, chainedAfter)) break;
+              currentBefore = chainedAfter;
+            }
+          }
+
           logWarn(
             `${detail} => transition rejected (before=${before.title ?? "unknown"}[${before.screenId ?? "n/a"}], ` +
             `after=${after.title ?? "unknown"}[${after.screenId ?? "n/a"}], ` +
@@ -777,7 +814,41 @@ export function createBacktracker(
       }
 
       if (platform === "android-device" || platform === "android-emulator") {
-        return runAndroidBacktrackLadder(ladderContext);
+        if (await tryNavigateBack("navigate_back:system_back_fast")) {
+          return true;
+        }
+        const ladderResult = await runAndroidBacktrackLadder(ladderContext);
+        if (ladderResult) {
+          return true;
+        }
+
+        if (appId) {
+          const currentContext = await captureCurrentPageContext();
+          const currentAppId = currentContext.appId;
+          const isLauncher = !currentAppId || currentAppId !== appId;
+          if (isLauncher) {
+            console.log(
+              `[BACKTRACK-RECOVERY] all back strategies failed and current app is ` +
+              `"${currentAppId ?? "unknown/launcher"}" (expected "${appId}"). ` +
+              `Relaunching target app...`,
+            );
+            const launchResult = await mcp.launchApp({ appId });
+            if (launchResult.status === "success" || launchResult.status === "partial") {
+              await waitForSettle(3000);
+              const afterLaunch = await captureCurrentPageContext();
+              if (afterLaunch.appId === appId) {
+                console.log(
+                  `[BACKTRACK-RECOVERY] successfully relaunched ${appId}, ` +
+                  `now on page "${afterLaunch.title ?? afterLaunch.screenId ?? "unknown"}"`,
+                );
+                return true;
+              }
+            }
+            console.log(`[BACKTRACK-RECOVERY] launchApp failed or did not restore target app`);
+          }
+        }
+
+        return false;
       }
 
       return runIosBacktrackLadder(ladderContext);

@@ -12,11 +12,41 @@
  *   EXPLORER_TIMEOUT_MS=7200000
  */
 
-import { createServer } from "../../packages/mcp-server/src/index.js";
+import { execFile, execSync } from "node:child_process";
+import { createWriteStream, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { explore } from "../../packages/explorer/src/cli.js";
-import { execFile } from "node:child_process";
-import { mkdirSync, createWriteStream } from "node:fs";
-import { join } from "node:path";
+import { prepareRunArtifacts } from "../../packages/explorer/src/run-artifacts.js";
+import { formatRunTimestamp } from "../../packages/explorer/src/report/summary.js";
+import { createServer } from "../../packages/mcp-server/src/index.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const repoRoot = join(__dirname, "../..");
+
+// Ensure adapter-maestro dist is up-to-date before running.
+// The MCP server loads the adapter via its package main (dist/index.js),
+// so source changes are invisible until compiled.
+function ensureBuild(): void {
+  const adapterSrc = join(repoRoot, "packages/adapter-maestro/src/page-context-detector.ts");
+  const adapterDist = join(repoRoot, "packages/adapter-maestro/dist/index.js");
+  try {
+    const srcStat = statSync(adapterSrc);
+    const distStat = statSync(adapterDist);
+    if (srcStat.mtimeMs > distStat.mtimeMs) {
+      console.log("[EXPLORER-BUILD] adapter-maestro source is newer than dist — rebuilding...");
+      execSync("pnpm build", { cwd: repoRoot, stdio: "inherit" });
+      console.log("[EXPLORER-BUILD] rebuild complete.");
+    }
+  } catch {
+    // dist missing or unreadable — rebuild to be safe
+    console.log("[EXPLORER-BUILD] dist not found or stale — rebuilding...");
+    execSync("pnpm build", { cwd: repoRoot, stdio: "inherit" });
+    console.log("[EXPLORER-BUILD] rebuild complete.");
+  }
+}
+ensureBuild();
 
 const mode = process.argv[2] === "full" ? "full" : "smoke";
 const appId = process.env.APP_ID?.trim() || "com.android.settings";
@@ -34,14 +64,7 @@ const maxDepth = process.env.EXPLORER_MAX_DEPTH?.trim()
   || (mode === "full" ? "8" : "5");
 const timeoutMs = process.env.EXPLORER_TIMEOUT_MS?.trim()
   || (mode === "full" ? "7200000" : "3600000");
-const runId = process.env.EXPLORER_RUN_ID?.trim()
-  || new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-
-process.env.EXPLORER_RUN_ID = runId;
-
-const runDir = join(outputDir, runId);
-mkdirSync(runDir, { recursive: true });
-const logPath = join(runDir, "log.txt");
+const { logPath } = prepareRunArtifacts(outputDir);
 const logStream = createWriteStream(logPath, { flags: "a" });
 
 const originalConsole = {
@@ -63,7 +86,7 @@ function formatLogArg(value: unknown): string {
 
 function teeLog(level: "LOG" | "ERROR" | "WARN" | "INFO", args: unknown[]): void {
   const line = args.map(formatLogArg).join(" ");
-  logStream.write(`[${new Date().toISOString()}] [${level}] ${line}\n`);
+  logStream.write(`[${formatRunTimestamp(new Date())}] [${level}] ${line}\n`);
 }
 
 console.log = (...args: unknown[]) => {
@@ -119,7 +142,7 @@ async function collectEntryEvidence(server: ReturnType<typeof createServer>, lab
   sampleTexts: string[];
 }> {
   const windowDump = await execAdb(["shell", "dumpsys", "window", "windows"]);
-  const currentFocus = windowDump.match(/mCurrentFocus=Window\{[^\}]+\}/)?.[0] ?? "unknown";
+  const currentFocus = windowDump.match(/mCurrentFocus=Window\{[^}]+\}/)?.[0] ?? "unknown";
 
   const activityTop = await execAdb(["shell", "dumpsys", "activity", "top"]);
   const topActivity = activityTop.match(/ACTIVITY\s+([A-Za-z0-9._]+\/[A-Za-z0-9.$_]+)/)?.[1] ?? "unknown";

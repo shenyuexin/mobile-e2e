@@ -211,12 +211,18 @@ export function generateSummaryJson(
 ): RunSummary {
   const maxDepth =
     pages.length > 0 ? pages.reduce((max, p) => Math.max(max, p.depth), 0) : 0;
+  const runId = resolveRunId({
+    runId: opts.runId,
+    startedAt: opts.startedAt,
+    envRunId: process.env.EXPLORER_RUN_ID,
+  });
 
   const summary: RunSummary = {
-    runId: opts.runId ?? process.env.EXPLORER_RUN_ID ?? generateRunId(),
-    startedAt:
+    runId,
+    startedAt: formatRunTimestamp(
       opts.startedAt ?? new Date(Date.now() - opts.durationMs).toISOString(),
-    completedAt: new Date().toISOString(),
+    ),
+    completedAt: formatRunTimestamp(new Date()),
     durationMs: opts.durationMs,
     totalPages: pages.length,
     totalPaths: countUniquePaths(pages),
@@ -275,7 +281,48 @@ export function generateSummaryJson(
 
 /** Generate a sanitized run ID from the current timestamp. */
 export function generateRunId(): string {
-  return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  return sanitizeRunIdTimestamp(new Date().toISOString());
+}
+
+/** Format a timestamp as an ISO-like +08:00 string. */
+export function formatRunTimestamp(timestamp: string | number | Date): string {
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  const localDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  const year = localDate.getUTCFullYear();
+  const month = String(localDate.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(localDate.getUTCDate()).padStart(2, "0");
+  const hours = String(localDate.getUTCHours()).padStart(2, "0");
+  const minutes = String(localDate.getUTCMinutes()).padStart(2, "0");
+  const seconds = String(localDate.getUTCSeconds()).padStart(2, "0");
+  const milliseconds = String(localDate.getUTCMilliseconds()).padStart(3, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+08:00`;
+}
+
+/** Convert an ISO-like timestamp into a filesystem-safe run ID. */
+export function sanitizeRunIdTimestamp(timestamp: string): string {
+  return formatRunTimestamp(timestamp).replace(/[:.]/g, "-").slice(0, 19);
+}
+
+/** Resolve the stable run ID for the current exploration run. */
+export function resolveRunId(opts: {
+  runId?: string;
+  startedAt?: string;
+  envRunId?: string;
+}): string {
+  if (opts.runId?.trim()) {
+    return opts.runId.trim();
+  }
+
+  if (opts.envRunId?.trim()) {
+    return opts.envRunId.trim();
+  }
+
+  if (opts.startedAt?.trim()) {
+    return sanitizeRunIdTimestamp(opts.startedAt);
+  }
+
+  return generateRunId();
 }
 
 /** Count unique paths among the given pages. */
