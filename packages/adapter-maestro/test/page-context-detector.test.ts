@@ -203,6 +203,177 @@ test("detectPageContext classifies Android hotspot configuration editor as form_
   assert.equal(result.pageContext.ownerPackage, "com.android.settings");
 });
 
+test("detectPageContext classifies Android Settings selection list with cancel+done as form_editor", async () => {
+	const result = await detectPageContext({
+		platform: "android",
+		stateSummary: {
+			appPhase: "ready",
+			readiness: "ready",
+			blockingSignals: [],
+			topVisibleTexts: ["Add apps", "Cancel", "Done"],
+			screenTitle: "Add apps",
+		},
+		uiSummary: {
+			totalNodes: 20,
+			clickableNodes: 15,
+			scrollableNodes: 1,
+			nodesWithText: 18,
+			nodesWithContentDesc: 0,
+			sampleNodes: [
+				{
+					clickable: false,
+					enabled: true,
+					scrollable: false,
+					text: "Add apps",
+					className: "android.widget.TextView",
+					packageName: "com.android.settings",
+				},
+				{
+					clickable: false,
+					enabled: true,
+					scrollable: true,
+					text: "",
+					className: "android.widget.ListView",
+					packageName: "com.android.settings",
+				},
+				{
+					clickable: true,
+					enabled: true,
+					scrollable: false,
+					text: "Albums",
+					className: "android.widget.RelativeLayout",
+					packageName: "com.android.settings",
+				},
+			],
+		},
+		appId: "com.android.settings",
+		appIdentitySource: "session",
+		deviceId: "android-device-1",
+	});
+
+	assert.equal(result.pageContext.type, "form_editor");
+	assert.equal(result.pageContext.ownerPackage, "com.android.settings");
+});
+
+test("detectPageContext classifies Android app picker even with wrong title and no cancel/done in top texts", async () => {
+	const result = await detectPageContext({
+		platform: "android",
+		stateSummary: {
+			appPhase: "ready",
+			readiness: "ready",
+			blockingSignals: [],
+			// Title extraction may pick the first list item (e.g., "Alibaba")
+			// instead of the real page title. cancel/done may also be missing
+			// from topVisibleTexts if they fall outside the first 12 texts.
+			topVisibleTexts: ["Alibaba", "Albums", "Alipay", "Amap"],
+			screenTitle: "Alibaba",
+		},
+		uiSummary: {
+			totalNodes: 30,
+			clickableNodes: 15,
+			scrollableNodes: 1,
+			nodesWithText: 20,
+			nodesWithContentDesc: 0,
+			sampleNodes: [
+				{
+					clickable: true,
+					enabled: true,
+					scrollable: false,
+					text: "Alibaba",
+					className: "android.widget.RelativeLayout",
+					packageName: "com.android.settings",
+				},
+				{
+					clickable: true,
+					enabled: true,
+					scrollable: true,
+					text: "",
+					resourceId: "com.android.settings:id/listView",
+					className: "android.widget.ListView",
+					packageName: "com.android.settings",
+				},
+				{
+					clickable: true,
+					enabled: true,
+					scrollable: false,
+					text: "Add apps",
+					className: "android.widget.Button",
+					packageName: "com.android.settings",
+				},
+			],
+		},
+		appId: "com.android.settings",
+		appIdentitySource: "session",
+		deviceId: "android-device-1",
+	});
+
+	assert.equal(result.pageContext.type, "form_editor");
+	assert.equal(result.pageContext.ownerPackage, "com.android.settings");
+});
+
+test("detectPageContext classifies Android app picker when ListView container is not in sampleNodes", async () => {
+	const result = await detectPageContext({
+		platform: "android",
+		stateSummary: {
+			appPhase: "ready",
+			readiness: "ready",
+			blockingSignals: [],
+			// Title extraction picks the first list item; topVisibleTexts is capped at 12.
+			topVisibleTexts: ["Alibaba", "Albums", "Alipay", "Amap", "APKPure", "Authenticator", "BlueLM Copilot", "Browser", "Calculator", "Calendar", "Add apps", "A"],
+			screenTitle: "Alibaba",
+		},
+		uiSummary: {
+			totalNodes: 30,
+			clickableNodes: 15,
+			scrollableNodes: 1,
+			nodesWithText: 20,
+			nodesWithContentDesc: 0,
+			// sampleNodes is capped at 25 and only contains list items + the Add apps button.
+			// The ListView container node itself is NOT present here, which is the real-device case.
+			sampleNodes: [
+				{
+					clickable: true,
+					enabled: true,
+					scrollable: false,
+					text: "Alibaba",
+					className: "android.widget.RelativeLayout",
+					packageName: "com.android.settings",
+				},
+				{
+					clickable: true,
+					enabled: true,
+					scrollable: false,
+					text: "Albums",
+					className: "android.widget.RelativeLayout",
+					packageName: "com.android.settings",
+				},
+				{
+					clickable: true,
+					enabled: true,
+					scrollable: false,
+					text: "Alipay",
+					className: "android.widget.RelativeLayout",
+					packageName: "com.android.settings",
+				},
+				{
+					clickable: true,
+					enabled: true,
+					scrollable: false,
+					text: "Add apps",
+					className: "android.widget.Button",
+					packageName: "com.android.settings",
+				},
+			],
+		},
+		appId: "com.android.settings",
+		appIdentitySource: "session",
+		deviceId: "android-device-1",
+	});
+
+	assert.equal(result.pageContext.type, "form_editor");
+	assert.equal(result.pageContext.ownerPackage, "com.android.settings");
+});
+
 test("detectPageContext classifies Android popup picker list as popup_surface", async () => {
   const result = await detectPageContext({
     platform: "android",

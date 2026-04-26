@@ -28,12 +28,13 @@ import type {
   PageState,
   SamplingRule,
   SkipPageRule,
+  SkipElementRule,
   TransitionLifecycleSummary,
   ExplorerPlatform,
 } from "./types.js";
 import { PageRegistry, hashUiStructure } from "./page-registry.js";
 import { createSnapshotter, createTapExecutor } from "./snapshot.js";
-import { prioritizeElements } from "./element-prioritizer.js";
+import { prioritizeElements, isPseudoNavigationElement } from "./element-prioritizer.js";
 import { createBacktracker } from "./backtrack.js";
 import { createStateGraph } from "./state-graph.js";
 import {
@@ -162,12 +163,20 @@ function matchSkipPageRule(
 
     if (m.pathPrefix && m.pathPrefix.length > 0) {
       const prefix = m.pathPrefix;
-      if (framePath.length === prefix.length) {
+      // Support both exact-length match and partial segment match.
+      // Partial match: rule segment "Bluetooth" matches frame segment "Bluetooth, On".
+      if (framePath.length === prefix.length || framePath.length >= prefix.length) {
         let matches = true;
         for (let i = 0; i < prefix.length; i++) {
           const framePart = normalizeSamplingPathSegment(framePath[i]);
           const rulePart = normalizeSamplingPathSegment(prefix[i]);
-          if (!(framePart === rulePart || framePart.endsWith(`.${rulePart}`))) {
+          if (
+            !(
+              framePart === rulePart ||
+              framePart.endsWith(`.${rulePart}`) ||
+              framePart.includes(rulePart)
+            )
+          ) {
             matches = false;
             break;
           }
@@ -177,6 +186,72 @@ function matchSkipPageRule(
     }
 
     if (m.screenTitle && screenTitle && m.screenTitle === screenTitle) return rule;
+  }
+
+  return undefined;
+}
+
+function matchSkipElementRule(
+  rules: SkipElementRule[] | undefined,
+  elementLabel: string,
+  framePath: string[],
+  screenTitle: string | undefined,
+): SkipElementRule | undefined {
+  if (!rules || rules.length === 0) return undefined;
+
+  const normalizedLabel = normalizeSamplingPathSegment(elementLabel);
+
+  for (const rule of rules) {
+    const m = rule.match;
+
+    // Check screenTitle constraint first (if specified)
+    if (m.screenTitle && screenTitle) {
+      const normalizedScreenTitle = normalizeSamplingPathSegment(screenTitle);
+      if (!normalizedScreenTitle.includes(normalizeSamplingPathSegment(m.screenTitle))) {
+        continue;
+      }
+    }
+
+    // Check pathPrefix constraint (if specified)
+    if (m.pathPrefix && m.pathPrefix.length > 0) {
+      const prefix = m.pathPrefix;
+      if (framePath.length < prefix.length) {
+        continue;
+      }
+      let pathMatches = true;
+      for (let i = 0; i < prefix.length; i++) {
+        const framePart = normalizeSamplingPathSegment(framePath[i]);
+        const rulePart = normalizeSamplingPathSegment(prefix[i]);
+        if (
+          !(
+            framePart === rulePart ||
+            framePart.endsWith(`.${rulePart}`) ||
+            framePart.includes(rulePart)
+          )
+        ) {
+          pathMatches = false;
+          break;
+        }
+      }
+      if (!pathMatches) continue;
+    }
+
+    // Check elementLabel (substring match)
+    if (m.elementLabel) {
+      const ruleLabel = normalizeSamplingPathSegment(m.elementLabel);
+      if (normalizedLabel.includes(ruleLabel)) {
+        return rule;
+      }
+    }
+
+    if (m.elementLabelPattern) {
+      try {
+        const pattern = new RegExp(m.elementLabelPattern, "i");
+        if (pattern.test(elementLabel)) {
+          return rule;
+        }
+      } catch { }
+    }
   }
 
   return undefined;
@@ -435,6 +510,7 @@ function reconcileStackToSnapshot(
   stack: Frame[],
   snapshot: PageSnapshot,
   targetAppId: string,
+  options?: { allowRootReset?: boolean },
 ): Frame | undefined {
   if (stack.length === 0) {
     return undefined;
@@ -458,7 +534,7 @@ function reconcileStackToSnapshot(
     return resumedFrame;
   }
 
-  if (snapshot.appId === targetAppId) {
+  if (snapshot.appId === targetAppId && options?.allowRootReset !== false) {
     console.log(
       `[FRAME-RESUME] No ancestor match for "${snapshot.screenTitle ?? snapshot.screenId}". ` +
       `Resetting to root frame (was ${stack.length} frames).`,
@@ -634,7 +710,7 @@ export async function explore(
 
   const snapshotter = createSnapshotter(mcp);
   const tapper = createTapExecutor(mcp);
-  const backtracker = createBacktracker(mcp, config.platform);
+  const backtracker = createBacktracker(mcp, config.platform, config.appId);
   const stateGraph = createStateGraph();
 
   // --- Sampling state (high-fanout collection pages) ---
@@ -708,10 +784,10 @@ export async function explore(
   // App switch handling only triggers when this value changes.
   let currentAppId = targetAppId;
 
-  const captureAndReconcileVisiblePage = async (): Promise<Frame | undefined> => {
+  const captureAndReconcileVisiblePage = async (options?: { allowRootReset?: boolean }): Promise<Frame | undefined> => {
     const snapshot = await snapshotter.captureSnapshot(config);
     backtracker.registerPage(snapshot.screenId, snapshot.uiTree);
-    const resumedFrame = reconcileStackToSnapshot(stack, snapshot, targetAppId);
+    const resumedFrame = reconcileStackToSnapshot(stack, snapshot, targetAppId, options);
     if (resumedFrame) {
       currentAppId = snapshot.appId ?? resumedFrame.appId ?? currentAppId;
     }
@@ -779,8 +855,16 @@ export async function explore(
     pageContextType: pageTypeOf(initialSnapshot),
     structureHash: initialStructureHash,
   };
-  // Populate home page's clickable elements
-  stack[0].elements = prioritizeElements(initialSnapshot.clickableElements);
+  const homeElements = prioritizeElements(initialSnapshot.clickableElements);
+  stack[0].elements = homeElements.filter(
+    (el) =>
+      !matchSkipElementRule(
+        config.skipElements,
+        el.label,
+        [],
+        initialSnapshot.screenTitle,
+      ),
+  );
   // Set app identity for the home frame
   stack[0].appId = targetAppId;
   stack[0].isExternalApp = false; // Home page is always the target app
@@ -928,7 +1012,8 @@ export async function explore(
 
     // Step 1: Snapshot (only on first visit, elementIndex === 0)
     // Skip for depth=0 home page — already snapshotted before the loop
-    if (frame.elementIndex === 0 && frame.depth > 0) {
+    // UNLESS the root frame was reset (e.g., after recovery) and has no elements
+    if (frame.elementIndex === 0 && (frame.depth > 0 || frame.elements.length === 0)) {
       const snapshot = await snapshotter.captureSnapshot(config);
       const dedupResult = await visited.dedup(snapshot);
       if (dedupResult.alreadyVisited) {
@@ -973,10 +1058,21 @@ export async function explore(
 
       visited.register(dedupResult, snapshot, frame.path);
       backtracker.registerPage(snapshot.screenId, snapshot.uiTree);
-      frame.elements = prioritizeElements(snapshot.clickableElements).sort(compareExplorationOrder);
+      const rawElements = prioritizeElements(snapshot.clickableElements).sort(compareExplorationOrder);
+      frame.elements = rawElements.filter(
+        (el) =>
+          !matchSkipElementRule(
+            config.skipElements,
+            el.label,
+            frame.path,
+            snapshot.screenTitle,
+          ),
+      );
+      const skippedCount = rawElements.length - frame.elements.length;
       console.log(
         `[FRAME-ELEMENTS] depth=${frame.depth}, title="${snapshot.screenTitle ?? snapshot.screenId ?? "(unknown)"}", ` +
-        `count=${frame.elements.length}, labels=${JSON.stringify(frame.elements.map((candidate) => candidate.label))}`,
+        `count=${frame.elements.length}, labels=${JSON.stringify(frame.elements.map((candidate) => candidate.label))}` +
+        (skippedCount > 0 ? `, skipped=${skippedCount}` : ""),
       );
       frame.state = {
         screenId: snapshot.screenId,
@@ -1116,6 +1212,24 @@ export async function explore(
           );
         }
       }
+      continue;
+    }
+
+    // Skip elements known to be no-ops (screenId unchanged on previous attempt)
+    while (frame.elementIndex < frame.elements.length) {
+      const candidate = frame.elements[frame.elementIndex];
+      if (frame.noOpElements?.has(candidate.label)) {
+        console.log(
+          `[NO-OP-SKIP] skipping known no-op element "${candidate.label.slice(0, 40)}" ` +
+          `at index=${frame.elementIndex}/${frame.elements.length}`,
+        );
+        frame.elementIndex++;
+        continue;
+      }
+      break;
+    }
+
+    if (frame.elementIndex >= frame.elements.length) {
       continue;
     }
 
@@ -1297,13 +1411,17 @@ export async function explore(
         if (pageAction.recoveryMethod === "cancel-first") {
           recoveredViaCancel = await attemptCancelFirstRecovery(mcp);
           if (recoveredViaCancel) {
-            const resumedFrame = await captureAndReconcileVisiblePage();
+            const resumedFrame = await captureAndReconcileVisiblePage({ allowRootReset: false });
             if (resumedFrame) {
               console.log(
                 `[PAGE-CONTEXT] cancel-first recovered to "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" at depth=${resumedFrame.depth}`,
               );
               continue;
             }
+            console.log(
+              `[PAGE-CONTEXT] cancel-first landed on intermediate page not in stack; ` +
+              `falling through to navigateBack for chained recovery`,
+            );
           }
         }
         await backtracker.navigateBack(frame.state.screenTitle ?? frame.parentTitle);
@@ -1398,6 +1516,13 @@ export async function explore(
           attempts: elementRetries + 1,
           failureReason: navValidation.reason,
         });
+        // Track no-op elements to skip them on future visits to this frame
+        if (navValidation.reason?.includes("screenId unchanged") || navValidation.reason?.includes("screen title unchanged")) {
+          if (!frame.noOpElements) {
+            frame.noOpElements = new Set();
+          }
+          frame.noOpElements.add(element.label);
+        }
         continue; // element didn't lead anywhere — try next sibling
       }
 
@@ -1464,11 +1589,28 @@ export async function explore(
 
       const nextStateStructureHash = hashUiStructure(nextStateSnapshot.uiTree);
 
-      // If a tap lands on an already active ancestor frame, treat it as an
-      // in-flow back transition and collapse stale descendants immediately.
-      // This prevents recovery loops like Academy -> System Fonts where we
-      // would otherwise keep the child frame alive and fail BACKTRACK_MISMATCH.
       const ancestorFrameIndex = findAncestorFrameIndex(stack, nextStateSnapshot);
+
+      if (ancestorFrameIndex === stack.length - 1) {
+        const logPrefix = element.isPseudoNavigation ? "[PSEUDO-NAV]" : "[SCREEN-DRIFT]";
+        console.log(
+          `${logPrefix} "${element.label}" changed state on "${frame.state.screenTitle ?? "(unknown)"}" ` +
+          `without page transition — updating current frame instead of pushing child`,
+        );
+        frame.state.screenId = nextStateSnapshot.screenId;
+        frame.state.structureHash = nextStateStructureHash;
+        transitionLifecycle.transitionCommitted += 1;
+        stateGraph.registerTransition({
+          from: currentStateNode.id,
+          to: currentStateNode.id,
+          kind: "forward",
+          intentLabel: element.label,
+          committed: true,
+          attempts: elementRetries + 1,
+        });
+        continue;
+      }
+
       if (ancestorFrameIndex >= 0 && ancestorFrameIndex < stack.length - 1) {
         const remainingSiblingLabels = frame.elements
           .slice(frame.elementIndex)
@@ -1516,7 +1658,6 @@ export async function explore(
         continue;
       }
 
-      // Successful navigation — reset circuit breaker
       resetCircuit(circuitBreaker);
 
       // Determine child depth: external apps limited to config.externalLinkMaxDepth (default: 1)

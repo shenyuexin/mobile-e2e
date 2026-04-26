@@ -29,6 +29,9 @@ export type {
   FailureLogContract,
   CircuitBreakerState,
   BacktrackResult,
+  SamplingRule,
+  SkipPageRule,
+  SkipElementRule,
 } from "./types.js";
 
 // MCP adapter

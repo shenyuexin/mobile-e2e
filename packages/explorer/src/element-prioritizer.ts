@@ -280,6 +280,42 @@ export function isTextInput(el: UiHierarchy): boolean {
   return false;
 }
 
+const PSEUDO_NAVIGATION_TYPES = new Set([
+  "android.widget.Spinner",
+  "android.widget.Switch",
+  "android.widget.CheckBox",
+  "android.widget.RadioButton",
+  "android.widget.CompoundButton",
+  "android.widget.ToggleButton",
+  "Spinner",
+  "Switch",
+  "CheckBox",
+  "RadioButton",
+]);
+
+const PSEUDO_NAVIGATION_RESID_PATTERNS = [
+  /spinner/i,
+  /switch/i,
+  /checkbox/i,
+  /radio/i,
+  /toggle/i,
+  /select_dialog_listview/i,
+];
+
+export function isPseudoNavigationElement(el: UiHierarchy): boolean {
+  const cn = el.className ?? "";
+  if (PSEUDO_NAVIGATION_TYPES.has(cn)) return true;
+
+  const resId = el.resourceId ?? "";
+  if (PSEUDO_NAVIGATION_RESID_PATTERNS.some((p) => p.test(resId))) return true;
+
+  if (el.parent?.className?.includes("ListView") || el.parent?.resourceId?.includes("select_dialog")) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Check if an element is non-interactive (static text, images, separators, etc.).
  */
@@ -554,15 +590,13 @@ function isSearchTrigger(el: UiHierarchy): boolean {
   return false;
 }
 
-/**
- * Convert a UiHierarchy node to a ClickableTarget.
- */
 export function toClickableTarget(el: UiHierarchy): ClickableTarget {
   return {
     label: getElementLabel(el),
     selector: buildSelector(el),
     elementType: el.elementType ?? el.className ?? "Unknown",
     isExternalLink: isExternalLinkCandidate(el),
+    isPseudoNavigation: isPseudoNavigationElement(el),
   };
 }
 

@@ -45,6 +45,26 @@ export interface SkipPageRule {
   reason?: string;
 }
 
+/** Match criteria for a skip-element rule. */
+export interface SkipElementRuleMatch {
+  /** Element label to match (case-insensitive substring match). */
+  elementLabel?: string;
+  /** Element label regex pattern to match. */
+  elementLabelPattern?: string;
+  /** Current page title where the element appears. */
+  screenTitle?: string;
+  /** Path prefix of parent elements leading to this element. */
+  pathPrefix?: string[];
+}
+
+/** A rule to skip specific elements before tapping them. */
+export interface SkipElementRule {
+  /** How to match this rule against a candidate element. */
+  match: SkipElementRuleMatch;
+  /** Human-readable reason for skipping this element. */
+  reason?: string;
+}
+
 /** Credentials for auto-login auth mode. */
 export interface TestCredentials {
   /** Accessibility ID or selector for the username/identifier field. */
@@ -137,6 +157,8 @@ export interface ExplorerConfig {
    */
   blockedOwnerPackages?: string[];
   skipPages?: SkipPageRule[];
+  /** Rules to skip specific elements before tapping them (pre-tap filter). */
+  skipElements?: SkipElementRule[];
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +206,8 @@ export interface UiHierarchy {
   elementType?: string;
   /** Human-readable label (alias for contentDesc/text). */
   label?: string;
+  /** Parent node reference (set during tree traversal for context lookups). */
+  parent?: UiHierarchy;
   /** Any additional properties from the MCP tool. */
   [key: string]: unknown;
 }
@@ -204,16 +228,12 @@ export interface ElementSelector {
 
 /** A UI element that can be tapped during exploration. */
 export interface ClickableTarget {
-  /** Human-readable label for logging and reporting. */
   label: string;
-  /** Selector for targeting the element. */
   selector: ElementSelector;
-  /** Element type (e.g., "Button", "Cell", "CheckBox", "Link"). */
   elementType: string;
-  /** Priority score for exploration ordering (higher = explore first). */
   priority?: number;
-  /** Whether this element is likely to open an external app (e.g., "Learn more" links). */
   isExternalLink?: boolean;
+  isPseudoNavigation?: boolean;
 }
 
 /**
@@ -317,6 +337,8 @@ export interface Frame {
   appId?: string;
   /** Whether this page belongs to an external app (skip back navigation). */
   isExternalApp?: boolean;
+  /** Labels of elements known to be no-ops on this page (screenId unchanged). */
+  noOpElements?: Set<string>;
 }
 
 /** Registry of visited pages with dedup capability. */

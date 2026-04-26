@@ -173,7 +173,18 @@ export function parseAndroidUiHierarchyNodes(xml: string): InspectUiNode[] {
 }
 
 export function buildInspectUiSummary(nodes: InspectUiNode[]): InspectUiSummary {
-  const sampleNodes = nodes.filter((node) => node.clickable || node.text || node.contentDesc || node.resourceId).slice(0, 25);
+  const candidates = nodes.filter((node) => node.clickable || node.text || node.contentDesc || node.resourceId);
+  const sampleNodes = candidates
+    .sort((a, b) => {
+      const aHasText = Boolean(a.text || a.contentDesc) ? 1 : 0;
+      const bHasText = Boolean(b.text || b.contentDesc) ? 1 : 0;
+      if (aHasText !== bHasText) return bHasText - aHasText;
+      const aClickable = a.clickable ? 1 : 0;
+      const bClickable = b.clickable ? 1 : 0;
+      if (aClickable !== bClickable) return bClickable - aClickable;
+      return 0;
+    })
+    .slice(0, 40);
   return {
     totalNodes: nodes.length,
     clickableNodes: nodes.filter((node) => node.clickable).length,
