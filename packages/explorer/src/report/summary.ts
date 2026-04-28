@@ -284,19 +284,23 @@ export function generateRunId(): string {
   return sanitizeRunIdTimestamp(new Date().toISOString());
 }
 
-/** Format a timestamp as an ISO-like +08:00 string. */
+/** Format a timestamp as an ISO-like string in the current machine's local timezone. */
 export function formatRunTimestamp(timestamp: string | number | Date): string {
   const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-  const localDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
-  const year = localDate.getUTCFullYear();
-  const month = String(localDate.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(localDate.getUTCDate()).padStart(2, "0");
-  const hours = String(localDate.getUTCHours()).padStart(2, "0");
-  const minutes = String(localDate.getUTCMinutes()).padStart(2, "0");
-  const seconds = String(localDate.getUTCSeconds()).padStart(2, "0");
-  const milliseconds = String(localDate.getUTCMilliseconds()).padStart(3, "0");
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absOffsetMinutes = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absOffsetMinutes / 60)).padStart(2, "0");
+  const offsetRemainderMinutes = String(absOffsetMinutes % 60).padStart(2, "0");
 
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+08:00`;
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}${sign}${offsetHours}:${offsetRemainderMinutes}`;
 }
 
 /** Convert an ISO-like timestamp into a filesystem-safe run ID. */
