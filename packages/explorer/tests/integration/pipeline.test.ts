@@ -14,6 +14,7 @@ import { ConfigStore } from "../../src/config-store.js";
 import { buildDefaultConfig } from "../../src/config.js";
 import { FailureLog } from "../../src/engine.js";
 import { PageRegistry } from "../../src/page-registry.js";
+import { formatRunTimestamp } from "../../src/report/summary.js";
 import { generateReport } from "../../src/report.js";
 import type { ExplorerConfig, McpToolInterface } from "../../src/types.js";
 
@@ -160,7 +161,10 @@ describe("Pipeline integration", () => {
         .filter((entry) => entry.isDirectory())
         .map((entry) => entry.name);
 
-      assert.deepEqual(runDirs, ["2026-04-28T11-04-05"]);
+      const expectedTimestamp = formatRunTimestamp(startedAt);
+      const expectedRunId = expectedTimestamp.replace(/[:.]/g, "-").slice(0, 19);
+
+      assert.deepEqual(runDirs, [expectedRunId]);
 
       const [runDirName] = runDirs;
       assert.ok(runDirName);
@@ -169,8 +173,8 @@ describe("Pipeline integration", () => {
         readFileSync(join(dir, runDirName, "summary.json"), "utf-8"),
       ) as { runId: string; startedAt: string };
 
-      assert.equal(summary.runId, "2026-04-28T11-04-05");
-      assert.equal(summary.startedAt, "2026-04-28T11:04:05.678+08:00");
+      assert.equal(summary.runId, expectedRunId);
+      assert.equal(summary.startedAt, expectedTimestamp);
     } finally {
       if (previousRunId === undefined) {
         delete process.env.EXPLORER_RUN_ID;

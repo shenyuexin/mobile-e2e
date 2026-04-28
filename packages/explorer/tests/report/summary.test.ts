@@ -10,10 +10,29 @@ import { inferModules } from "../../src/report/modules.js";
 import {
   countPageTypes,
   countUniquePaths,
+  formatRunTimestamp,
   generateRunId,
   generateSummaryJson,
   sanitizeRunIdTimestamp,
 } from "../../src/report/summary.js";
+
+function expectedLocalTimestamp(value: string): string {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absOffsetMinutes = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absOffsetMinutes / 60)).padStart(2, "0");
+  const offsetRemainderMinutes = String(absOffsetMinutes % 60).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}${sign}${offsetHours}:${offsetRemainderMinutes}`;
+}
 import type { ExplorerConfig, FailureEntry, PageEntry } from "../../src/types.js";
 
 type PageContextType = NonNullable<NonNullable<PageEntry["pageContext"]>["type"]>;
@@ -224,10 +243,17 @@ describe("generateSummaryJson", () => {
     assert.ok(!runId.includes("."));
   });
 
-  it("converts UTC timestamps into +08 runIds", () => {
+  it("formats timestamps in the local timezone", () => {
+    assert.equal(
+      formatRunTimestamp("2026-04-28T03:38:20.759Z"),
+      expectedLocalTimestamp("2026-04-28T03:38:20.759Z"),
+    );
+  });
+
+  it("converts UTC timestamps into local-time runIds", () => {
     assert.equal(
       sanitizeRunIdTimestamp("2026-04-28T03:38:20.759Z"),
-      "2026-04-28T11-38-20",
+      expectedLocalTimestamp("2026-04-28T03:38:20.759Z").replace(/[:.]/g, "-").slice(0, 19),
     );
   });
 
