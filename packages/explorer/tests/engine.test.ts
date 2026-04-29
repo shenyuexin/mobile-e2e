@@ -118,6 +118,36 @@ function makeAndroidPageInApp(appId: string, title: string, buttons: string[]): 
   };
 }
 
+function makeScrollablePage(title: string, buttons: string[]): UiHierarchy {
+  return {
+    className: "Application",
+    accessibilityLabel: "Settings",
+    clickable: false,
+    enabled: true,
+    scrollable: false,
+    children: [
+      {
+        className: "ScrollView",
+        clickable: false,
+        enabled: true,
+        scrollable: true,
+        children: [
+          {
+            className: "StaticText",
+            text: title,
+            contentDesc: title,
+            clickable: false,
+            enabled: true,
+            scrollable: false,
+            children: [],
+          },
+          ...buttons.map(makeButton),
+        ],
+      },
+    ],
+  };
+}
+
 function createMockConfig(): ExplorerConfig {
   return {
     mode: "smoke",
@@ -153,6 +183,82 @@ function withDefaultMcp(
 }
 
 describe("explore engine recovery", () => {
+  it("explores the first scroll segment before discovering off-screen segments", async () => {
+    const settingsPage = makePage("Settings", ["General"]);
+    const generalSegments = [
+      makeScrollablePage("General", ["Apps", "Privacy"]),
+      makeScrollablePage("General", ["Storage"]),
+    ];
+    const leafPages = {
+      Apps: makePage("Apps", []),
+      Privacy: makePage("Privacy", []),
+      Storage: makePage("Storage", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: "Settings" | "General" | keyof typeof leafPages = "Settings";
+    let generalSegmentIndex = 0;
+    let scrollCalls = 0;
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const mcp = withDefaultMcp({
+      launchApp: async () => okResult({}),
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => {
+        if (currentPage === "Settings") {
+          return okResult({ content: settingsPage } as any);
+        }
+        if (currentPage === "General") {
+          return okResult({ content: generalSegments[generalSegmentIndex] } as any);
+        }
+        return okResult({ content: leafPages[currentPage] } as any);
+      },
+      scrollOnly: async () => {
+        scrollCalls += 1;
+        if (currentPage === "General") {
+          generalSegmentIndex = Math.min(generalSegmentIndex + 1, generalSegments.length - 1);
+        }
+        return okResult({ swipesPerformed: 1 } as any);
+      },
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "General") {
+          currentPage = "General";
+          generalSegmentIndex = 0;
+        } else if (currentPage === "General" && (label === "Apps" || label === "Privacy" || label === "Storage")) {
+          currentPage = label;
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async (args) => {
+        const target = args?.parentPageTitle;
+        if ((currentPage === "Apps" || currentPage === "Privacy" || currentPage === "Storage") && target === "General") {
+          currentPage = "General";
+          return okResult({ navigated: true } as any);
+        }
+        if (currentPage === "General" && target === "Settings") {
+          currentPage = "Settings";
+          generalSegmentIndex = 0;
+          return okResult({ navigated: true } as any);
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    });
+
+    await explore({ ...createMockConfig(), maxPages: 8 }, mcp);
+
+    const generalTaps = tapLog.filter((entry) => entry.page === "General").map((entry) => entry.label);
+    assert.deepEqual(generalTaps.slice(0, 2), ["Apps", "Privacy"]);
+    assert.equal(generalTaps.includes("Storage"), true);
+    assert.equal(scrollCalls > 0, true);
+  });
+
   it("does not tap stale siblings when frame recovery fails", async () => {
     const pages = {
       Settings: makePage("Settings", ["General"]),
@@ -918,6 +1024,7 @@ describe("explore engine recovery", () => {
     const result = await explore(config, mcp);
 
     assert.equal(backLog.includes("No transfer history"), true);
+    assert.equal(launchCalls, 1);
     assert.equal(
       tapLog.some((entry) => entry.page === "Settings" && entry.label === "Display"),
       true,
@@ -926,6 +1033,69 @@ describe("explore engine recovery", () => {
       result.failed.getEntries().some((entry) => entry.path.join(" > ").includes("Bluetooth")),
       false,
     );
+  });
+
+  it("relaunches target app when Android system back cannot leave external app", async () => {
+    const pages = {
+      Settings: makeAndroidPageInApp("com.android.settings", "Settings", ["Bluetooth", "Display"]),
+      Bluetooth: makeAndroidPageInApp("com.android.settings", "Bluetooth", ["Files received via Bluetooth"]),
+      "No transfer history": makeAndroidPageInApp("com.android.bluetooth", "No transfer history", []),
+      Display: makeAndroidPageInApp("com.android.settings", "Display", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    let launchCalls = 0;
+    const backLog: string[] = [];
+
+    const config = {
+      ...createMockConfig(),
+      platform: "android-device" as const,
+      appId: "com.android.settings",
+      maxPages: 10,
+    };
+
+    const mcp = withDefaultMcp({
+      launchApp: async () => {
+        launchCalls += 1;
+        currentPage = "Settings";
+        return okResult({});
+      },
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] } as any),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        if (currentPage === "Settings" && label === "Bluetooth") {
+          currentPage = "Bluetooth";
+        } else if (currentPage === "Settings" && label === "Display") {
+          currentPage = "Display";
+        } else if (currentPage === "Bluetooth" && label === "Files received via Bluetooth") {
+          currentPage = "No transfer history";
+        }
+
+        return okResult({ tapped: true } as any);
+      },
+      navigateBack: async () => {
+        backLog.push(currentPage);
+        if (currentPage === "Bluetooth") {
+          currentPage = "Settings";
+          return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+        }
+        if (currentPage === "Display") {
+          currentPage = "Settings";
+          return okResult({ navigated: true, stateChanged: true, executedStrategy: "android_keyevent" } as any);
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" } as any),
+      recoverToKnownState: async () => okResult({ recovered: true } as any),
+      resetAppState: async () => okResult({ reset: true } as any),
+      requestManualHandoff: async () => okResult({ handedOff: true } as any),
+    });
+
+    await explore(config, mcp);
+
+    assert.equal(backLog.includes("No transfer history"), true);
+    assert.equal(launchCalls, 2);
   });
 
   it("accepts Android ancestor returns after transient phone selection flows", async () => {

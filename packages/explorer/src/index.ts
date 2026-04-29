@@ -53,6 +53,7 @@ export {
   flattenTree,
   collectVisibleTexts,
   getElementLabel,
+  getElementKey,
   buildSelector,
   toClickableTarget,
   priorityScore,
@@ -97,6 +98,16 @@ export type { StateNode, TransitionEdge, StateGraph, StateGraphSummary } from ".
 
 // DFS engine
 export { explore as exploreEngine, FailureLog } from "./engine.js";
+
+// Scroll-segment helpers
+export {
+  initScrollState,
+  discoverNextSegment,
+  restoreSegment,
+  getCurrentSegmentElements,
+  computePageFingerprint,
+} from "./scroll-segment.js";
+export type { SegmentDiscoveryResult } from "./scroll-segment.js";
 
 // Report
 export { generateReport } from "./report.js";

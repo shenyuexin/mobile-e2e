@@ -26,6 +26,10 @@ function extractScreenTitle(uiTree: UiHierarchy): string | undefined {
       continue;
     }
 
+    if (className.includes("application")) {
+      continue;
+    }
+
     if (className.includes("toolbar") || className.includes("actionbar") || className.includes("textview")) {
       if (label.length > 1 && label.length < 60) {
         return label.split(" ").slice(0, 3).join(" ");
@@ -35,6 +39,10 @@ function extractScreenTitle(uiTree: UiHierarchy): string | undefined {
 
   for (const el of allElements) {
     const label = el.contentDesc || el.text || el.accessibilityLabel;
+    const className = (el.className ?? el.elementType ?? "").toLowerCase();
+    if (className.includes("application")) {
+      continue;
+    }
     if (label && label.length > 1 && label.length < 60) {
       return label.split(" ").slice(0, 3).join(" ");
     }
@@ -54,6 +62,11 @@ function extractAppId(uiTree: UiHierarchy): string | undefined {
       const packageName = typeof raw.packageName === "string" ? raw.packageName : undefined;
       if (packageName) {
         return packageName;
+      }
+      // Fallback: iOS-style pages use accessibilityLabel for appId on Application root
+      const accessibilityLabel = typeof raw.accessibilityLabel === "string" ? raw.accessibilityLabel : undefined;
+      if (accessibilityLabel && accessibilityLabel.includes(".")) {
+        return accessibilityLabel;
       }
     }
   }

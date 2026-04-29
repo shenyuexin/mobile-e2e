@@ -20,6 +20,7 @@ import type {
   Action,
   ClickableTarget,
   ExplorerConfig,
+  ExplorerPlatform,
   ExplorationResult,
   FailureEntry,
   Frame,
@@ -27,256 +28,42 @@ import type {
   PageSnapshot,
   PageState,
   SamplingRule,
-  SkipPageRule,
   SkipElementRule,
+  SkipPageRule,
   TransitionLifecycleSummary,
-  ExplorerPlatform,
 } from "./types.js";
-import { PageRegistry, hashUiStructure } from "./page-registry.js";
-import { createSnapshotter, createTapExecutor } from "./snapshot.js";
-import { prioritizeElements, isPseudoNavigationElement } from "./element-prioritizer.js";
 import { createBacktracker } from "./backtrack.js";
-import { createStateGraph } from "./state-graph.js";
 import {
   createCircuitBreaker,
-  recordPageSuccess,
   recordPageFailure,
-  resetCircuit,
   isCircuitOpen,
+  recordPageSuccess,
+  resetCircuit,
 } from "./circuit-breaker.js";
-import { generateReport } from "./report.js";
-import { decidePageContextAction } from "./page-context-router.js";
-import { formatPageContextDecisionLog } from "./page-context-router.js";
+import { prioritizeElements } from "./element-prioritizer.js";
+import {
+  compareFrameExplorationOrder,
+  elementIdentity,
+  isNavigationControlAction,
+  isSideEffectAction,
+  matchSamplingRule,
+  matchSkipElementRule,
+  matchSkipPageRule,
+  type SamplingState,
+  shouldGateExternalAppFrame,
+} from "./exploration-sampler.js";
+import { findAncestorFrameIndex, reconcileStackToSnapshot } from "./frame-reconciler.js";
+import { returnToTargetAppFromForeignPage } from "./foreign-app-return.js";
 import {
   decideHeuristicPageAction,
   isLowValueDeepContentPage,
 } from "./page-context-heuristic.js";
-
-// ---------------------------------------------------------------------------
-// Sampling helpers — high-fanout collection page representative-child flow
-// SPEC: explorer-high-fanout-list-sampling
-// ---------------------------------------------------------------------------
-
-/** Side-effect action labels that should not be selected as representatives. */
-const SIDE_EFFECT_PATTERNS = [
-  /download/i,
-  /install/i,
-  /purchase/i,
-  /buy/i,
-  /delete/i,
-  /remove/i,
-  /erase/i,
-  /reset/i,
-  /sign\s*out/i,
-  /log\s*out/i,
-];
-
-const NAVIGATION_CONTROL_PATTERNS = [
-  /^back$/i,
-  /^cancel$/i,
-  /^done$/i,
-  /^close$/i,
-  /^xmark$/i,
-];
-
-function isSideEffectAction(label: string): boolean {
-  return SIDE_EFFECT_PATTERNS.some((p) => p.test(label));
-}
-
-function isNavigationControlAction(label: string): boolean {
-  return NAVIGATION_CONTROL_PATTERNS.some((p) => p.test(label.trim()));
-}
-
-function compareExplorationOrder(a: ClickableTarget, b: ClickableTarget): number {
-  const aIsNav = isNavigationControlAction(a.label) || isSideEffectAction(a.label);
-  const bIsNav = isNavigationControlAction(b.label) || isSideEffectAction(b.label);
-  if (aIsNav === bIsNav) return 0;
-  return aIsNav ? 1 : -1;
-}
-
-/**
- * Check if a sampling rule matches the current frame state.
- * Matching priority: screenId > pathPrefix > screenTitle.
- */
-function matchSamplingRule(
-  rules: SamplingRule[] | undefined,
-  framePath: string[],
-  screenTitle: string | undefined,
-  screenId: string | undefined,
-  mode: string,
-): SamplingRule | undefined {
-  if (!rules || rules.length === 0) return undefined;
-
-  for (const rule of rules) {
-    if (rule.mode && rule.mode !== mode) continue;
-    const m = rule.match;
-
-    // Priority 1: screenId match
-    if (m.screenId && screenId && m.screenId === screenId) return rule;
-
-    // Priority 2: pathPrefix exact-depth match.
-    // Rules apply only at the exact declared node, not descendants.
-    // Example: [General, Fonts, System Fonts] matches exactly that node,
-    // but must NOT match [General, Fonts] or
-    // [General, Fonts, System Fonts, Academy Engraved LET].
-    if (m.pathPrefix && m.pathPrefix.length > 0) {
-      const prefix = m.pathPrefix;
-      if (framePath.length === prefix.length) {
-        let matches = true;
-        for (let i = 0; i < prefix.length; i++) {
-          const framePart = normalizeSamplingPathSegment(framePath[i]);
-          const rulePart = normalizeSamplingPathSegment(prefix[i]);
-          // Support iOS resource-id segment matches like
-          // "com.apple.settings.general" vs "general".
-          if (!(framePart === rulePart || framePart.endsWith(`.${rulePart}`))) {
-            matches = false;
-            break;
-          }
-        }
-        if (matches) return rule;
-      }
-    }
-
-    // Priority 3: screenTitle match
-    if (m.screenTitle && screenTitle && m.screenTitle === screenTitle) return rule;
-  }
-
-  return undefined;
-}
-
-function normalizeSamplingPathSegment(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function matchSkipPageRule(
-  rules: SkipPageRule[] | undefined,
-  framePath: string[],
-  screenTitle: string | undefined,
-  screenId: string | undefined,
-): SkipPageRule | undefined {
-  if (!rules || rules.length === 0) return undefined;
-
-  for (const rule of rules) {
-    const m = rule.match;
-
-    if (m.screenId && screenId && m.screenId === screenId) return rule;
-
-    if (m.pathPrefix && m.pathPrefix.length > 0) {
-      const prefix = m.pathPrefix;
-      // Support both exact-length match and partial segment match.
-      // Partial match: rule segment "Bluetooth" matches frame segment "Bluetooth, On".
-      if (framePath.length === prefix.length || framePath.length >= prefix.length) {
-        let matches = true;
-        for (let i = 0; i < prefix.length; i++) {
-          const framePart = normalizeSamplingPathSegment(framePath[i]);
-          const rulePart = normalizeSamplingPathSegment(prefix[i]);
-          if (
-            !(
-              framePart === rulePart ||
-              framePart.endsWith(`.${rulePart}`) ||
-              framePart.includes(rulePart)
-            )
-          ) {
-            matches = false;
-            break;
-          }
-        }
-        if (matches) return rule;
-      }
-    }
-
-    if (m.screenTitle && screenTitle && m.screenTitle === screenTitle) return rule;
-  }
-
-  return undefined;
-}
-
-function matchSkipElementRule(
-  rules: SkipElementRule[] | undefined,
-  elementLabel: string,
-  framePath: string[],
-  screenTitle: string | undefined,
-): SkipElementRule | undefined {
-  if (!rules || rules.length === 0) return undefined;
-
-  const normalizedLabel = normalizeSamplingPathSegment(elementLabel);
-
-  for (const rule of rules) {
-    const m = rule.match;
-
-    // Check screenTitle constraint first (if specified)
-    if (m.screenTitle && screenTitle) {
-      const normalizedScreenTitle = normalizeSamplingPathSegment(screenTitle);
-      if (!normalizedScreenTitle.includes(normalizeSamplingPathSegment(m.screenTitle))) {
-        continue;
-      }
-    }
-
-    // Check pathPrefix constraint (if specified)
-    if (m.pathPrefix && m.pathPrefix.length > 0) {
-      const prefix = m.pathPrefix;
-      if (framePath.length < prefix.length) {
-        continue;
-      }
-      let pathMatches = true;
-      for (let i = 0; i < prefix.length; i++) {
-        const framePart = normalizeSamplingPathSegment(framePath[i]);
-        const rulePart = normalizeSamplingPathSegment(prefix[i]);
-        if (
-          !(
-            framePart === rulePart ||
-            framePart.endsWith(`.${rulePart}`) ||
-            framePart.includes(rulePart)
-          )
-        ) {
-          pathMatches = false;
-          break;
-        }
-      }
-      if (!pathMatches) continue;
-    }
-
-    // Check elementLabel (substring match)
-    if (m.elementLabel) {
-      const ruleLabel = normalizeSamplingPathSegment(m.elementLabel);
-      if (normalizedLabel.includes(ruleLabel)) {
-        return rule;
-      }
-    }
-
-    if (m.elementLabelPattern) {
-      try {
-        const pattern = new RegExp(m.elementLabelPattern, "i");
-        if (pattern.test(elementLabel)) {
-          return rule;
-        }
-      } catch { }
-    }
-  }
-
-  return undefined;
-}
-
-/** Sampling state tracked during exploration. */
-interface SamplingState {
-  /** Pages where sampling was applied (screenId set). */
-  appliedPages: Set<string>;
-  /** Total children skipped due to sampling. */
-  skippedChildren: number;
-  /** Per-page sampling details for report transparency. */
-  details: Record<string, {
-    screenTitle?: string;
-    totalChildren: number;
-    exploredChildren: number;
-    skippedChildren: number;
-    exploredLabels: string[];
-    skippedLabels: string[];
-  }>;
-}
-
-function elementIdentity(element: ClickableTarget): string {
-  return `${element.label}::${JSON.stringify(element.selector)}`;
-}
+import { decidePageContextAction, formatPageContextDecisionLog } from "./page-context-router.js";
+import { PageRegistry, hashUiStructure } from "./page-registry.js";
+import { generateReport } from "./report.js";
+import { discoverNextSegment, getCurrentSegmentElements, initScrollState, restoreSegment } from "./scroll-segment.js";
+import { createSnapshotter, createTapExecutor } from "./snapshot.js";
+import { createStateGraph } from "./state-graph.js";
 
 // ---------------------------------------------------------------------------
 // Failure log
@@ -392,7 +179,17 @@ function pageTypeOf(snapshot: { pageContext?: { type?: string } } | undefined): 
 
 function matchesStatefulKeyword(value: string | undefined, keywords: string[]): boolean {
   const normalized = value?.trim().toLowerCase() ?? "";
-  return keywords.some((keyword) => normalized.includes(keyword));
+  return keywords.some((keyword) => new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\b`, "i").test(normalized));
+}
+
+function isLowValueLeafAction(screenTitle: string | undefined, label: string): boolean {
+  const normalizedScreenTitle = screenTitle?.trim().toLowerCase() ?? "";
+  const normalizedLabel = label.trim().toLowerCase();
+  if (!["about", "software information", "device information", "phone information"].includes(normalizedScreenTitle)) {
+    return false;
+  }
+
+  return /(^|\s)(version|build|model|serial|legal|licenses?)(\s|$)/i.test(normalizedLabel);
 }
 
 function isStatefulFormEntry(
@@ -406,7 +203,7 @@ function isStatefulFormEntry(
 
   const title = snapshot.screenTitle?.trim().toLowerCase() ?? "";
   const label = element.label.trim().toLowerCase();
-  const entryKeywords = ["create", "add", "manage", "choose", "select"];
+  const entryKeywords = ["create", "add", "choose", "select"];
   const domainKeywords = ["address", "shipping", "payment", "profile", "account", "location"];
 
   const hasEntrySignal = matchesStatefulKeyword(title, entryKeywords) || matchesStatefulKeyword(label, entryKeywords);
@@ -428,10 +225,21 @@ function validateNavigation(
 ): NavValidation {
   // Check 1: screenId changed — page content is different
   if (nextSnapshot.screenId === prevState.screenId) {
-    return {
-      navigated: false,
-      reason: "screenId unchanged — element had no navigation effect",
-    };
+    // ScreenId hash collision: two different pages may produce the same
+    // visible-text hash when they share the same set of text labels (e.g.,
+    // "System Fonts" page with button "Academy Engraved LET" and vice versa).
+    // If titles differ, this is a genuine navigation to a different page.
+    const nextTitle = normalizeNavText(nextSnapshot.screenTitle);
+    const prevTitle = normalizeNavText(prevState.screenTitle);
+    if (nextTitle && prevTitle && nextTitle !== prevTitle) {
+      // Titles differ → real navigation with colliding screenId hash.
+      // Fall through to navigation-successful path.
+    } else {
+      return {
+        navigated: false,
+        reason: "screenId unchanged — element had no navigation effect",
+      };
+    }
   }
 
   const nextTitle = normalizeNavText(nextSnapshot.screenTitle);
@@ -458,106 +266,6 @@ function validateNavigation(
   // In the engine, this would be checked separately if needed.
 
   return { navigated: true };
-}
-
-function normalizeTitleForMatch(value: string | undefined): string {
-  return (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function isLikelyBundleId(value: string): boolean {
-  return value.includes(".") && !value.includes(" ");
-}
-
-function findAncestorFrameIndex(
-  stack: Frame[],
-  snapshot: Pick<PageSnapshot, "screenId" | "screenTitle" | "appId">,
-): number {
-  for (let i = stack.length - 1; i >= 0; i--) {
-    const sameScreen = stack[i].state.screenId === snapshot.screenId;
-    const sameAppIdentity =
-      snapshot.appId === undefined ||
-      stack[i].appId === undefined ||
-      stack[i].appId === snapshot.appId;
-    if (sameScreen && sameAppIdentity) {
-      return i;
-    }
-  }
-
-  if (snapshot.screenTitle && !isLikelyBundleId(snapshot.screenTitle)) {
-    const normalizedSnapshotTitle = normalizeTitleForMatch(snapshot.screenTitle);
-    for (let i = stack.length - 1; i >= 0; i--) {
-      const frameTitle = stack[i].state.screenTitle;
-      if (frameTitle && !isLikelyBundleId(frameTitle) && normalizeTitleForMatch(frameTitle) === normalizedSnapshotTitle) {
-        const sameAppIdentity =
-          snapshot.appId === undefined ||
-          stack[i].appId === undefined ||
-          stack[i].appId === snapshot.appId;
-        if (sameAppIdentity) {
-          console.log(
-            `[FRAME-RESUME] screenId drift detected: matched by title "${frameTitle}" at depth=${i} ` +
-            `(snapshot screenId=${snapshot.screenId}, frame screenId=${stack[i].state.screenId})`,
-          );
-          return i;
-        }
-      }
-    }
-  }
-
-  return -1;
-}
-
-function reconcileStackToSnapshot(
-  stack: Frame[],
-  snapshot: PageSnapshot,
-  targetAppId: string,
-  options?: { allowRootReset?: boolean },
-): Frame | undefined {
-  if (stack.length === 0) {
-    return undefined;
-  }
-
-  const ancestorFrameIndex = findAncestorFrameIndex(stack, snapshot);
-
-  if (ancestorFrameIndex >= 0) {
-    while (stack.length - 1 > ancestorFrameIndex) {
-      stack.pop();
-    }
-
-    const resumedFrame = stack[ancestorFrameIndex];
-    resumedFrame.state = {
-      screenId: snapshot.screenId,
-      screenTitle: snapshot.screenTitle,
-      structureHash: hashUiStructure(snapshot.uiTree),
-    };
-    resumedFrame.appId = snapshot.appId ?? resumedFrame.appId ?? targetAppId;
-    resumedFrame.isExternalApp = false;
-    return resumedFrame;
-  }
-
-  if (snapshot.appId === targetAppId && options?.allowRootReset !== false) {
-    console.log(
-      `[FRAME-RESUME] No ancestor match for "${snapshot.screenTitle ?? snapshot.screenId}". ` +
-      `Resetting to root frame (was ${stack.length} frames).`,
-    );
-    while (stack.length > 1) {
-      stack.pop();
-    }
-    const rootFrame = stack[0];
-    rootFrame.state = {
-      screenId: snapshot.screenId,
-      screenTitle: snapshot.screenTitle,
-      structureHash: hashUiStructure(snapshot.uiTree),
-    };
-    rootFrame.appId = snapshot.appId ?? rootFrame.appId ?? targetAppId;
-    rootFrame.isExternalApp = false;
-    rootFrame.depth = 0;
-    rootFrame.path = [];
-    rootFrame.elementIndex = 0;
-    rootFrame.elements = [];
-    return rootFrame;
-  }
-
-  return undefined;
 }
 
 function isAndroidExplorerPlatform(platform: ExplorerPlatform): boolean {
@@ -794,39 +502,6 @@ export async function explore(
     return resumedFrame;
   };
 
-  const returnToTargetAppFromForeignPage = async (): Promise<void> => {
-    let resumedBySystemBack = false;
-    if (isAndroidExplorerPlatform(config.platform)) {
-      console.log(`[APP-SWITCH] Attempting Android system back before relaunch...`);
-      await backtracker.navigateBack();
-      const resumedFrame = await captureAndReconcileVisiblePage();
-      if (resumedFrame && currentAppId === targetAppId) {
-        console.log(
-          `[APP-SWITCH] Returned via system back at page "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" (app=${currentAppId})`,
-        );
-        resumedBySystemBack = true;
-      }
-    }
-
-    if (resumedBySystemBack) {
-      return;
-    }
-
-    console.log(`[APP-SWITCH] Returning to target app ${config.appId} via launchApp...`);
-    await mcp.launchApp({ appId: config.appId });
-    await mcp.waitForUiStable({ timeoutMs: 3000 });
-    currentAppId = targetAppId;
-    console.log(`[APP-SWITCH] Returned to ${currentAppId} — launchApp preserves app state`);
-
-    const resumedFrame = await captureAndReconcileVisiblePage();
-    console.log(`[APP-SWITCH] Current page after return: ${resumedFrame?.state.screenTitle || '(unknown)'}`);
-    if (resumedFrame) {
-      console.log(
-        `[APP-SWITCH] Reconciled stack to page "${resumedFrame.state.screenTitle || '(unknown)'}" at depth=${resumedFrame.depth}`,
-      );
-    }
-  };
-
   const initialPageAction = decideExplorerPageAction(initialSnapshot, config, 0, []);
   if (initialPageAction.type === "gated") {
     console.log(formatPageContextDecisionLog(initialPageAction));
@@ -868,6 +543,8 @@ export async function explore(
   // Set app identity for the home frame
   stack[0].appId = targetAppId;
   stack[0].isExternalApp = false; // Home page is always the target app
+  // Initialize scroll state on the root frame
+  initScrollState(stack[0], initialSnapshot, config);
 
   const startTime = Date.now();
   let recoveryAbortReason: string | undefined;
@@ -878,6 +555,9 @@ export async function explore(
     transitionRejected: 0,
   };
 
+  const areFramesExhausted = (frames: Frame[]): boolean =>
+    frames.every((candidate) => candidate.elementIndex >= getCurrentSegmentElements(candidate).length);
+
   // --- DFS main loop ---
   while (
     stack.length > 0 &&
@@ -886,9 +566,11 @@ export async function explore(
     !isCircuitOpen(circuitBreaker)
   ) {
     const frame = stack[stack.length - 1]; // PEEK (don't pop)
+    let currentSegmentElements = getCurrentSegmentElements(frame);
     console.log(
-      `[FRAME-LOOP] depth=${frame.depth}, stack=${stack.length}, cursor=${frame.elementIndex}/${frame.elements.length}, ` +
-      `frameTitle="${frame.state.screenTitle ?? "(none)"}", frameScreenId="${frame.state.screenId ?? "(none)"}"`,
+      `[FRAME-LOOP] depth=${frame.depth}, stack=${stack.length}, cursor=${frame.elementIndex}/${currentSegmentElements.length}, ` +
+      `frameTitle="${frame.state.screenTitle ?? "(none)"}", frameScreenId="${frame.state.screenId ?? "(none)"}"` +
+      (frame.scrollState ? `, segment=${frame.scrollState.segmentIndex}/${frame.scrollState.segments.length}` : ""),
     );
 
     // Step 0: ensure frame-state is aligned with the currently visible page
@@ -926,6 +608,25 @@ export async function explore(
           : false;
 
         if (!alignedAfterRecovery) {
+          if (frame.depth === 0 && frame.elementIndex >= frame.elements.length) {
+            console.log(
+              `[FRAME-GUARD] Home page elements exhausted. Exploration complete.`,
+            );
+            break;
+          }
+
+          const exhaustedTail = frame.depth > 0
+            && frame.elementIndex >= getCurrentSegmentElements(frame).length
+            && areFramesExhausted(stack.slice(0, -1));
+          if (exhaustedTail) {
+            console.log(
+              `[FRAME-GUARD] mismatch after exhausted tail; dropping frame depth=${frame.depth} ` +
+              `title="${frame.state.screenTitle ?? "(unknown)"}" without recording failure`,
+            );
+            stack.pop();
+            continue;
+          }
+
           failed.record({
             pageScreenId: frame.state.screenId ?? "unknown",
             elementLabel: frame.state.screenTitle ?? frame.parentTitle ?? "resume-frame",
@@ -937,17 +638,13 @@ export async function explore(
           });
 
           if (frame.depth === 0) {
-            if (frame.elementIndex >= frame.elements.length) {
-              console.log(
-                `[FRAME-GUARD] Home page elements exhausted. Exploration complete.`,
-              );
-              break;
-            }
-
             console.log(
               `[FRAME-GUARD] Home page recovery failed. Attempting launch_app to restart...`,
             );
             try {
+              const expectedHomeScreenId = frame.state.screenId;
+              const expectedHomeTitle = frame.state.screenTitle;
+              const expectedHomeStructureHash = frame.state.structureHash;
               await mcp.launchApp({ appId: config.appId });
               await mcp.waitForUiStable({ timeoutMs: 3000 });
 
@@ -956,17 +653,10 @@ export async function explore(
                 `[FRAME-GUARD] launchApp returned to: ${returnSnapshot.screenTitle || "(unknown)"}`,
               );
 
-              frame.state = {
-                screenId: returnSnapshot.screenId,
-                screenTitle: returnSnapshot.screenTitle,
-                structureHash: hashUiStructure(returnSnapshot.uiTree),
-              };
-              backtracker.registerPage(returnSnapshot.screenId, returnSnapshot.uiTree);
-
               const alignedAfterLaunch = await backtracker.isOnExpectedPage(
-                frame.state.screenId ?? "unknown",
-                frame.state.screenTitle,
-                frame.state.structureHash,
+                expectedHomeScreenId ?? "unknown",
+                expectedHomeTitle,
+                expectedHomeStructureHash,
               );
               if (!alignedAfterLaunch) {
                 console.log(
@@ -975,6 +665,12 @@ export async function explore(
                 recoveryAbortReason = `Home recovery failed: launchApp did not restore expected page`;
                 break;
               }
+              frame.state = {
+                screenId: returnSnapshot.screenId,
+                screenTitle: returnSnapshot.screenTitle,
+                structureHash: hashUiStructure(returnSnapshot.uiTree),
+              };
+              backtracker.registerPage(returnSnapshot.screenId, returnSnapshot.uiTree);
               console.log(
                 `[FRAME-GUARD] Home page recovered via launchApp. Continuing exploration.`,
               );
@@ -1013,7 +709,7 @@ export async function explore(
     // Step 1: Snapshot (only on first visit, elementIndex === 0)
     // Skip for depth=0 home page — already snapshotted before the loop
     // UNLESS the root frame was reset (e.g., after recovery) and has no elements
-    if (frame.elementIndex === 0 && (frame.depth > 0 || frame.elements.length === 0)) {
+    if (frame.elementIndex === 0 && frame.elements.length === 0) {
       const snapshot = await snapshotter.captureSnapshot(config);
       const dedupResult = await visited.dedup(snapshot);
       if (dedupResult.alreadyVisited) {
@@ -1058,7 +754,7 @@ export async function explore(
 
       visited.register(dedupResult, snapshot, frame.path);
       backtracker.registerPage(snapshot.screenId, snapshot.uiTree);
-      const rawElements = prioritizeElements(snapshot.clickableElements).sort(compareExplorationOrder);
+      const rawElements = prioritizeElements(snapshot.clickableElements).sort((a, b) => compareFrameExplorationOrder(a, b, frame));
       frame.elements = rawElements.filter(
         (el) =>
           !matchSkipElementRule(
@@ -1066,7 +762,8 @@ export async function explore(
             el.label,
             frame.path,
             snapshot.screenTitle,
-          ),
+          ) &&
+          !isLowValueLeafAction(snapshot.screenTitle, el.label),
       );
       const skippedCount = rawElements.length - frame.elements.length;
       console.log(
@@ -1136,16 +833,99 @@ export async function explore(
           );
         }
       }
+
+      // Initialize scroll state after frame.elements is set
+      initScrollState(frame, snapshot, config);
+      currentSegmentElements = getCurrentSegmentElements(frame);
+
+      if (shouldGateExternalAppFrame(frame, config.externalLinkMaxDepth ?? 1)) {
+        console.log(
+          `[APP-SWITCH] Foreign app page at depth=${frame.depth}, title="${snapshot.screenTitle ?? snapshot.screenId}" — ` +
+          `marking as reached-not-expanded (foreign_app_boundary)`,
+        );
+        markSnapshotAsGated(
+          snapshot,
+          {
+            type: "gated",
+            reason: `foreign app ${snapshot.appId ?? "(unknown)"} detected — target-app-only exploration rule`,
+            recoveryMethod: "backtrack-cancel-first",
+            ruleFamily: "foreign_app_boundary",
+          },
+          "singleTargetAppPolicy:foreign-app",
+        );
+        visited.updatePageMetadata(snapshot);
+        stack.pop();
+        if (frame.depth > 0) {
+          // Navigate back to parent frame. If parent is also a foreign app but within
+          // externalLinkMaxDepth, we stay in the foreign app chain. If parent is the
+          // target app or a foreign app beyond the limit, returnToTargetAppFromForeignPage
+          // will handle the full return.
+          const parentFrame = stack[stack.length - 1];
+          const parentIsWithinLimit = parentFrame && !shouldGateExternalAppFrame(parentFrame, config.externalLinkMaxDepth ?? 1);
+
+          if (parentIsWithinLimit) {
+            // Parent is within externalLinkMaxDepth — navigate back to it
+            await backtracker.navigateBack(frame.parentTitle);
+            const resumedFrame = await captureAndReconcileVisiblePage();
+            if (resumedFrame) {
+              console.log(
+                `[APP-SWITCH] Returned to parent page "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" at depth=${resumedFrame.depth}`,
+              );
+            }
+          } else {
+            // Parent is target app or beyond limit — return to target app
+            const result = await returnToTargetAppFromForeignPage({
+              appId: config.appId,
+              targetAppId,
+              platform: config.platform,
+              getCurrentAppId: () => currentAppId,
+              setCurrentAppId: (appId) => {
+                currentAppId = appId;
+              },
+              navigateBack: async () => {
+                await backtracker.navigateBack();
+              },
+              launchApp: async (args) => {
+                await mcp.launchApp(args);
+              },
+              waitForUiStable: async (args) => {
+                await mcp.waitForUiStable(args);
+              },
+              captureAndReconcileVisiblePage,
+              requireTargetAppMatch: true,
+            });
+            currentAppId = result.currentAppId;
+          }
+        }
+        continue;
+      }
     }
 
     // Step 2: Visit next unexplored element
     const liveContextForPlan = await backtracker.getCurrentPageContext();
     const currentLabelForPlan = liveContextForPlan.title ?? liveContextForPlan.screenId ?? "(unknown)";
 
-    if (frame.elementIndex >= frame.elements.length) {
+    if (frame.elementIndex >= currentSegmentElements.length) {
+      // Current segment exhausted — try scroll discovery before popping
+      if (frame.scrollState?.enabled) {
+        const segResult = await discoverNextSegment(mcp, frame, config);
+        if (segResult.success && segResult.newElements && segResult.newElements.length > 0) {
+          frame.elementIndex = 0;
+          console.log(
+            `[SCROLL-SEGMENT] Exploring segment ${frame.scrollState.segmentIndex} ` +
+            `with ${segResult.newElements.length} elements`,
+          );
+          continue;
+        }
+        // No more segments — fall through to normal pop
+        console.log(
+          `[SCROLL-SEGMENT] No more segments for "${frame.state.screenTitle ?? "(none)"}"`,
+        );
+      }
+
       const expectedAfterAction = frame.parentTitle ?? "(root)";
       console.log(
-        `[FRAME-PLAN] depth=${frame.depth}, stack=${stack.length}, cursor=${frame.elementIndex}/${frame.elements.length}, ` +
+        `[FRAME-PLAN] depth=${frame.depth}, stack=${stack.length}, cursor=${frame.elementIndex}/${currentSegmentElements.length}, ` +
         `current="${currentLabelForPlan}", expected="${expectedAfterAction}", nextAction=pop frame and backtrack`,
       );
 
@@ -1164,41 +944,39 @@ export async function explore(
       
       // Handle return from external app pages (can't use navigate_back across apps)
       if (frame.isExternalApp) {
-        let resumedBySystemBack = false;
-        if (isAndroidExplorerPlatform(config.platform)) {
-          console.log(`[APP-SWITCH] Attempting Android system back before relaunch...`);
-          await backtracker.navigateBack();
-          const resumedFrame = await captureAndReconcileVisiblePage();
-          if (resumedFrame) {
-            console.log(
-              `[APP-SWITCH] Returned via system back at page "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" (app=${currentAppId})`,
-            );
-            resumedBySystemBack = true;
-          }
-        }
+        const result = await returnToTargetAppFromForeignPage({
+          appId: config.appId,
+          targetAppId,
+          platform: config.platform,
+          getCurrentAppId: () => currentAppId,
+          setCurrentAppId: (appId) => {
+            currentAppId = appId;
+          },
+          navigateBack: async () => {
+            await backtracker.navigateBack();
+          },
+          launchApp: async (args) => {
+            await mcp.launchApp(args);
+          },
+          waitForUiStable: async (args) => {
+            await mcp.waitForUiStable(args);
+          },
+          captureAndReconcileVisiblePage,
+          navigateBackToParentOnLaunchFailure: async () => {
+            await backtracker.navigateBack(frame.parentTitle);
+          },
+        });
+        currentAppId = result.currentAppId;
 
-        if (resumedBySystemBack) {
+        if (result.resumedBySystemBack) {
           continue;
         }
 
-        console.log(`[APP-SWITCH] Returning to target app ${config.appId} via launchApp...`);
-        try {
-          await mcp.launchApp({ appId: config.appId });
-          await mcp.waitForUiStable({ timeoutMs: 3000 });
-          // Update current app identity since we're back in target app
-          currentAppId = targetAppId;
-          console.log(`[APP-SWITCH] Returned to ${currentAppId} — launchApp preserves app state`);
-
-          const resumedFrame = await captureAndReconcileVisiblePage();
-          console.log(`[APP-SWITCH] Current page after return: ${resumedFrame?.state.screenTitle || '(unknown)'}`);
-          if (resumedFrame) {
-            console.log(
-              `[APP-SWITCH] Reconciled stack to page "${resumedFrame.state.screenTitle || '(unknown)'}" at depth=${resumedFrame.depth}`,
-            );
-          }
-        } catch (err) {
-          console.log(`[APP-SWITCH] launchApp failed, falling back to navigateBack: ${err}`);
-          await backtracker.navigateBack(frame.parentTitle);
+        console.log(`[APP-SWITCH] Returned to ${currentAppId} — launchApp preserves app state`);
+        if (result.resumedFrame) {
+          console.log(
+            `[APP-SWITCH] Reconciled stack to page "${result.resumedFrame.state.screenTitle || '(unknown)'}" at depth=${result.resumedFrame.depth}`,
+          );
         }
       } else if (frame.depth > 0) {
         // Normal in-app backtrack
@@ -1216,12 +994,12 @@ export async function explore(
     }
 
     // Skip elements known to be no-ops (screenId unchanged on previous attempt)
-    while (frame.elementIndex < frame.elements.length) {
-      const candidate = frame.elements[frame.elementIndex];
+    while (frame.elementIndex < currentSegmentElements.length) {
+      const candidate = currentSegmentElements[frame.elementIndex];
       if (frame.noOpElements?.has(candidate.label)) {
         console.log(
           `[NO-OP-SKIP] skipping known no-op element "${candidate.label.slice(0, 40)}" ` +
-          `at index=${frame.elementIndex}/${frame.elements.length}`,
+          `at index=${frame.elementIndex}/${currentSegmentElements.length}`,
         );
         frame.elementIndex++;
         continue;
@@ -1229,12 +1007,26 @@ export async function explore(
       break;
     }
 
-    if (frame.elementIndex >= frame.elements.length) {
+    if (frame.elementIndex >= currentSegmentElements.length) {
       continue;
     }
 
-    const element = frame.elements[frame.elementIndex];
+    const element = currentSegmentElements[frame.elementIndex];
     const expectedAfterAction = element.label.slice(0, 50);
+
+    // Restore scroll segment visibility before tapping (if needed)
+    if (frame.scrollState && frame.scrollState.segmentIndex > 0) {
+      const restored = await restoreSegment(mcp, frame, config);
+      if (!restored) {
+        console.log(
+          `[SCROLL-RESTORE] Giving up on segment ${frame.scrollState.segmentIndex} — ` +
+          `skipping remaining elements`,
+        );
+        frame.elementIndex = currentSegmentElements.length;
+        continue;
+      }
+    }
+
     console.log(
       `[FRAME-PLAN] depth=${frame.depth}, stack=${stack.length}, cursor=${frame.elementIndex}/${frame.elements.length}, ` +
       `current="${currentLabelForPlan}", expected="${expectedAfterAction}", nextAction=tap "${expectedAfterAction}"`,
@@ -1531,60 +1323,9 @@ export async function explore(
         (nextStateSnapshot.appId !== undefined && nextStateSnapshot.appId !== targetAppId);
       if (isExternalApp) {
         console.log(
-          `[APP-SWITCH] In external app: ${nextStateSnapshot.appId} (via "${element.label}")`,
+          `[APP-SWITCH] In external app: ${nextStateSnapshot.appId} (via "${element.label}") — will explore via DFS with isExternalApp flag`,
         );
         nextStateSnapshot.isExternalApp = true;
-
-        markSnapshotAsGated(
-          nextStateSnapshot,
-          {
-            type: "gated",
-            reason: `foreign app ${nextStateSnapshot.appId} detected — target-app-only exploration rule`,
-            recoveryMethod: "backtrack-cancel-first",
-            ruleFamily: "foreign_app_boundary",
-          },
-          "singleTargetAppPolicy:foreign-app",
-        );
-
-        visited.register({ alreadyVisited: false }, nextStateSnapshot, [...frame.path, element.label]);
-        transitionLifecycle.transitionCommitted += 1;
-        const gatedStateNode = stateGraph.registerState(
-          nextStateSnapshot,
-          hashUiStructure(nextStateSnapshot.uiTree),
-        );
-        stateGraph.registerTransition({
-          from: currentStateNode.id,
-          to: gatedStateNode.id,
-          kind: "cancel",
-          intentLabel: element.label,
-          committed: true,
-          attempts: elementRetries + 1,
-        });
-        currentStateNode = gatedStateNode;
-
-        let resumedBySystemBack = false;
-        if (isAndroidExplorerPlatform(config.platform)) {
-          console.log(`[APP-SWITCH] Attempting Android system back before relaunch...`);
-          await backtracker.navigateBack();
-          const resumedFrame = await captureAndReconcileVisiblePage();
-          if (resumedFrame && currentAppId === targetAppId) {
-            console.log(
-              `[APP-SWITCH] Returned via system back at page "${resumedFrame.state.screenTitle ?? resumedFrame.state.screenId ?? "(unknown)"}" (app=${currentAppId})`,
-            );
-            resumedBySystemBack = true;
-          }
-        }
-
-        if (!resumedBySystemBack) {
-          console.log(`[APP-SWITCH] Returning to target app ${config.appId} via launchApp...`);
-          await mcp.launchApp({ appId: config.appId });
-          await mcp.waitForUiStable({ timeoutMs: 3000 });
-          currentAppId = targetAppId;
-          const resumedFrame = await captureAndReconcileVisiblePage();
-          console.log(`[APP-SWITCH] Current page after return: ${resumedFrame?.state.screenTitle || '(unknown)'}`);
-        }
-
-        continue;
       }
 
       const nextStateStructureHash = hashUiStructure(nextStateSnapshot.uiTree);
@@ -1660,11 +1401,9 @@ export async function explore(
 
       resetCircuit(circuitBreaker);
 
-      // Determine child depth: external apps limited to config.externalLinkMaxDepth (default: 1)
-      const externalMaxDepth = config.externalLinkMaxDepth ?? 1;
-      const childDepth = isExternalApp
-        ? externalMaxDepth
-        : frame.depth + 1;
+      // Determine child depth: foreign app pages use normal DFS depth progression
+      // (they are gated as reached-not-expanded in the snapshot phase)
+      const childDepth = frame.depth + 1;
 
       // Push child frame for immediate exploration in next iteration
       console.log(`[FRAME-PUSH] Creating child frame for "${nextStateSnapshot.screenTitle}", parentTitle="${frame.state.screenTitle ?? frame.parentTitle}", parentFrameTitle="${frame.state.screenTitle}"`);
@@ -1678,9 +1417,7 @@ export async function explore(
         path: [...frame.path, element.label],
         elementIndex: 0,
         elements: [],
-        // Child's parent is the current frame's page title (iOS back button shows parent title)
         parentTitle: frame.state.screenTitle ?? frame.parentTitle,
-        // Track app identity for app switching detection
         appId: nextStateSnapshot.appId ?? config.appId,
         isExternalApp,
       });
