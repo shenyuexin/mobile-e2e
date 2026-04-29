@@ -175,6 +175,20 @@ export class PageRegistry implements PageRegistryContract {
     }
   }
 
+  updatePageMetadata(snapshot: PageSnapshot): void {
+    for (let index = this.entries.length - 1; index >= 0; index -= 1) {
+      const entry = this.entries[index];
+      if (entry.screenId === snapshot.screenId) {
+        entry.snapshot = snapshot;
+        entry.explorationStatus = snapshot.explorationStatus ?? entry.explorationStatus;
+        entry.stoppedByPolicy = snapshot.stoppedByPolicy;
+        entry.ruleFamily = snapshot.ruleFamily;
+        entry.recoveryMethod = snapshot.recoveryMethod;
+        return;
+      }
+    }
+  }
+
   /** Number of unique pages registered. */
   get count(): number {
     return this.entries.length;

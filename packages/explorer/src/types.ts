@@ -339,6 +339,25 @@ export interface Frame {
   isExternalApp?: boolean;
   /** Labels of elements known to be no-ops on this page (screenId unchanged). */
   noOpElements?: Set<string>;
+  /** Scroll-aware exploration state for long scrollable pages. */
+  scrollState?: {
+    /** Whether this page is scrollable and scroll discovery is active. */
+    enabled: boolean;
+    /** Current segment cursor (0-based). */
+    segmentIndex: number;
+    /** All discovered segments; each segment is a viewport of clickable elements. */
+    segments: ClickableTarget[][];
+    /** Cumulative element dedup keys across all segments for this page. */
+    seenKeys: Set<string>;
+    /** Stable page identity for same-page detection after scroll. */
+    pageFingerprint: string;
+    /** Hard limit on segments to prevent infinite loops (default 10). */
+    maxSegments: number;
+    /** Current restore attempt count. */
+    restoreAttempts: number;
+    /** Hard limit on restore attempts per segment (default 3). */
+    maxRestoreAttempts: number;
+  };
 }
 
 /** Registry of visited pages with dedup capability. */

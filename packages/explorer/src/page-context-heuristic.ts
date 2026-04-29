@@ -30,6 +30,19 @@ export function hasClickableLabel(
 	);
 }
 
+function hasUiLabel(uiTree: Record<string, unknown>, expectedLabel: string): boolean {
+	const normalized = expectedLabel.trim().toLowerCase();
+	return collectAllElements(uiTree).some((el) => {
+		const label =
+			(el as Record<string, unknown>).contentDesc ||
+			(el as Record<string, unknown>).accessibilityLabel ||
+			(el as Record<string, unknown>).label ||
+			(el as Record<string, unknown>).text ||
+			"";
+		return typeof label === "string" && label.trim().toLowerCase() === normalized;
+	});
+}
+
 function collectAllElements(
 	node: Record<string, unknown>,
 	result: Record<string, unknown>[] = [],
@@ -94,16 +107,13 @@ export function isSystemDialog(snapshot: { uiTree: Record<string, unknown> }): b
 }
 
 export function isDismissibleNicknameDialog(snapshot: PageSnapshot): boolean {
-	if (snapshot.appId !== "com.bbk.account") {
-		return false;
-	}
 	const title = snapshot.screenTitle?.trim().toLowerCase();
 	if (title !== "account nickname") {
 		return false;
 	}
 	return (
-		hasClickableLabel(snapshot.clickableElements, "Cancel") &&
-		hasClickableLabel(snapshot.clickableElements, "OK")
+		hasUiLabel(snapshot.uiTree as Record<string, unknown>, "Cancel") &&
+		hasUiLabel(snapshot.uiTree as Record<string, unknown>, "OK")
 	);
 }
 

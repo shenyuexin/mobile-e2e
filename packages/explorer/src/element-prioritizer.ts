@@ -590,6 +590,12 @@ function isSearchTrigger(el: UiHierarchy): boolean {
   return false;
 }
 
+export function getElementKey(el: UiHierarchy): string {
+  return [el.resourceId, el.contentDesc || el.accessibilityLabel, el.text]
+    .filter(Boolean)
+    .join("|");
+}
+
 export function toClickableTarget(el: UiHierarchy): ClickableTarget {
   return {
     label: getElementLabel(el),
