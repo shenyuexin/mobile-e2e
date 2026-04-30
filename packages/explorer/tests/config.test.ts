@@ -2,18 +2,25 @@
  * Unit tests for config module: loadConfig, saveConfig, AdaptiveMaxPages, shouldReuseConfig.
  */
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, unlinkSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 import {
-  loadConfig,
-  saveConfig,
-  shouldReuseConfig,
-  AdaptiveMaxPages,
-  buildDefaultConfig,
-  INTERVIEW_QUESTIONS,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it } from "node:test";
+import {
+	AdaptiveMaxPages,
+	buildDefaultConfig,
+	INTERVIEW_QUESTIONS,
+	loadConfig,
+	saveConfig,
+	shouldReuseConfig,
+	validateRuleConfig,
 } from "../src/config.js";
 
 // ---------------------------------------------------------------------------
@@ -21,9 +28,12 @@ import {
 // ---------------------------------------------------------------------------
 
 function tempDir(): string {
-  const dir = join(tmpdir(), `explorer-config-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-  mkdirSync(dir, { recursive: true });
-  return dir;
+	const dir = join(
+		tmpdir(),
+		`explorer-config-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+	);
+	mkdirSync(dir, { recursive: true });
+	return dir;
 }
 
 // ---------------------------------------------------------------------------
@@ -31,37 +41,187 @@ function tempDir(): string {
 // ---------------------------------------------------------------------------
 
 describe("loadConfig", () => {
-  it("returns null when file does not exist", () => {
-    const result = loadConfig("/nonexistent/path/config.json");
-    assert.equal(result, null);
-  });
+	it("returns null when file does not exist", () => {
+		const result = loadConfig("/nonexistent/path/config.json");
+		assert.equal(result, null);
+	});
 
-  it("parses valid JSON config", () => {
-    const dir = tempDir();
-    const path = join(dir, "config.json");
-    const config = buildDefaultConfig({ appId: "com.test.App" });
-    saveConfig(config, path);
+	it("parses valid JSON config", () => {
+		const dir = tempDir();
+		const path = join(dir, "config.json");
+		const config = buildDefaultConfig({ appId: "com.test.App" });
+		saveConfig(config, path);
 
-    const loaded = loadConfig(path);
-    assert.ok(loaded !== null);
-    assert.equal(loaded.appId, "com.test.App");
-    assert.equal(loaded.mode, "scoped");
-    assert.equal(loaded.platform, "ios-simulator");
+		const loaded = loadConfig(path);
+		assert.ok(loaded !== null);
+		assert.equal(loaded.appId, "com.test.App");
+		assert.equal(loaded.mode, "scoped");
+		assert.equal(loaded.platform, "ios-simulator");
 
-    // Cleanup
-    rmSync(dir, { recursive: true, force: true });
-  });
+		// Cleanup
+		rmSync(dir, { recursive: true, force: true });
+	});
 
-  it("returns null for invalid JSON", () => {
-    const dir = tempDir();
-    const path = join(dir, "config.json");
-    writeFileSync(path, "not json", "utf-8");
+	it("returns null for invalid JSON", () => {
+		const dir = tempDir();
+		const path = join(dir, "config.json");
+		writeFileSync(path, "not json", "utf-8");
 
-    const loaded = loadConfig(path);
-    assert.equal(loaded, null);
+		const loaded = loadConfig(path);
+		assert.equal(loaded, null);
 
-    rmSync(dir, { recursive: true, force: true });
-  });
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("returns null when rule config has malformed category or action", () => {
+		const dir = tempDir();
+		const path = join(dir, "config.json");
+		const config = buildDefaultConfig({
+			appId: "com.test.App",
+			rules: {
+				version: 1,
+				rules: [
+					{
+						id: "project.bad-action",
+						category: "page-skip",
+						action: "launch-missiles",
+						reason: "invalid action should fail config load",
+						match: { screenTitle: "Danger" },
+					} as never,
+				],
+			},
+		});
+		writeFileSync(path, JSON.stringify(config), "utf-8");
+
+		assert.equal(loadConfig(path), null);
+
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("surfaces rule validation diagnostics during config load", () => {
+		const dir = tempDir();
+		const path = join(dir, "config.json");
+		const originalWarn = console.warn;
+		const warnings: string[] = [];
+		console.warn = (message?: unknown) => {
+			warnings.push(String(message));
+		};
+		try {
+			const config = buildDefaultConfig({
+				appId: "com.test.App",
+				rules: {
+					version: 1,
+					rules: [
+						{
+							id: "project.bad-regex",
+							category: "element-skip",
+							action: "skip-element",
+							reason: "Bad regex should be surfaced",
+							match: { elementLabelPattern: "[" },
+						},
+					],
+				},
+			});
+			writeFileSync(path, JSON.stringify(config), "utf-8");
+
+			assert.ok(loadConfig(path));
+			assert.ok(warnings.some((warning) => warning.includes("project.bad-regex")));
+		} finally {
+			console.warn = originalWarn;
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("loads valid rule registry entries from config JSON", () => {
+		const dir = tempDir();
+		const path = join(dir, "config.json");
+		const config = buildDefaultConfig({
+			appId: "com.test.App",
+			rules: {
+				version: 1,
+				rules: [
+					{
+						id: "project.skip.billing-pages",
+						category: "page-skip",
+						action: "gate-page",
+						reason: "Billing pages are out of scope",
+						match: { screenTitlePattern: "Billing|Payment" },
+					},
+				],
+			},
+		});
+		saveConfig(config, path);
+
+		const loaded = loadConfig(path);
+		assert.equal(loaded?.rules?.rules?.[0]?.id, "project.skip.billing-pages");
+
+		rmSync(dir, { recursive: true, force: true });
+	});
+});
+
+describe("validateRuleConfig", () => {
+	it("reports invalid regex fields as warnings without errors", () => {
+		const config = buildDefaultConfig({
+			rules: {
+				version: 1,
+				rules: [
+					{
+						id: "project.bad-regex",
+						category: "element-skip",
+						action: "skip-element",
+						reason: "Bad regex should be ignored safely",
+						match: { elementLabelPattern: "[" },
+					},
+				],
+			},
+		});
+
+		const diagnostics = validateRuleConfig(config);
+		assert.deepEqual(diagnostics.errors, []);
+		assert.ok(
+			diagnostics.warnings.some((warning) =>
+				warning.includes("project.bad-regex") && warning.includes("elementLabelPattern"),
+			),
+		);
+	});
+
+	it("reports unknown disabled built-in ids as warnings", () => {
+		const config = buildDefaultConfig({
+			rules: {
+				version: 1,
+				defaults: { disabledRuleIds: ["default.does-not-exist"] },
+			},
+		});
+
+		const diagnostics = validateRuleConfig(config);
+		assert.deepEqual(diagnostics.errors, []);
+		assert.ok(
+			diagnostics.warnings.some((warning) =>
+				warning.includes("default.does-not-exist"),
+			),
+		);
+	});
+
+	it("reports malformed rule category and action as errors", () => {
+		const config = buildDefaultConfig({
+			rules: {
+				version: 1,
+				rules: [
+					{
+						id: "project.malformed",
+						category: "unknown-category",
+						action: "unknown-action",
+						reason: "Invalid enum values should fail validation",
+						match: { screenTitle: "Bad" },
+					} as never,
+				],
+			},
+		});
+
+		const diagnostics = validateRuleConfig(config);
+		assert.ok(diagnostics.errors.some((error) => error.includes("unknown-category")));
+		assert.ok(diagnostics.errors.some((error) => error.includes("unknown-action")));
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -69,41 +229,42 @@ describe("loadConfig", () => {
 // ---------------------------------------------------------------------------
 
 describe("saveConfig", () => {
-  it("writes valid JSON to file", () => {
-    const dir = tempDir();
-    const path = join(dir, "config.json");
-    const config = buildDefaultConfig({ appId: "com.example.App" });
-    saveConfig(config, path);
+	it("writes valid JSON to file", () => {
+		const dir = tempDir();
+		const path = join(dir, "config.json");
+		const config = buildDefaultConfig({ appId: "com.example.App" });
+		saveConfig(config, path);
 
-    assert.ok(existsSync(path));
-    const raw = readFileSync(path, "utf-8");
-    const parsed = JSON.parse(raw);
-    assert.equal(parsed.appId, "com.example.App");
+		assert.ok(existsSync(path));
+		const raw = readFileSync(path, "utf-8");
+		const parsed = JSON.parse(raw);
+		assert.equal(parsed.appId, "com.example.App");
 
-    rmSync(dir, { recursive: true, force: true });
-  });
+		rmSync(dir, { recursive: true, force: true });
+	});
 
-  it("persists all config fields", () => {
-    const dir = tempDir();
-    const path = join(dir, "config.json");
-    const config = buildDefaultConfig({
-      appId: "com.test.App",
-      mode: "full",
-      platform: "android-emulator",
-      maxDepth: 10,
-      timeoutMs: 600000,
-    });
-    saveConfig(config, path);
+	it("persists all config fields", () => {
+		const dir = tempDir();
+		const path = join(dir, "config.json");
+		const config = buildDefaultConfig({
+			appId: "com.test.App",
+			mode: "full",
+			platform: "android-emulator",
+			maxDepth: 10,
+			timeoutMs: 600000,
+		});
+		saveConfig(config, path);
 
-    const loaded = loadConfig(path)!;
-    assert.equal(loaded.appId, "com.test.App");
-    assert.equal(loaded.mode, "full");
-    assert.equal(loaded.platform, "android-emulator");
-    assert.equal(loaded.maxDepth, 10);
-    assert.equal(loaded.timeoutMs, 600000);
+		const loaded = loadConfig(path);
+		assert.ok(loaded !== null);
+		assert.equal(loaded.appId, "com.test.App");
+		assert.equal(loaded.mode, "full");
+		assert.equal(loaded.platform, "android-emulator");
+		assert.equal(loaded.maxDepth, 10);
+		assert.equal(loaded.timeoutMs, 600000);
 
-    rmSync(dir, { recursive: true, force: true });
-  });
+		rmSync(dir, { recursive: true, force: true });
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -111,54 +272,60 @@ describe("saveConfig", () => {
 // ---------------------------------------------------------------------------
 
 describe("AdaptiveMaxPages", () => {
-  it("initializes with default estimate of 9000ms", () => {
-    const amp = new AdaptiveMaxPages();
-    assert.equal(amp.rollingAvgMs, 9000);
-  });
+	it("initializes with default estimate of 9000ms", () => {
+		const amp = new AdaptiveMaxPages();
+		assert.equal(amp.rollingAvgMs, 9000);
+	});
 
-  it("calculates maxPages correctly for default values", () => {
-    const amp = new AdaptiveMaxPages(9000);
-    const pages = amp.getMaxPages(300_000);
-    // 300000 * 0.8 / 9000 = 26.67 -> 26, clamped to min 50
-    assert.equal(pages, 50);
-  });
+	it("calculates maxPages correctly for default values", () => {
+		const amp = new AdaptiveMaxPages(9000);
+		const pages = amp.getMaxPages(300_000);
+		// 300000 * 0.8 / 9000 = 26.67 -> 26, clamped to min 50
+		assert.equal(pages, 50);
+	});
 
-  it("calculates maxPages correctly for fast pages", () => {
-    const amp = new AdaptiveMaxPages(3000);
-    const pages = amp.getMaxPages(300_000);
-    // 300000 * 0.8 / 3000 = 80
-    assert.equal(pages, 80);
-  });
+	it("calculates maxPages correctly for fast pages", () => {
+		const amp = new AdaptiveMaxPages(3000);
+		const pages = amp.getMaxPages(300_000);
+		// 300000 * 0.8 / 3000 = 80
+		assert.equal(pages, 80);
+	});
 
-  it("EMA converges after several updates", () => {
-    const amp = new AdaptiveMaxPages(9000, 0.3);
+	it("EMA converges after several updates", () => {
+		const amp = new AdaptiveMaxPages(9000, 0.3);
 
-    // Feed several observations of 5000ms
-    for (let i = 0; i < 10; i++) {
-      amp.update(5000);
-    }
+		// Feed several observations of 5000ms
+		for (let i = 0; i < 10; i++) {
+			amp.update(5000);
+		}
 
-    // After many updates, should converge near 5000
-    assert.ok(amp.rollingAvgMs < 6000, `Expected < 6000, got ${amp.rollingAvgMs}`);
-    assert.ok(amp.rollingAvgMs > 4900, `Expected > 4900, got ${amp.rollingAvgMs}`);
-  });
+		// After many updates, should converge near 5000
+		assert.ok(
+			amp.rollingAvgMs < 6000,
+			`Expected < 6000, got ${amp.rollingAvgMs}`,
+		);
+		assert.ok(
+			amp.rollingAvgMs > 4900,
+			`Expected > 4900, got ${amp.rollingAvgMs}`,
+		);
+	});
 
-  it("clamps maxPages to [50, 500]", () => {
-    // Very slow pages -> should hit min clamp
-    const slow = new AdaptiveMaxPages(50000);
-    assert.equal(slow.getMaxPages(300_000), 50);
+	it("clamps maxPages to [50, 500]", () => {
+		// Very slow pages -> should hit min clamp
+		const slow = new AdaptiveMaxPages(50000);
+		assert.equal(slow.getMaxPages(300_000), 50);
 
-    // Very fast pages -> should hit max clamp
-    const fast = new AdaptiveMaxPages(100);
-    assert.equal(fast.getMaxPages(300_000), 500);
-  });
+		// Very fast pages -> should hit max clamp
+		const fast = new AdaptiveMaxPages(100);
+		assert.equal(fast.getMaxPages(300_000), 500);
+	});
 
-  it("uses custom alpha", () => {
-    const amp = new AdaptiveMaxPages(10000, 0.5);
-    amp.update(2000);
-    // 0.5 * 10000 + 0.5 * 2000 = 6000
-    assert.equal(amp.rollingAvgMs, 6000);
-  });
+	it("uses custom alpha", () => {
+		const amp = new AdaptiveMaxPages(10000, 0.5);
+		amp.update(2000);
+		// 0.5 * 10000 + 0.5 * 2000 = 6000
+		assert.equal(amp.rollingAvgMs, 6000);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -166,20 +333,23 @@ describe("AdaptiveMaxPages", () => {
 // ---------------------------------------------------------------------------
 
 describe("shouldReuseConfig", () => {
-  it("returns false when file does not exist", () => {
-    assert.equal(shouldReuseConfig("/nonexistent/.explorer-config.json"), false);
-  });
+	it("returns false when file does not exist", () => {
+		assert.equal(
+			shouldReuseConfig("/nonexistent/.explorer-config.json"),
+			false,
+		);
+	});
 
-  it("returns true for recently created file", () => {
-    const dir = tempDir();
-    const path = join(dir, ".explorer-config.json");
-    const config = buildDefaultConfig({ appId: "com.test.App" });
-    saveConfig(config, path);
+	it("returns true for recently created file", () => {
+		const dir = tempDir();
+		const path = join(dir, ".explorer-config.json");
+		const config = buildDefaultConfig({ appId: "com.test.App" });
+		saveConfig(config, path);
 
-    assert.equal(shouldReuseConfig(path), true);
+		assert.equal(shouldReuseConfig(path), true);
 
-    rmSync(dir, { recursive: true, force: true });
-  });
+		rmSync(dir, { recursive: true, force: true });
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -187,27 +357,29 @@ describe("shouldReuseConfig", () => {
 // ---------------------------------------------------------------------------
 
 describe("INTERVIEW_QUESTIONS", () => {
-  it("has 7 questions", () => {
-    assert.equal(INTERVIEW_QUESTIONS.length, 7);
-  });
+	it("has 8 questions", () => {
+		assert.equal(INTERVIEW_QUESTIONS.length, 8);
+	});
 
-  it("covers all required ids", () => {
-    const ids = INTERVIEW_QUESTIONS.map((q) => q.id);
-    assert.ok(ids.includes("mode"));
-    assert.ok(ids.includes("auth"));
-    assert.ok(ids.includes("failureStrategy"));
-    assert.ok(ids.includes("maxDepth"));
-    assert.ok(ids.includes("compareWith"));
-    assert.ok(ids.includes("platform"));
-    assert.ok(ids.includes("destructiveActionPolicy"));
-  });
+	it("covers all required ids", () => {
+		const ids = INTERVIEW_QUESTIONS.map((q) => q.id);
+		assert.ok(ids.includes("mode"));
+		assert.ok(ids.includes("auth"));
+		assert.ok(ids.includes("failureStrategy"));
+		assert.ok(ids.includes("maxDepth"));
+		assert.ok(ids.includes("compareWith"));
+		assert.ok(ids.includes("platform"));
+		assert.ok(ids.includes("destructiveActionPolicy"));
+		assert.ok(ids.includes("statefulFormPolicy"));
+	});
 
-  it("has Chinese labels for mode options", () => {
-    const modeQ = INTERVIEW_QUESTIONS.find((q) => q.id === "mode")!;
-    assert.ok(modeQ.options[0].label.includes("主流程冒烟"));
-    assert.ok(modeQ.options[1].label.includes("指定模块"));
-    assert.ok(modeQ.options[2].label.includes("全量探索"));
-  });
+	it("has Chinese labels for mode options", () => {
+		const modeQ = INTERVIEW_QUESTIONS.find((q) => q.id === "mode");
+		assert.ok(modeQ !== undefined);
+		assert.ok(modeQ.options[0].label.includes("主流程冒烟"));
+		assert.ok(modeQ.options[1].label.includes("指定模块"));
+		assert.ok(modeQ.options[2].label.includes("全量探索"));
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -215,28 +387,28 @@ describe("INTERVIEW_QUESTIONS", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildDefaultConfig", () => {
-  it("builds config with defaults", () => {
-    const config = buildDefaultConfig();
-    assert.equal(config.mode, "scoped");
-    assert.equal(config.platform, "ios-simulator");
-    assert.equal(config.failureStrategy, "retry-3");
-    assert.equal(config.destructiveActionPolicy, "skip");
-    assert.equal(config.maxDepth, 8);
-    assert.equal(config.compareWith, null);
-  });
+	it("builds config with defaults", () => {
+		const config = buildDefaultConfig();
+		assert.equal(config.mode, "scoped");
+		assert.equal(config.platform, "ios-simulator");
+		assert.equal(config.failureStrategy, "retry-3");
+		assert.equal(config.destructiveActionPolicy, "skip");
+		assert.equal(config.maxDepth, 8);
+		assert.equal(config.compareWith, null);
+	});
 
-  it("applies mode-based default depth", () => {
-    assert.equal(buildDefaultConfig({ mode: "smoke" }).maxDepth, 5);
-    assert.equal(buildDefaultConfig({ mode: "scoped" }).maxDepth, 8);
-    assert.equal(buildDefaultConfig({ mode: "full" }).maxDepth, Infinity);
-  });
+	it("applies mode-based default depth", () => {
+		assert.equal(buildDefaultConfig({ mode: "smoke" }).maxDepth, 5);
+		assert.equal(buildDefaultConfig({ mode: "scoped" }).maxDepth, 8);
+		assert.equal(buildDefaultConfig({ mode: "full" }).maxDepth, Infinity);
+	});
 
-  it("overrides with provided values", () => {
-    const config = buildDefaultConfig({
-      appId: "com.override.App",
-      timeoutMs: 120_000,
-    });
-    assert.equal(config.appId, "com.override.App");
-    assert.equal(config.timeoutMs, 120_000);
-  });
+	it("overrides with provided values", () => {
+		const config = buildDefaultConfig({
+			appId: "com.override.App",
+			timeoutMs: 120_000,
+		});
+		assert.equal(config.appId, "com.override.App");
+		assert.equal(config.timeoutMs, 120_000);
+	});
 });

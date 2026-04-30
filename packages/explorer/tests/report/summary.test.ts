@@ -15,6 +15,7 @@ import {
   generateSummaryJson,
   sanitizeRunIdTimestamp,
 } from "../../src/report/summary.js";
+import type { ExplorerConfig, FailureEntry, PageEntry } from "../../src/types.js";
 
 function expectedLocalTimestamp(value: string): string {
   const date = new Date(value);
@@ -33,8 +34,6 @@ function expectedLocalTimestamp(value: string): string {
 
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}${sign}${offsetHours}:${offsetRemainderMinutes}`;
 }
-import type { ExplorerConfig, FailureEntry, PageEntry } from "../../src/types.js";
-
 type PageContextType = NonNullable<NonNullable<PageEntry["pageContext"]>["type"]>;
 
 function makePage(
@@ -206,11 +205,36 @@ describe("generateSummaryJson", () => {
       partial: false,
       durationMs: 5000,
     });
-
     assert.equal(summary.pages[0].explorationStatus, "reached-not-expanded");
     assert.equal(summary.pages[0].stoppedByPolicy, "statefulFormPolicy:skip");
     assert.equal(summary.pages[0].ruleFamily, "stateful_form_entry");
     assert.equal(summary.pages[0].recoveryMethod, "backtrack-cancel-first");
+  });
+
+  it("includes per-page and aggregate rule decision metadata", () => {
+    const page = makePage("p1", 1, ["Settings", "Help"]);
+    page.explorationStatus = "reached-not-expanded";
+    page.ruleDecision = {
+      ruleId: "default.element.help.low-value-skip",
+      category: "low-value-content",
+      action: "skip-element",
+      reason: "Help/FAQ pages typically contain low-value leaf content",
+      source: "default",
+      path: ["Settings", "Help"],
+      screenTitle: "Help",
+      elementLabel: "Help",
+    };
+    const modules = inferModules([page]);
+    const summary = generateSummaryJson([page], [], modules, mockConfig, {
+      partial: false,
+      durationMs: 5000,
+    });
+
+    assert.equal(summary.pages[0].ruleDecision?.ruleId, "default.element.help.low-value-skip");
+    assert.equal(summary.ruleDecisions?.total, 1);
+    assert.equal(summary.ruleDecisions?.byRuleId["default.element.help.low-value-skip"], 1);
+    assert.equal(summary.ruleDecisions?.byCategory["low-value-content"], 1);
+    assert.equal(summary.ruleDecisions?.byAction["skip-element"], 1);
   });
 
   it("includes stateGraph summary when provided", () => {

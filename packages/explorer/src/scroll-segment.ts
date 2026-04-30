@@ -6,8 +6,11 @@
  */
 
 import { findClickableElements, flattenTree, prioritizeElements } from "./element-prioritizer.js";
+import { buildRuleDecisionEntry } from "./engine-helpers.js";
 import { resolveExplorerPlatformHooks } from "./explorer-platform.js";
-import type { ClickableTarget, ExplorerConfig, Frame, McpToolInterface, PageSnapshot, UiHierarchy } from "./types.js";
+import { evaluateElementRules } from "./rules/rule-evaluator.js";
+import { buildExplorerRuleRegistry } from "./rules/rule-registry.js";
+import type { ClickableTarget, ExplorerConfig, Frame, McpToolInterface, PageSnapshot, RuleDecisionEntry, UiHierarchy } from "./types.js";
 
 const SIDE_EFFECT_PATTERNS = [
   /delete/i,
@@ -75,6 +78,7 @@ export interface SegmentDiscoveryResult {
   success: boolean;
   newElements?: ClickableTarget[];
   isLastSegment?: boolean;
+  snapshot?: PageSnapshot;
 }
 
 const DEFAULT_MAX_SEGMENTS = 10;
@@ -102,13 +106,34 @@ function compareExplorationOrder(a: ClickableTarget, b: ClickableTarget): number
 function shouldSkipElement(
   target: ClickableTarget,
   frame: Frame,
-  screenTitle: string | undefined,
+  snapshot: PageSnapshot,
   config: ExplorerConfig,
-): boolean {
-  if (!config.skipElements || config.skipElements.length === 0) {
-    return false;
+): { skip: boolean; decision?: RuleDecisionEntry } {
+  const registry = buildExplorerRuleRegistry(config);
+  const ruleDecision = evaluateElementRules(registry, {
+    path: frame.path,
+    depth: frame.depth,
+    mode: config.mode,
+    platform: config.platform,
+    snapshot,
+    element: target,
+  });
+  if (ruleDecision.matched) {
+    return {
+      skip: true,
+      decision: buildRuleDecisionEntry(ruleDecision, {
+        path: frame.path,
+        snapshot,
+        element: target,
+      }),
+    };
   }
 
+  if (!config.skipElements || config.skipElements.length === 0) {
+    return { skip: false };
+  }
+
+  const screenTitle = snapshot.screenTitle;
   const normalizedLabel = normalizeSegmentValue(target.label);
   for (const rule of config.skipElements) {
     const { match } = rule;
@@ -139,14 +164,14 @@ function shouldSkipElement(
     }
 
     if (match.elementLabel && normalizedLabel.includes(normalizeSegmentValue(match.elementLabel))) {
-      return true;
+      return { skip: true };
     }
 
     if (match.elementLabelPattern) {
       try {
         const pattern = new RegExp(match.elementLabelPattern, "i");
         if (pattern.test(target.label)) {
-          return true;
+          return { skip: true };
         }
       } catch {
         // Ignore invalid user regex and fall through.
@@ -154,13 +179,21 @@ function shouldSkipElement(
     }
   }
 
-  return false;
+  return { skip: false };
 }
 
-function buildSegmentElements(uiTree: UiHierarchy, frame: Frame, config: ExplorerConfig): ClickableTarget[] {
-  return prioritizeElements(findClickableElements(uiTree, config))
+function buildSegmentElements(snapshot: PageSnapshot, frame: Frame, config: ExplorerConfig): { elements: ClickableTarget[]; ruleDecisions: RuleDecisionEntry[] } {
+  const ruleDecisions: RuleDecisionEntry[] = [];
+  const elements = prioritizeElements(findClickableElements(snapshot.uiTree, config))
     .sort(compareExplorationOrder)
-    .filter((target) => !shouldSkipElement(target, frame, frame.state.screenTitle, config));
+    .filter((target) => {
+      const result = shouldSkipElement(target, frame, snapshot, config);
+      if (result.decision) {
+        ruleDecisions.push(result.decision);
+      }
+      return !result.skip;
+    });
+  return { elements, ruleDecisions };
 }
 
 export function computePageFingerprint(snapshot: PageSnapshot): string {
@@ -179,9 +212,10 @@ export function initScrollState(
     return;
   }
 
-  const elements = frame.elements.length > 0
-    ? frame.elements
-    : buildSegmentElements(snapshot.uiTree, frame, config);
+  const builtSegment = frame.elements.length > 0
+    ? { elements: frame.elements, ruleDecisions: snapshot.ruleDecisions ?? [] }
+    : buildSegmentElements(snapshot, frame, config);
+  const elements = builtSegment.elements;
   const seenKeys = new Set(elements.map(getClickableTargetKey).filter(Boolean));
 
   frame.scrollState = {
@@ -193,7 +227,9 @@ export function initScrollState(
     maxSegments: DEFAULT_MAX_SEGMENTS,
     restoreAttempts: 0,
     maxRestoreAttempts: DEFAULT_MAX_RESTORE_ATTEMPTS,
+    ruleDecisions: builtSegment.ruleDecisions,
   };
+  snapshot.ruleDecisions = builtSegment.ruleDecisions;
 
   console.log(
     `[SCROLL-STATE] Initialized for "${snapshot.screenTitle}" — ` +
@@ -270,7 +306,9 @@ export async function discoverNextSegment(
     return { success: false, isLastSegment: true };
   }
 
-  const allElements = buildSegmentElements(uiTree, frame, config);
+  const builtSegment = buildSegmentElements(postSnapshot, frame, config);
+  const allElements = builtSegment.elements;
+  postSnapshot.ruleDecisions = builtSegment.ruleDecisions;
   const newElements = allElements.filter(e => {
     const key = getClickableTargetKey(e);
     return key && !ss.seenKeys.has(key);
@@ -288,12 +326,13 @@ export async function discoverNextSegment(
   ss.segmentIndex += 1;
   ss.segments.push(newElements);
   ss.restoreAttempts = 0;
+  ss.ruleDecisions = [...(ss.ruleDecisions ?? []), ...builtSegment.ruleDecisions];
 
   console.log(
     `[SCROLL-SEGMENT] Segment ${ss.segmentIndex}: +${newElements.length} new elements ` +
     `(total unique: ${ss.seenKeys.size})`,
   );
-  return { success: true, newElements, isLastSegment: false };
+  return { success: true, newElements, isLastSegment: false, snapshot: postSnapshot };
 }
 
 export async function restoreSegment(

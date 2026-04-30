@@ -4,11 +4,11 @@
  * Validates that the generated Markdown includes correct structure and values.
  */
 
-import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
 import { generateMarkdown } from '../../src/report/markdown.js';
 import { inferModules } from '../../src/report/modules.js';
-import type { PageEntry, FailureEntry, ExplorerConfig } from '../../src/types.js';
+import type { ExplorerConfig, FailureEntry, PageEntry } from '../../src/types.js';
 
 function makePage(id: string, depth: number, path: string[], hasFailure = false, loadTimeMs = 100): PageEntry {
   return {
@@ -158,5 +158,28 @@ describe('generateMarkdown', () => {
     // Pipes should be escaped in table cells
     assert.ok(md.includes('Screen \\| Title'));
     assert.ok(md.includes('Module \\| A'));
+  });
+
+  it('includes rule decision section with escaped examples', () => {
+    const page = makePage('Help | FAQ', 1, ['Settings', 'Help | FAQ']);
+    page.ruleDecision = {
+      ruleId: 'default.element.help.low-value-skip',
+      category: 'low-value-content',
+      action: 'skip-element',
+      reason: 'Help | FAQ pages are low value',
+      source: 'default',
+      path: ['Settings', 'Help | FAQ'],
+      screenTitle: 'Help | FAQ',
+      elementLabel: 'Help | FAQ',
+    };
+    const modules = inferModules([page]);
+    const md = generateMarkdown([page], [], modules, mockConfig, {
+      partial: false,
+      durationMs: 5000,
+    });
+
+    assert.ok(md.includes('## Rule Decisions'));
+    assert.ok(md.includes('default.element.help.low-value-skip'));
+    assert.ok(md.includes('Help \\| FAQ pages are low value'));
   });
 });

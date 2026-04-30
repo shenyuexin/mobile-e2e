@@ -1,5 +1,7 @@
 # Explorer 高扇出重复列表采样方案（Smoke 模式）
 
+> Phase 28 起，高扇出采样规则通过 Explorer rule registry 暴露稳定 rule ID、覆盖方式和报告解释字段。配置与报告语义见 [`explorer-rule-registry.zh-CN.md`](./explorer-rule-registry.zh-CN.md)。
+
 ## 1. 背景
 
 当前 explorer 的遍历模型是：基于当前 `inspect_ui` / `axe describe-ui` 捕获到的 **可视 viewport** 层级树，提取可点击元素，然后做 DFS。

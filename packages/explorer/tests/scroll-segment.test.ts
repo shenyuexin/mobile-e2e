@@ -188,6 +188,63 @@ describe("scroll-segment: initScrollState", () => {
 
     assert.equal(frame.scrollState, undefined);
   });
+
+  it("uses rule registry disabledRuleIds when filtering initial scroll segment", () => {
+    const uiTree = makeScrollablePage("Settings", ["Help", "Wi-Fi"]);
+    const snapshot = makeSnapshot(uiTree, "Settings", "com.test.app");
+    const frame: Frame = {
+      state: { screenId: "screen-settings", screenTitle: "Settings" },
+      depth: 0,
+      path: ["Settings"],
+      elementIndex: 0,
+      elements: [],
+    };
+    const config = {
+      ...createMockConfig(),
+      rules: {
+        version: 1 as const,
+        defaults: { disabledRuleIds: ["default.element.help.low-value-skip"] },
+      },
+    };
+
+    initScrollState(frame, snapshot, config);
+
+    assert.ok(frame.scrollState);
+    assert.ok(frame.scrollState.segments[0].some((element) => element.label === "Help"));
+  });
+
+  it("applies project rule registry element skips to initial scroll segment", () => {
+    const uiTree = makeScrollablePage("Settings", ["Wi-Fi", "Display"]);
+    const snapshot = makeSnapshot(uiTree, "Settings", "com.test.app");
+    const frame: Frame = {
+      state: { screenId: "screen-settings", screenTitle: "Settings" },
+      depth: 0,
+      path: ["Settings"],
+      elementIndex: 0,
+      elements: [],
+    };
+    const config = {
+      ...createMockConfig(),
+      rules: {
+        version: 1 as const,
+        rules: [
+          {
+            id: "project.skip.display-scroll",
+            category: "element-skip" as const,
+            action: "skip-element" as const,
+            reason: "Skip Display in scroll segment",
+            match: { elementLabel: "Display" },
+          },
+        ],
+      },
+    };
+
+    initScrollState(frame, snapshot, config);
+
+    assert.ok(frame.scrollState);
+    assert.deepEqual(frame.scrollState.segments[0].map((element) => element.label), []);
+    assert.equal(frame.scrollState.ruleDecisions?.[0]?.ruleId, "project.skip.display-scroll");
+  });
 });
 
 describe("scroll-segment: getCurrentSegmentElements", () => {

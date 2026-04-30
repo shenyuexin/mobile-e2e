@@ -9,14 +9,14 @@
  */
 
 import { createHash } from "node:crypto";
+import { collectVisibleTexts } from "./element-prioritizer.js";
 import type {
-  PageSnapshot,
   DedupResult,
   PageEntry,
-  UiHierarchy,
   PageRegistryContract,
+  PageSnapshot,
+  UiHierarchy,
 } from "./types.js";
-import { collectVisibleTexts } from "./element-prioritizer.js";
 
 // ---------------------------------------------------------------------------
 // Hashing utilities
@@ -93,9 +93,10 @@ export class PageRegistry implements PageRegistryContract {
     // L1: Text hash (fast path)
     const textHash = hashVisibleTexts(snapshot.uiTree);
     if (this.byTextHash.has(textHash)) {
+      const matchedEntry = this.byTextHash.get(textHash);
       return {
         alreadyVisited: true,
-        matchedId: this.byTextHash.get(textHash)!.id,
+        matchedId: matchedEntry?.id,
         confidence: "text",
       };
     }
@@ -144,6 +145,8 @@ export class PageRegistry implements PageRegistryContract {
       stoppedByPolicy: snapshot.stoppedByPolicy,
       ruleFamily: snapshot.ruleFamily,
       recoveryMethod: snapshot.recoveryMethod,
+      ruleDecision: snapshot.ruleDecision,
+      ruleDecisions: snapshot.ruleDecisions,
     };
     this.entries.push(entry);
 
@@ -184,6 +187,8 @@ export class PageRegistry implements PageRegistryContract {
         entry.stoppedByPolicy = snapshot.stoppedByPolicy;
         entry.ruleFamily = snapshot.ruleFamily;
         entry.recoveryMethod = snapshot.recoveryMethod;
+        entry.ruleDecision = snapshot.ruleDecision;
+        entry.ruleDecisions = snapshot.ruleDecisions;
         return;
       }
     }

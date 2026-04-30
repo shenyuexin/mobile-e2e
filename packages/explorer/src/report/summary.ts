@@ -96,13 +96,23 @@ export interface RunSummary {
     arrivedFrom: string | null;
     viaElement: string | null;
     loadTimeMs: number;
-    clickableCount: number;
-    hasFailure: boolean;
-    explorationStatus?: "expanded" | "reached-not-expanded";
-    stoppedByPolicy?: string;
-    ruleFamily?: string;
-    recoveryMethod?: string;
-  }>;
+		clickableCount: number;
+		hasFailure: boolean;
+		explorationStatus?: "expanded" | "reached-not-expanded";
+		stoppedByPolicy?: string;
+		ruleFamily?: string;
+		recoveryMethod?: string;
+		ruleDecision?: PageEntry["ruleDecision"];
+		ruleDecisions?: PageEntry["ruleDecisions"];
+	}>;
+	/** Aggregate rule decision counts for explainable traversal policy. */
+	ruleDecisions?: {
+		total: number;
+		byRuleId: Record<string, number>;
+		byCategory: Record<string, number>;
+		byAction: Record<string, number>;
+		examples: NonNullable<PageEntry["ruleDecision"]>[];
+	};
   /** Present when the run was aborted. */
   aborted?: boolean;
   /** Present when the run was aborted. */
@@ -252,10 +262,12 @@ export function generateSummaryJson(
       hasFailure: p.hasFailure,
       explorationStatus: p.explorationStatus,
       stoppedByPolicy: p.stoppedByPolicy,
-      ruleFamily: p.ruleFamily,
-      recoveryMethod: p.recoveryMethod,
-    })),
-  };
+			ruleFamily: p.ruleFamily,
+			recoveryMethod: p.recoveryMethod,
+			ruleDecision: p.ruleDecision,
+			ruleDecisions: p.ruleDecisions,
+		})),
+	};
 
   if (opts.partial) {
     summary.aborted = true;
@@ -274,9 +286,36 @@ export function generateSummaryJson(
     summary.stateGraph = opts.stateGraph;
   }
 
-  summary.pageTypeCounts = countPageTypes(pages);
+	summary.pageTypeCounts = countPageTypes(pages);
+	const ruleDecisions = summarizeRuleDecisions(pages);
+	if (ruleDecisions.total > 0) {
+		summary.ruleDecisions = ruleDecisions;
+	}
 
-  return summary;
+	return summary;
+}
+
+function incrementCounter(counter: Record<string, number>, key: string): void {
+	counter[key] = (counter[key] ?? 0) + 1;
+}
+
+function summarizeRuleDecisions(pages: PageEntry[]): NonNullable<RunSummary["ruleDecisions"]> {
+	const decisions = pages
+		.flatMap((page) => [page.ruleDecision, ...(page.ruleDecisions ?? [])])
+		.filter((decision): decision is NonNullable<PageEntry["ruleDecision"]> => decision !== undefined);
+	const summary: NonNullable<RunSummary["ruleDecisions"]> = {
+		total: decisions.length,
+		byRuleId: {},
+		byCategory: {},
+		byAction: {},
+		examples: decisions.slice(0, 10),
+	};
+	for (const decision of decisions) {
+		incrementCounter(summary.byRuleId, decision.ruleId);
+		incrementCounter(summary.byCategory, decision.category);
+		incrementCounter(summary.byAction, decision.action);
+	}
+	return summary;
 }
 
 /** Generate a sanitized run ID from the current timestamp. */

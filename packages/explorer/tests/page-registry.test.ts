@@ -5,9 +5,9 @@
  * L3 visual comparison is deferred pending spike validation.
  */
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { PageRegistry, hashVisibleTexts, hashUiStructure } from "../src/page-registry.js";
+import { describe, it } from "node:test";
+import { hashUiStructure, hashVisibleTexts, PageRegistry } from "../src/page-registry.js";
 import type { PageSnapshot, UiHierarchy } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -260,6 +260,48 @@ describe("PageRegistry", () => {
 
     const [entry] = registry.getEntries();
     assert.equal(entry.depth, 3);
+  });
+
+  it("preserves rule decision metadata from registered and updated snapshots", async () => {
+    const registry = new PageRegistry();
+    const tree = makeUiTree({
+      children: [
+        { className: "StaticText", clickable: false, enabled: true, scrollable: false, text: "Help", children: [] },
+      ],
+    });
+
+    const snapshot = makeSnapshot(tree, {
+      screenId: "help-screen",
+      ruleDecision: {
+        ruleId: "default.element.help.low-value-skip",
+        category: "low-value-content",
+        action: "skip-element",
+        reason: "Help pages are low value",
+        source: "default",
+        path: ["Settings", "Help"],
+        screenTitle: "Help",
+        elementLabel: "Help",
+      },
+    });
+    registry.register({ alreadyVisited: false }, snapshot, ["Settings", "Help"]);
+
+    const updatedSnapshot = makeSnapshot(tree, {
+      screenId: "help-screen",
+      ruleDecision: {
+        ruleId: "default.ios.fonts.system-fonts.smoke-sampling",
+        category: "sampling",
+        action: "sample-children",
+        reason: "Sample high-fanout font children",
+        source: "default",
+        path: ["General", "Fonts", "System Fonts"],
+        screenTitle: "System Fonts",
+      },
+    });
+    registry.updatePageMetadata(updatedSnapshot);
+
+    const [entry] = registry.getEntries();
+    assert.equal(entry.ruleDecision?.ruleId, "default.ios.fonts.system-fonts.smoke-sampling");
+    assert.equal(entry.ruleDecision?.action, "sample-children");
   });
 
   it("structurally similar pages return warning", async () => {
