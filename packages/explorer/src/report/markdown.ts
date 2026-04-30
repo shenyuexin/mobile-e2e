@@ -7,7 +7,7 @@
  * §5.4 — Markdown report template.
  */
 
-import type { PageEntry, FailureEntry, ExplorerConfig } from '../types.js';
+import type { ExplorerConfig, FailureEntry, PageEntry } from '../types.js';
 import type { ModuleGroup } from './modules.js';
 import { countUniquePaths } from './summary.js';
 
@@ -72,11 +72,28 @@ export function generateMarkdown(
   content += `| Max Depth | ${maxDepth} |\n`;
   content += `| Platform | ${config.platform} |\n\n`;
 
-  // Page map reference
-  content += `## Page Map\n\n`;
-  content += `See [graph.mmd](./graph.mmd) and [tree.txt](./tree.txt)\n\n`;
+	// Page map reference
+	content += `## Page Map\n\n`;
+	content += `See [graph.mmd](./graph.mmd) and [tree.txt](./tree.txt)\n\n`;
 
-  // Module breakdown
+	const ruleDecisions = pages
+		.flatMap((page) => [page.ruleDecision, ...(page.ruleDecisions ?? [])])
+		.filter((decision): decision is NonNullable<PageEntry["ruleDecision"]> => decision !== undefined);
+	if (ruleDecisions.length > 0) {
+		content += `## Rule Decisions\n\n`;
+		content += `| Rule | Category | Action | Example | Reason |\n`;
+		content += `|------|----------|--------|---------|--------|\n`;
+		for (const decision of ruleDecisions.slice(0, 10)) {
+			const example =
+				decision.elementLabel ??
+				decision.screenTitle ??
+				(decision.path.join(" → ") || "(unknown)");
+			content += `| ${escapeMarkdown(decision.ruleId)} | ${escapeMarkdown(decision.category)} | ${escapeMarkdown(decision.action)} | ${escapeMarkdown(example)} | ${escapeMarkdown(decision.reason)} |\n`;
+		}
+		content += "\n";
+	}
+
+	// Module breakdown
   content += `## Module Breakdown\n\n`;
   for (const mod of modules) {
     content += `### ${mod.name} (${mod.pages.length} pages)\n\n`;
