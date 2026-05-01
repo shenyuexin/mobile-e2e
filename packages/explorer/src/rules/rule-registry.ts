@@ -73,6 +73,9 @@ export function buildExplorerRuleRegistry(config: ExplorerConfig): ExplorerRuleR
     disabledRuleIds.add("default.stateful-form.account-payment-address");
     disabledRuleIds.add("legacy.policy.stateful-form");
   }
+  if ((config.editorEntryPolicy ?? "skip") === "allow") {
+    disabledRuleIds.add("default.editor-entry.create-add-new-style");
+  }
   const enabledRules = rules.filter((rule) => !disabledRuleIds.has(rule.id));
   return { rules: enabledRules, diagnostics };
 }

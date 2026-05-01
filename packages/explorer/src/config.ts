@@ -21,6 +21,7 @@ import type {
 import type {
 	AuthConfig,
 	DestructiveActionPolicy,
+	EditorEntryPolicy,
 	ExplorationMode,
 	ExplorerConfig,
 	ExplorerPlatform,
@@ -61,6 +62,7 @@ const VALID_RULE_CATEGORIES = new Set<ExplorerRuleCategory>([
 	"auth-boundary",
 	"system-dialog",
 	"stateful-form",
+	"editor-entry",
 	"external-app",
 ]);
 
@@ -300,6 +302,10 @@ export function buildDefaultConfig(
 		"skip") as DestructiveActionPolicy;
 	const statefulFormPolicy = (overrides.statefulFormPolicy ??
 		"skip") as StatefulFormPolicy;
+	const editorEntryPolicy = (overrides.editorEntryPolicy ??
+		"skip") as EditorEntryPolicy;
+	const maxActionSuccessesPerContext =
+		overrides.maxActionSuccessesPerContext ?? 1;
 	const maxDepth = overrides.maxDepth ?? defaultDepthForMode(mode);
 	const compareWith = overrides.compareWith ?? null;
 	const appId = overrides.appId ?? "";
@@ -325,6 +331,8 @@ export function buildDefaultConfig(
 		platform: plat,
 		destructiveActionPolicy,
 		statefulFormPolicy,
+		editorEntryPolicy,
+		maxActionSuccessesPerContext,
 		appId,
 		reportDir,
 		samplingRules,

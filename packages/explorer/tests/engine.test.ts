@@ -738,6 +738,222 @@ describe("explore engine recovery", () => {
     assert.equal(lifecycle?.transitionRejected, 1);
   });
 
+  it("skips remaining siblings on a page after repeated same-screen no-op actions", async () => {
+    const pages = {
+      Settings: makePage("Settings", ["Screen Time", "Accessibility"]),
+      "Screen Time": makePage("Screen Time", ["Always Allowed"]),
+      "Always Allowed": makePage("Always Allowed", [
+        "Messages",
+        "Maps",
+        "Calendar",
+        "Contacts",
+        "Expo Go",
+        "Material 3 Demo",
+      ]),
+      Accessibility: makePage("Accessibility", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const config = {
+      ...createMockConfig(),
+      maxPages: 20,
+      maxDepth: 5,
+    };
+
+    const mcp = withDefaultMcp({
+      launchApp: async () => okResult({}),
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] }),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+
+        if (currentPage === "Settings" && label === "Screen Time") {
+          currentPage = "Screen Time";
+        } else if (currentPage === "Screen Time" && label === "Always Allowed") {
+          currentPage = "Always Allowed";
+        } else if (currentPage === "Settings" && label === "Accessibility") {
+          currentPage = "Accessibility";
+        }
+
+        return okResult({ tapped: true });
+      },
+      navigateBack: async (args) => {
+        const target = args?.parentPageTitle;
+        if (currentPage === "Always Allowed" && target === "Screen Time") {
+          currentPage = "Screen Time";
+          return okResult({ navigated: true });
+        }
+        if (currentPage === "Screen Time" && target === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true });
+        }
+        if (currentPage === "Accessibility" && target === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true });
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" }),
+      recoverToKnownState: async () => okResult({ recovered: true }),
+      resetAppState: async () => okResult({ reset: true }),
+      requestManualHandoff: async () => okResult({ handedOff: true }),
+    });
+
+    const result = await explore(config, mcp);
+
+    assert.equal(result.aborted, false);
+    assert.deepEqual(
+      tapLog
+        .filter((entry) => entry.page === "Always Allowed")
+        .map((entry) => entry.label),
+      ["Maps", "Calendar", "Contacts"],
+    );
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Settings" && entry.label === "Accessibility"),
+      true,
+    );
+  });
+
+  it("skips create/add/new editor entries by default while continuing safe siblings", async () => {
+    const pages = {
+      Settings: makePage("Settings", ["Subtitles & Captioning"]),
+      "Subtitles & Captioning": makePage("Subtitles & Captioning", ["Style"]),
+      Style: makePage("Style", ["Create New Style…", "Caption Preview"]),
+      "Caption Preview": makePage("Caption Preview", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const mcp = withDefaultMcp({
+      launchApp: async () => okResult({}),
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] }),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+        if (currentPage === "Settings" && label === "Subtitles & Captioning") {
+          currentPage = "Subtitles & Captioning";
+        } else if (currentPage === "Subtitles & Captioning" && label === "Style") {
+          currentPage = "Style";
+        } else if (currentPage === "Style" && label === "Caption Preview") {
+          currentPage = "Caption Preview";
+        }
+        return okResult({ tapped: true });
+      },
+      navigateBack: async (args) => {
+        if (currentPage === "Caption Preview" && args?.parentPageTitle === "Style") {
+          currentPage = "Style";
+          return okResult({ navigated: true });
+        }
+        if (currentPage === "Style" && args?.parentPageTitle === "Subtitles & Captioning") {
+          currentPage = "Subtitles & Captioning";
+          return okResult({ navigated: true });
+        }
+        if (currentPage === "Subtitles & Captioning" && args?.parentPageTitle === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true });
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" }),
+      recoverToKnownState: async () => okResult({ recovered: true }),
+      resetAppState: async () => okResult({ reset: true }),
+      requestManualHandoff: async () => okResult({ handedOff: true }),
+    });
+
+    await explore({ ...createMockConfig(), maxPages: 10 }, mcp);
+
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Style" && entry.label === "Create New Style…"),
+      false,
+    );
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Style" && entry.label === "Caption Preview"),
+      true,
+    );
+  });
+
+  it("allows explicit editor entries and limits repeated successes per context", async () => {
+    const pages = {
+      Settings: makePage("Settings", ["Subtitles & Captioning"]),
+      "Subtitles & Captioning": makePage("Subtitles & Captioning", ["Style"]),
+      Style: makePage("Style", ["Create New Style…", "Create New Style…", "Caption Preview"]),
+      TEXT: makePage("TEXT", []),
+      "Caption Preview": makePage("Caption Preview", []),
+    } satisfies Record<string, UiHierarchy>;
+
+    let currentPage: keyof typeof pages = "Settings";
+    const tapLog: Array<{ page: string; label: string }> = [];
+
+    const mcp = withDefaultMcp({
+      launchApp: async () => okResult({}),
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult({ content: pages[currentPage] }),
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push({ page: currentPage, label });
+        if (currentPage === "Settings" && label === "Subtitles & Captioning") {
+          currentPage = "Subtitles & Captioning";
+        } else if (currentPage === "Subtitles & Captioning" && label === "Style") {
+          currentPage = "Style";
+        } else if (currentPage === "Style" && label === "Create New Style…") {
+          currentPage = "TEXT";
+        } else if (currentPage === "Style" && label === "Caption Preview") {
+          currentPage = "Caption Preview";
+        }
+        return okResult({ tapped: true });
+      },
+      navigateBack: async (args) => {
+        if (currentPage === "TEXT" && args?.parentPageTitle === "Style") {
+          currentPage = "Style";
+          return okResult({ navigated: true });
+        }
+        if (currentPage === "Caption Preview" && args?.parentPageTitle === "Style") {
+          currentPage = "Style";
+          return okResult({ navigated: true });
+        }
+        if (currentPage === "Style" && args?.parentPageTitle === "Subtitles & Captioning") {
+          currentPage = "Subtitles & Captioning";
+          return okResult({ navigated: true });
+        }
+        if (currentPage === "Subtitles & Captioning" && args?.parentPageTitle === "Settings") {
+          currentPage = "Settings";
+          return okResult({ navigated: true });
+        }
+        return failedResult("NAVIGATE_BACK_FAILED");
+      },
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" }),
+      recoverToKnownState: async () => okResult({ recovered: true }),
+      resetAppState: async () => okResult({ reset: true }),
+      requestManualHandoff: async () => okResult({ handedOff: true }),
+    });
+
+    await explore(
+      {
+        ...createMockConfig(),
+        editorEntryPolicy: "allow",
+        maxActionSuccessesPerContext: 3,
+        maxPages: 10,
+      },
+      mcp,
+    );
+
+    assert.deepEqual(
+      tapLog
+        .filter((entry) => entry.page === "Style" && entry.label === "Create New Style…")
+        .map((entry) => entry.label),
+      ["Create New Style…"],
+    );
+    assert.equal(
+      tapLog.some((entry) => entry.page === "Style" && entry.label === "Caption Preview"),
+      true,
+    );
+  });
+
   it("continues to tap My Fonts after recovering from System Fonts backtrack", async () => {
     const pages = {
       Settings: makePage("Settings", ["General"]),
