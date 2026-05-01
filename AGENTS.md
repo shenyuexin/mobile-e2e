@@ -59,6 +59,14 @@ Every UI-affecting action requires a settle delay before the next action or UI c
 
 See [`docs/guides/ui-stabilization-timing.md`](docs/guides/ui-stabilization-timing.md) for the full timing table, root cause analysis, and flow authoring patterns.
 
+### 3.2) Explorer Rule Registry
+
+When adding or changing Explorer traversal rules (skip page, skip element, sampling, risk gating, stateful-form gating, external-app boundary, or report explainability), use the rule registry guide instead of adding ad-hoc checks in traversal code:
+
+- `docs/engineering/explorer-rule-registry.zh-CN.md`
+
+Rules should have stable IDs, machine-readable categories/actions, explicit reasons, compatibility with legacy config fields, and report-visible decision metadata.
+
 ## 4) Recommended Edit Strategy
 
 1. Identify target package boundary first.
@@ -79,6 +87,7 @@ Use these as source-of-truth references instead of duplicating details in this f
 ## 6) Where to Go Deeper
 
 - `docs/engineering/ai-first-capability-expansion-guideline.md`
+- `docs/engineering/explorer-rule-registry.zh-CN.md` — Explorer 规则添加、覆盖、禁用、校验与报告解释指南
 - `docs/architecture/overview.md`
 - `docs/architecture/architecture.md`
 - `docs/architecture/capability-map.md`

@@ -207,6 +207,16 @@ export function isStatefulFormEntry(
 	return hasEntrySignal && hasDomainSignal;
 }
 
+export function isEditorEntryAction(label: string): boolean {
+	const normalized = label.trim().toLowerCase();
+	const hasEntrySignal = /\b(create|add|new)\b/i.test(normalized);
+	const hasEditorDomain =
+		/\b(style|theme|name|editor|appearance|caption|subtitle)\b/i.test(
+			normalized,
+		);
+	return hasEntrySignal && hasEditorDomain;
+}
+
 export function isLowValueLeafAction(
 	screenTitle: string | undefined,
 	label: string,

@@ -33,6 +33,7 @@ import {
 	handleFailure,
 	hasTimedOut,
 	isAndroidExplorerPlatform,
+	isEditorEntryAction,
 	isLowValueLeafAction,
 	markSnapshotAsGated,
 	pageTypeOf,
@@ -125,6 +126,35 @@ export async function explore(
 		appliedPages: new Set(),
 		skippedChildren: 0,
 		details: {},
+	};
+	const actionSuccessBudget = new Map<string, number>();
+	const actionSuccessLimit = Math.max(
+		0,
+		config.maxActionSuccessesPerContext ?? 1,
+	);
+	const actionBudgetKey = (frame: Frame, label: string): string =>
+		[
+			frame.appId ?? config.appId,
+			frame.state.screenId ?? frame.state.screenTitle ?? frame.path.join(" > "),
+			label.trim().replace(/\s+/g, " ").toLowerCase(),
+		].join("::");
+	const isBudgetedAction = (label: string): boolean =>
+		isEditorEntryAction(label) || isSideEffectAction(label);
+	const hasActionBudget = (frame: Frame, label: string): boolean => {
+		if (!isBudgetedAction(label)) {
+			return true;
+		}
+		if (actionSuccessLimit <= 0) {
+			return false;
+		}
+		return (actionSuccessBudget.get(actionBudgetKey(frame, label)) ?? 0) < actionSuccessLimit;
+	};
+	const recordActionBudgetSuccess = (frame: Frame, label: string): void => {
+		if (!isBudgetedAction(label) || actionSuccessLimit <= 0) {
+			return;
+		}
+		const key = actionBudgetKey(frame, label);
+		actionSuccessBudget.set(key, (actionSuccessBudget.get(key) ?? 0) + 1);
 	};
 
 	// --- App launch ---
@@ -824,6 +854,15 @@ export async function explore(
 				frame.elementIndex++;
 				continue;
 			}
+			if (!hasActionBudget(frame, candidate.label)) {
+				console.log(
+					`[ACTION-BUDGET-SKIP] skipping "${candidate.label.slice(0, 40)}" ` +
+						`on "${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}" after ` +
+						`${actionSuccessLimit} successful action(s) in this context`,
+				);
+				frame.elementIndex++;
+				continue;
+			}
 			break;
 		}
 
@@ -912,6 +951,8 @@ export async function explore(
 		}
 
 		if (elementResult.success) {
+			recordActionBudgetSuccess(frame, element.label);
+
 			// For external links, wait for app switch then detect it
 			const isExternalLink = element.isExternalLink ?? false;
 
@@ -1176,6 +1217,14 @@ export async function explore(
 					console.log(
 						`[CIRCUIT-BREAKER] Page ${frame.state.screenId} exceeded failure threshold (${circuitBreaker.currentPageFailures}/${circuitBreaker.threshold})`,
 					);
+					console.log(
+						`[PAGE-SKIP] Skipping remaining elements on "${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}" after repeated non-navigation actions`,
+					);
+					frame.elementIndex = frame.elements.length;
+					if (frame.scrollState) {
+						frame.scrollState.enabled = false;
+						frame.scrollState.segmentIndex = frame.scrollState.segments.length;
+					}
 				}
 				transitionLifecycle.transitionRejected += 1;
 				stateGraph.registerTransition({

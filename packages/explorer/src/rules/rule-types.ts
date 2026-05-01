@@ -18,6 +18,7 @@ export type ExplorerRuleCategory =
 	| "auth-boundary"
 	| "system-dialog"
 	| "stateful-form"
+	| "editor-entry"
 	| "external-app";
 
 export type ExplorerRuleAction =

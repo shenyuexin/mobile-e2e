@@ -393,6 +393,8 @@ describe("buildDefaultConfig", () => {
 		assert.equal(config.platform, "ios-simulator");
 		assert.equal(config.failureStrategy, "retry-3");
 		assert.equal(config.destructiveActionPolicy, "skip");
+		assert.equal(config.editorEntryPolicy, "skip");
+		assert.equal(config.maxActionSuccessesPerContext, 1);
 		assert.equal(config.maxDepth, 8);
 		assert.equal(config.compareWith, null);
 	});

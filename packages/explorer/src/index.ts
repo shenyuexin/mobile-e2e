@@ -12,6 +12,8 @@ export type {
   AuthConfig,
   FailureStrategy,
   DestructiveActionPolicy,
+  StatefulFormPolicy,
+  EditorEntryPolicy,
   ExplorerPlatform,
   TestCredentials,
   PageSnapshot,

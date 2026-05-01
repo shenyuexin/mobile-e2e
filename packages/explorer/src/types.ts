@@ -103,6 +103,8 @@ export type FailureStrategy = "retry-3" | "skip" | "handoff";
 export type DestructiveActionPolicy = "skip" | "confirm" | "allow";
 /** How to handle stateful form-entry branches (create/add/manage/select address-like flows). */
 export type StatefulFormPolicy = "skip" | "confirm" | "allow";
+/** How to handle explicit create/add/new editor-entry actions. */
+export type EditorEntryPolicy = "skip" | "confirm" | "allow";
 
 /** Target platform for the exploration session. */
 export type ExplorerPlatform =
@@ -138,6 +140,10 @@ export interface ExplorerConfig {
 	destructiveActionPolicy: DestructiveActionPolicy;
 	/** How to handle stateful form-entry branches that are risky but not strictly destructive. */
 	statefulFormPolicy?: StatefulFormPolicy;
+	/** How to handle explicit Create/Add/New editor-entry actions. */
+	editorEntryPolicy?: EditorEntryPolicy;
+	/** Maximum successful side-effect/editor actions with the same label per page context. */
+	maxActionSuccessesPerContext?: number;
 	/** Bundle ID / package name of the target app. */
 	appId: string;
 	/** Base output directory for reports. */

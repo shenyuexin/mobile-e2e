@@ -41,3 +41,4 @@ This directory contains all documentation for mobile-e2e-mcp.
 ### Engineering Guidelines
 
 1. [AI-First Capability Expansion](./engineering/ai-first-capability-expansion-guideline.md) — how to add new capabilities correctly
+2. [Explorer Rule Registry](./engineering/explorer-rule-registry.zh-CN.md) — how to add, disable, override, validate, and report Explorer traversal rules (zh-CN)

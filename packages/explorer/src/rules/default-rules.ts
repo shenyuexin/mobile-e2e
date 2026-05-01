@@ -152,6 +152,17 @@ export const DEFAULT_EXPLORER_RULES: ExplorerRule[] = [
     match: { elementLabelPattern: "Share|Call|Message|Email|Open in|Download|Install|Buy|Purchase" },
   },
   {
+    id: "default.editor-entry.create-add-new-style",
+    category: "editor-entry",
+    action: "defer-action",
+    reason: "Create/Add/New editor entries can mutate app or device state and are skipped unless editorEntryPolicy explicitly allows them",
+    source: "default",
+    supportLevel: "reproducible-demo",
+    match: {
+      elementLabelPattern: "\\b(Create|Add|New)\\b.*\\b(Style|Theme|Name|Editor|Appearance|Caption|Subtitle)\\b|\\b(Style|Theme|Name|Editor|Appearance|Caption|Subtitle)\\b.*\\b(Create|Add|New)\\b",
+    },
+  },
+  {
     id: "default.navigation.controls",
     category: "navigation-control",
     action: "defer-action",
