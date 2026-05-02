@@ -392,7 +392,7 @@ export interface Frame {
 /** Registry of visited pages with dedup capability. */
 export interface PageRegistryContract {
 	/** Check if a snapshot matches a previously visited page. */
-	dedup(snapshot: PageSnapshot): Promise<DedupResult>;
+	dedup(snapshot: PageSnapshot, path?: string[]): Promise<DedupResult>;
 	/** Register a new page in the registry. */
 	register(result: DedupResult, snapshot: PageSnapshot, path: string[]): void;
 	/** Get all registered page entries. */

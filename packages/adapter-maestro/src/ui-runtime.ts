@@ -26,6 +26,7 @@ import {
 import { resolveIdbCliPath, resolveIdbCompanionPath } from "./toolchain-runtime.js";
 import {
   executeRunner,
+  executeRunnerWithTestHooks,
   type CommandExecution,
   buildFailureReason,
 } from "./runtime-shared.js";
@@ -345,6 +346,8 @@ export function buildIdbCommand(baseArgs: string[]): string[] {
   return companionPath ? [idbCliPath, "--companion-path", companionPath, ...baseArgs] : [idbCliPath, ...baseArgs];
 }
 
+const DEFAULT_UI_ACTION_TIMEOUT_MS = 30_000;
+
 export async function probeIdbAvailability(repoRoot: string): Promise<CommandExecution | undefined> {
   return executeRunner(buildIdbCommand(["--help"]), repoRoot, process.env).catch(() => undefined);
 }
@@ -409,7 +412,9 @@ export async function executeUiActionCommand(options: {
     return result;
   }
 
-  result.execution = await executeRunner(options.command, options.repoRoot, process.env);
+  result.execution = await executeRunnerWithTestHooks(options.command, options.repoRoot, process.env, {
+    timeoutMs: DEFAULT_UI_ACTION_TIMEOUT_MS,
+  });
   return result;
 }
 

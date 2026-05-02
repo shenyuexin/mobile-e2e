@@ -318,7 +318,7 @@ describe("findClickableElements", () => {
     assert.equal(elements.length, 2);
   });
 
-  it("keeps clickable Android container rows", () => {
+  it("keeps non-Wi-Fi clickable Android container rows", () => {
     const androidTree: UiHierarchy = {
       className: "Application",
       clickable: false,
@@ -331,7 +331,7 @@ describe("findClickableElements", () => {
           clickable: true,
           enabled: true,
           scrollable: false,
-          contentDesc: "Wi-Fi, Connected",
+          contentDesc: "Bluetooth, On",
           children: [],
         },
       ],
@@ -339,7 +339,32 @@ describe("findClickableElements", () => {
 
     const elements = findClickableElements(androidTree, config);
     assert.equal(elements.length, 1);
-    assert.equal(elements[0].label, "Wi-Fi, Connected");
+    assert.equal(elements[0].label, "Bluetooth, On");
+  });
+
+  it("keeps Settings Search rows as navigable targets", () => {
+    const settingsAppRow: UiHierarchy = {
+      className: "Application",
+      clickable: false,
+      enabled: true,
+      scrollable: false,
+      children: [
+        {
+          className: "Button",
+          clickable: true,
+          enabled: true,
+          scrollable: false,
+          contentDesc: "Search",
+          AXUniqueId: "com.apple.settings.walletAndApplePay.search",
+          children: [],
+        },
+      ],
+    };
+
+    const elements = findClickableElements(settingsAppRow, config);
+
+    assert.equal(elements.length, 1);
+    assert.equal(elements[0].label, "Search");
   });
 });
 
@@ -356,8 +381,7 @@ describe("buildSelector", () => {
       className: "Button",
     });
     const selector = buildSelector(el);
-    assert.equal(selector.accessibilityId, "com.apple.settings.general");
-    assert.equal(selector.resourceId, undefined);
+    assert.equal(selector.resourceId, "com.apple.settings.general");
     assert.equal(selector.text, undefined);
   });
 
@@ -373,7 +397,7 @@ describe("buildSelector", () => {
 
   it("falls back to text when no AXUniqueId or resourceId", () => {
     const el = makeNode({
-      contentDesc: "General",
+      text: "General",
       className: "Button",
     });
     const selector = buildSelector(el);
@@ -386,7 +410,7 @@ describe("buildSelector", () => {
       frame: { x: 100, y: 200, width: 50, height: 50 },
     });
     const selector = buildSelector(el);
-    assert.deepEqual(selector.position, { x: 100, y: 200 });
+    assert.deepEqual(selector.position, { x: 125, y: 225 });
   });
 });
 

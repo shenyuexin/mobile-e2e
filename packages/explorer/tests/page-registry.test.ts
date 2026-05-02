@@ -156,6 +156,70 @@ describe("PageRegistry", () => {
     assert.equal(dedup2.matchedId, "page-001");
   });
 
+  it("does not collapse identical visible text reached through a different traversal path with a different screen id", async () => {
+    const registry = new PageRegistry();
+    const siriTree = makeUiTree({
+      children: [
+        { className: "StaticText", clickable: false, enabled: true, scrollable: false, text: "Siri", children: [] },
+      ],
+    });
+
+    const rootSiri = makeSnapshot(siriTree, { screenId: "siri-root", screenTitle: "Siri" });
+    const walletSiri = makeSnapshot(siriTree, { screenId: "wallet-siri", screenTitle: "Siri" });
+
+    const rootDedup = await registry.dedup(rootSiri, ["Siri"]);
+    registry.register(rootDedup, rootSiri, ["Siri"]);
+
+    const walletDedup = await registry.dedup(walletSiri, ["Wallet & Apple Pay", "Siri"]);
+
+    assert.equal(walletDedup.alreadyVisited, false);
+  });
+
+  it("classifies same-screen different-path visits as aliases", async () => {
+    const registry = new PageRegistry();
+    const siriTree = makeUiTree({
+      children: [
+        { className: "StaticText", clickable: false, enabled: true, scrollable: false, text: "Siri", children: [] },
+      ],
+    });
+
+    const rootSiri = makeSnapshot(siriTree, { screenId: "siri-root", screenTitle: "Siri" });
+    const walletSiri = makeSnapshot(siriTree, { screenId: "siri-root", screenTitle: "Siri" });
+
+    const rootDedup = await registry.dedup(rootSiri, ["Apple Intelligence & Siri"]);
+    registry.register(rootDedup, rootSiri, ["Apple Intelligence & Siri"]);
+    const walletDedup = await registry.dedup(walletSiri, ["Wallet & Apple Pay", "Siri"]);
+
+    assert.equal(walletDedup.alreadyVisited, true);
+    assert.equal(walletDedup.warning, "same-screen-different-path");
+    assert.equal(walletDedup.matchedId, "page-001");
+  });
+
+  it("dedups same visible text only against the matching traversal path", async () => {
+    const registry = new PageRegistry();
+    const siriTree = makeUiTree({
+      children: [
+        { className: "StaticText", clickable: false, enabled: true, scrollable: false, text: "Siri", children: [] },
+      ],
+    });
+
+    const rootSiri = makeSnapshot(siriTree, { screenId: "siri-root", screenTitle: "Siri" });
+    const walletSiri = makeSnapshot(siriTree, { screenId: "siri-root", screenTitle: "Siri" });
+    const rootPath = ["Apple Intelligence & Siri"];
+    const walletPath = ["Wallet & Apple Pay", "Siri"];
+
+    const rootDedup = await registry.dedup(rootSiri, rootPath);
+    registry.register(rootDedup, rootSiri, rootPath);
+    const walletDedup = await registry.dedup(walletSiri, walletPath);
+    registry.register(walletDedup, walletSiri, walletPath);
+
+    const repeatedRootDedup = await registry.dedup(rootSiri, rootPath);
+
+    assert.equal(repeatedRootDedup.alreadyVisited, true);
+    assert.equal(repeatedRootDedup.confidence, "text");
+    assert.equal(repeatedRootDedup.matchedId, "page-001");
+  });
+
   it("dedup returns not-visited for different text content", async () => {
     const registry = new PageRegistry();
     const tree1 = makeUiTree({

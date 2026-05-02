@@ -202,13 +202,105 @@ export function computePageFingerprint(snapshot: PageSnapshot): string {
   return `${snapshot.appId}::${type}::${title}`;
 }
 
+function isIosExplorerPlatform(platform: ExplorerConfig["platform"]): boolean {
+  return platform === "ios-simulator" || platform === "ios-device";
+}
+
+function isPageLikeForScrollFallback(snapshot: PageSnapshot): boolean {
+  const pageType = snapshot.pageContext?.type;
+  if (!pageType) {
+    return true;
+  }
+  return !["dialog", "form", "search", "search_mode", "modal", "overlay"].includes(pageType);
+}
+
+function shouldArmIosGroupBackedScrollFallback(
+  config: ExplorerConfig,
+  snapshot: PageSnapshot,
+  flattenedNodes: UiHierarchy[],
+  visibleElements: number,
+): boolean {
+  if (!isIosExplorerPlatform(config.platform)) {
+    return false;
+  }
+  if (visibleElements <= 0) {
+    return false;
+  }
+  if (!isPageLikeForScrollFallback(snapshot)) {
+    return false;
+  }
+  return flattenedNodes.some((node) => node.className === "Group" || node.elementType === "Group")
+    || hasMoreMeaningfulVisibleSignalsThanQueuedElements(snapshot, visibleElements);
+}
+
+function normalizeVisibleSignal(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isMeaningfulVisibleSignal(value: string, snapshot: PageSnapshot): boolean {
+  const normalized = normalizeVisibleSignal(value);
+  if (normalized.length === 0) {
+    return false;
+  }
+  if (/^\d+$/.test(normalized)) {
+    return false;
+  }
+  if (normalized === normalizeVisibleSignal(snapshot.screenTitle ?? "")) {
+    return false;
+  }
+  if (normalized === "settings") {
+    return false;
+  }
+  return true;
+}
+
+function hasMoreMeaningfulVisibleSignalsThanQueuedElements(
+  snapshot: PageSnapshot,
+  visibleElements: number,
+): boolean {
+  const signals = snapshot.pageContext?.visibleSignals ?? [];
+  if (signals.length === 0) {
+    return false;
+  }
+
+  const meaningfulSignals = new Set(
+    signals
+      .filter((signal) => isMeaningfulVisibleSignal(signal, snapshot))
+      .map(normalizeVisibleSignal),
+  );
+
+  return meaningfulSignals.size > visibleElements;
+}
+
 export function initScrollState(
   frame: Frame,
   snapshot: PageSnapshot,
   config: ExplorerConfig,
 ): void {
-  const hasScrollable = flattenTree(snapshot.uiTree).some(n => n.scrollable);
-  if (!hasScrollable) {
+  const flattenedNodes = flattenTree(snapshot.uiTree);
+  const visibleElements = frame.elements.length > 0
+    ? frame.elements.length
+    : snapshot.clickableElements.length;
+  const hasScrollable = flattenedNodes.some(n => n.scrollable);
+  const fallbackArmed = !hasScrollable && shouldArmIosGroupBackedScrollFallback(
+    config,
+    snapshot,
+    flattenedNodes,
+    visibleElements,
+  );
+  if (!hasScrollable && !fallbackArmed) {
+    if (visibleElements >= 8) {
+      const containerTypes = Array.from(new Set(
+        flattenedNodes
+          .map(node => node.className ?? node.elementType ?? node.accessibilityRole)
+          .filter((value): value is string => typeof value === "string" && value.length > 0),
+      )).slice(0, 8);
+      console.log(
+        `[SCROLL-STATE] Not initialized for "${snapshot.screenTitle ?? snapshot.screenId}" — ` +
+        `no scrollable container detected, visibleElements=${visibleElements}, ` +
+        `containerTypes=${JSON.stringify(containerTypes)}`,
+      );
+    }
     return;
   }
 
@@ -232,7 +324,7 @@ export function initScrollState(
   snapshot.ruleDecisions = builtSegment.ruleDecisions;
 
   console.log(
-    `[SCROLL-STATE] Initialized for "${snapshot.screenTitle}" — ` +
+    `[SCROLL-STATE] Initialized for "${snapshot.screenTitle}"${fallbackArmed ? " via iOS Group fallback" : ""} — ` +
     `${elements.length} elements in segment 0, fingerprint=${frame.scrollState.pageFingerprint}`,
   );
 }
@@ -261,7 +353,7 @@ export async function discoverNextSegment(
 
   const platformHooks = resolveExplorerPlatformHooks(config.platform);
 
-  const scrollResult = await mcp.scrollOnly({ direction: "down", distance: "medium" });
+  const scrollResult = await mcp.scrollOnly({ direction: "up", distance: "medium" });
   if (scrollResult.status !== "success" && scrollResult.status !== "partial") {
     console.log(`[SCROLL-SEGMENT] scrollOnly failed: ${scrollResult.reasonCode}`);
     return { success: false, isLastSegment: true };
@@ -370,7 +462,7 @@ export async function restoreSegment(
   console.log(`[SCROLL-RESTORE] Restoring to segment ${ss.segmentIndex}`);
 
   for (let i = 0; i < ss.segmentIndex; i++) {
-    const scrollResult = await mcp.scrollOnly({ direction: "down", distance: "medium" });
+    const scrollResult = await mcp.scrollOnly({ direction: "up", distance: "medium" });
     if (scrollResult.status !== "success" && scrollResult.status !== "partial") {
       return false;
     }

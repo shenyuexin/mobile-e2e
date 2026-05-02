@@ -11,11 +11,11 @@
  */
 
 import type {
-  UiHierarchy,
   ClickableTarget,
+  DestructiveActionPolicy,
   ElementSelector,
   ExplorerConfig,
-  DestructiveActionPolicy,
+  UiHierarchy,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -569,8 +569,14 @@ export function findClickableElements(
  */
 function isSearchTrigger(el: UiHierarchy): boolean {
   const label = (getSemanticLabel(el) || "").toLowerCase();
+  const elementType = (el.elementType || el.className || "").toLowerCase();
+  const role = (el.accessibilityRole || "").toLowerCase();
 
-  if ((label === "search" || label === "dictate") && (el.className === "Button" || el.accessibilityRole === "AXButton")) {
+  if (elementType.includes("searchfield") || role.includes("searchfield")) {
+    return true;
+  }
+
+  if (label === "dictate" && (el.className === "Button" || el.accessibilityRole === "AXButton")) {
     return true;
   }
 
@@ -578,12 +584,12 @@ function isSearchTrigger(el: UiHierarchy): boolean {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  if (allText.includes("search") || allText.includes("dictate")) {
+  if (allText.includes("dictate")) {
     return true;
   }
 
   const resId = (el.resourceId || "").toLowerCase();
-  if (resId.includes("search") && el.clickable) {
+  if (resId.includes("searchfield") && el.clickable) {
     return true;
   }
 
