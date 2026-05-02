@@ -41,6 +41,21 @@ function makeElement(label: string): ClickableTarget {
 }
 
 describe("rule decision integration regressions", () => {
+	it("keeps System Fonts eligible on the Fonts landing page in full mode", () => {
+		const config = buildDefaultConfig({ mode: "full", platform: "ios-simulator" });
+		const registry = buildExplorerRuleRegistry(config);
+		const decision = evaluateElementRules(registry, {
+			path: ["com.apple.settings.general", "Fonts"],
+			depth: 2,
+			mode: config.mode,
+			platform: config.platform,
+			snapshot: makeSnapshot({ screenTitle: "Fonts" }),
+			element: makeElement("System Fonts"),
+		});
+
+		assert.equal(decision.matched, false);
+	});
+
 	it("classifies System Fonts as navigation control on font detail pages but keeps style variants eligible", () => {
 		const config = buildDefaultConfig({ mode: "smoke", platform: "ios-simulator" });
 		const registry = buildExplorerRuleRegistry(config);
@@ -54,7 +69,7 @@ describe("rule decision integration regressions", () => {
 				snapshot,
 				element: makeElement("System Fonts"),
 			});
-			assert.equal(navBack.ruleId, "default.navigation.controls");
+			assert.equal(navBack.ruleId, "default.navigation.system-fonts-detail-back");
 
 			for (const styleLabel of ["Plain", "Regular", "Bold"]) {
 				const styleDecision = evaluateElementRules(registry, {

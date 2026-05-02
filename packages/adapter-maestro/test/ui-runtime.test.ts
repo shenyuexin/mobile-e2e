@@ -1,8 +1,17 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { afterEach, test } from "node:test";
 import type { QueryUiMatch } from "@mobile-e2e-mcp/contracts";
 import { REASON_CODES } from "@mobile-e2e-mcp/contracts";
-import { type UiRuntimeSnapshot, uiRuntimeInternals } from "../src/ui-runtime.ts";
+import {
+  resetExecuteRunnerForTesting,
+  setExecuteRunnerForTesting,
+  type CommandExecutionOptions,
+} from "../src/runtime-shared.ts";
+import { captureIosUiSnapshot, type UiRuntimeSnapshot, uiRuntimeInternals } from "../src/ui-runtime.ts";
+
+afterEach(() => {
+  resetExecuteRunnerForTesting();
+});
 
 function buildSnapshot(overrides: Partial<{
   command: string[];
@@ -45,6 +54,23 @@ test("executeUiActionCommand stops before execution when runtime probe fails", a
   assert.equal(result.execution, undefined);
   assert.equal(result.probeExecution?.exitCode, 1);
   assert.deepEqual(result.command, ["missing-command"]);
+});
+
+test("executeUiActionCommand bounds UI action execution with a default timeout", async () => {
+  let capturedOptions: CommandExecutionOptions | undefined;
+  setExecuteRunnerForTesting(async (_command, _repoRoot, _env, options) => {
+    capturedOptions = options;
+    return { exitCode: 0, stdout: "", stderr: "" };
+  });
+
+  const result = await uiRuntimeInternals.executeUiActionCommand({
+    repoRoot: process.cwd(),
+    command: [process.execPath, "-e", ""],
+    requiresProbe: false,
+  });
+
+  assert.equal(result.execution?.exitCode, 0);
+  assert.equal(capturedOptions?.timeoutMs, 30_000);
 });
 
 test("isDegenerateIosSnapshot detects root-only zero-area application payload", () => {
@@ -320,8 +346,6 @@ test("runUiScrollResolveLoop keeps a barely visible single match in off_screen s
 });
 
 // --- captureIosUiSnapshot backend routing tests ---
-
-import { captureIosUiSnapshot, uiRuntimeInternals } from "../src/ui-runtime.js";
 
 test("captureIosUiSnapshot returns configurationError when no backend available", async () => {
   const result = await captureIosUiSnapshot(

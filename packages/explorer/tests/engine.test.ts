@@ -259,6 +259,43 @@ describe("explore engine recovery", () => {
     assert.equal(scrollCalls > 0, true);
   });
 
+  it("tries scroll discovery before circuit-breaker completion on scroll-armed frames", async () => {
+    const settingsSegments = [
+      makeScrollablePage("Settings", ["No-op 1", "No-op 2", "No-op 3"]),
+      makeScrollablePage("Settings", ["Offscreen Target"]),
+    ];
+
+    let settingsSegmentIndex = 0;
+    let scrollCalls = 0;
+    const tapLog: string[] = [];
+
+    const mcp = withDefaultMcp({
+      launchApp: async () => okResult({}),
+      waitForUiStable: async () => okResult({ stable: true }),
+      inspectUi: async () => okResult<Record<string, unknown>>({ content: settingsSegments[settingsSegmentIndex] }),
+      scrollOnly: async () => {
+        scrollCalls += 1;
+        settingsSegmentIndex = Math.min(settingsSegmentIndex + 1, settingsSegments.length - 1);
+        return okResult({ swipesPerformed: 1 });
+      },
+      tapElement: async (args) => {
+        const label = args.contentDesc ?? args.text ?? args.resourceId ?? "unknown";
+        tapLog.push(label);
+        return okResult({ tapped: true });
+      },
+      navigateBack: async () => failedResult("NAVIGATE_BACK_FAILED"),
+      takeScreenshot: async () => okResult({ outputPath: "/tmp/mock.png" }),
+      recoverToKnownState: async () => okResult({ recovered: true }),
+      resetAppState: async () => okResult({ reset: true }),
+      requestManualHandoff: async () => okResult({ handedOff: true }),
+    });
+
+    await explore({ ...createMockConfig(), maxPages: 4 }, mcp);
+
+    assert.equal(scrollCalls > 0, true);
+    assert.equal(tapLog.includes("Offscreen Target"), true);
+  });
+
   it("does not tap stale siblings when frame recovery fails", async () => {
     const pages = {
       Settings: makePage("Settings", ["General"]),

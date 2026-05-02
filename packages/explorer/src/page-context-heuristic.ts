@@ -112,8 +112,10 @@ export function isDismissibleNicknameDialog(snapshot: PageSnapshot): boolean {
 		return false;
 	}
 	return (
-		hasUiLabel(snapshot.uiTree as Record<string, unknown>, "Cancel") &&
-		hasUiLabel(snapshot.uiTree as Record<string, unknown>, "OK")
+		(hasClickableLabel(snapshot.clickableElements, "Cancel") ||
+			hasUiLabel(snapshot.uiTree as Record<string, unknown>, "Cancel")) &&
+		(hasClickableLabel(snapshot.clickableElements, "OK") ||
+			hasUiLabel(snapshot.uiTree as Record<string, unknown>, "OK"))
 	);
 }
 

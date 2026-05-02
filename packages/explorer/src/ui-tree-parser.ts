@@ -24,6 +24,21 @@ function parseBounds(bounds: string | undefined): UiHierarchy["frame"] {
   };
 }
 
+function isIosScrollableContainer(className: string | undefined, role: string): boolean {
+  const classNameLower = (className ?? "").toLowerCase();
+  const roleLower = role.toLowerCase();
+  return classNameLower.includes("scrollview")
+    || classNameLower.includes("scroll view")
+    || classNameLower.includes("table")
+    || classNameLower.includes("tableview")
+    || classNameLower.includes("collection")
+    || classNameLower.includes("collectionview")
+    || roleLower.includes("scrollview")
+    || roleLower.includes("scroll view")
+    || roleLower.includes("table")
+    || roleLower.includes("collection");
+}
+
 function parseNodeAttributes(rawTag: string): Record<string, string> {
   const attributes: Record<string, string> = {};
   const attributeRegex = /([\w-]+)="([^"]*)"/g;
@@ -170,7 +185,7 @@ function normalizeToUiHierarchy(node: Record<string, unknown>): UiHierarchy {
     contentDesc,
     clickable,
     enabled: node.enabled !== false,
-    scrollable: node.scrollable === true,
+    scrollable: node.scrollable === true || isIosScrollableContainer(className, role),
     bounds: typeof node.bounds === "string" ? node.bounds : undefined,
     frame,
     children,

@@ -169,7 +169,21 @@ export const DEFAULT_EXPLORER_RULES: ExplorerRule[] = [
     reason: "Navigation controls should not be treated as content children during DFS expansion",
     source: "default",
     supportLevel: "ci-verified",
-    match: { elementLabelPattern: "^(Back|Cancel|Done|Close|System Fonts)$" },
+    match: { elementLabelPattern: "^(Back|Cancel|Done|Close)$" },
+  },
+  {
+    id: "default.navigation.system-fonts-detail-back",
+    category: "navigation-control",
+    action: "defer-action",
+    reason: "The System Fonts entry is a navigation control on font detail pages, not a content child",
+    source: "default",
+    supportLevel: "ci-verified",
+    match: {
+      pathPrefix: ["General", "Fonts", "System Fonts"],
+      elementLabel: "System Fonts",
+      minDepth: 4,
+      platform: ["ios-simulator", "ios-device"],
+    },
   },
   {
     id: "default.stateful-form.account-payment-address",

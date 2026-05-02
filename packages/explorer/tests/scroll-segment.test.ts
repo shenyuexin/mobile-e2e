@@ -1,15 +1,16 @@
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import type { ToolResult } from "@mobile-e2e-mcp/contracts";
-import type { ExplorerConfig, McpToolInterface, UiHierarchy, Frame, PageSnapshot } from "../src/types.js";
 import { getElementKey } from "../src/element-prioritizer.js";
 import {
-  initScrollState,
-  discoverNextSegment,
-  restoreSegment,
-  getCurrentSegmentElements,
   computePageFingerprint,
+  discoverNextSegment,
+  getCurrentSegmentElements,
+  initScrollState,
+  restoreSegment,
 } from "../src/scroll-segment.js";
+import type { ClickableTarget, ExplorerConfig, Frame, McpToolInterface, PageSnapshot, UiHierarchy } from "../src/types.js";
+import { parseUiTreeFromInspectData } from "../src/ui-tree-parser.js";
 
 function okResult<T>(data: T): ToolResult<T> {
   return {
@@ -47,6 +48,14 @@ function makeButton(label: string, resourceId?: string): UiHierarchy {
     enabled: true,
     scrollable: false,
     children: [],
+  };
+}
+
+function makeTarget(label: string, resourceId?: string): ClickableTarget {
+  return {
+    label,
+    selector: resourceId ? { resourceId } : { contentDesc: label },
+    elementType: "Cell",
   };
 }
 
@@ -110,6 +119,35 @@ function makeNonScrollablePage(title: string, buttons: string[]): UiHierarchy {
         children: [],
       },
       ...buttons.map(makeButton),
+    ],
+  };
+}
+
+function makeGroupedPage(title: string, buttons: string[], appId = "com.apple.Preferences"): UiHierarchy {
+  return {
+    className: "Application",
+    accessibilityLabel: appId,
+    packageName: appId,
+    clickable: false,
+    enabled: true,
+    scrollable: false,
+    children: [
+      {
+        className: "Heading",
+        text: title,
+        contentDesc: title,
+        clickable: false,
+        enabled: true,
+        scrollable: false,
+        children: [],
+      },
+      {
+        className: "Group",
+        clickable: false,
+        enabled: true,
+        scrollable: false,
+        children: buttons.map(makeButton),
+      },
     ],
   };
 }
@@ -187,6 +225,199 @@ describe("scroll-segment: initScrollState", () => {
     initScrollState(frame, snapshot, createMockConfig());
 
     assert.equal(frame.scrollState, undefined);
+  });
+
+  it("initializes scrollState for iOS Settings table containers", () => {
+    const uiTree = parseUiTreeFromInspectData(
+      {
+        content: {
+          type: "Application",
+          AXLabel: "Settings",
+          children: [
+            {
+              type: "Table",
+              AXFrame: "{{0,88},{393,764}}",
+              children: [
+                { type: "Cell", AXLabel: "General", AXUniqueId: "com.apple.settings.general" },
+                { type: "Cell", AXLabel: "Privacy & Security", AXUniqueId: "com.apple.settings.privacyAndSecurity" },
+                { type: "Cell", AXLabel: "Game Center", AXUniqueId: "com.apple.settings.gameCenter" },
+              ],
+            },
+          ],
+        },
+      },
+      { fallbackToDataRoot: true },
+    );
+    assert.ok(uiTree);
+    const snapshot = makeSnapshot(uiTree, "Settings", "com.apple.Preferences");
+    const frame: Frame = {
+      state: { screenId: "settings-root", screenTitle: "Settings" },
+      depth: 0,
+      path: [],
+      elementIndex: 0,
+      elements: [
+        makeTarget("General", "com.apple.settings.general"),
+        makeTarget("Privacy & Security", "com.apple.settings.privacyAndSecurity"),
+        makeTarget("Game Center", "com.apple.settings.gameCenter"),
+      ],
+    };
+    const config = { ...createMockConfig(), platform: "ios-simulator" as const, appId: "com.apple.Preferences" };
+
+    initScrollState(frame, snapshot, config);
+
+    assert.ok(frame.scrollState);
+    assert.equal(frame.scrollState.enabled, true);
+    assert.equal(frame.scrollState.segments[0].length, 3);
+  });
+
+  it("initializes scrollState for iOS Group-backed high-fanout Settings pages", () => {
+    const labels = [
+      "General",
+      "Accessibility",
+      "Action Button",
+      "Siri",
+      "Camera",
+      "Home Screen & App Library",
+      "StandBy",
+      "Screen Time",
+      "Privacy & Security",
+      "Game Center",
+    ];
+    const uiTree = makeGroupedPage("Settings", labels);
+    const snapshot = makeSnapshot(uiTree, "Settings", "com.apple.Preferences");
+    const frame: Frame = {
+      state: { screenId: "settings-root", screenTitle: "Settings" },
+      depth: 0,
+      path: [],
+      elementIndex: 0,
+      elements: labels.map((label) => makeTarget(label, `com.apple.settings.${label.replace(/\W+/g, "")}`)),
+    };
+    const config = { ...createMockConfig(), platform: "ios-simulator" as const, appId: "com.apple.Preferences" };
+
+    initScrollState(frame, snapshot, config);
+
+    assert.ok(frame.scrollState);
+    assert.equal(frame.scrollState.enabled, true);
+    assert.equal(frame.scrollState.segments[0].length, labels.length);
+  });
+
+  it("initializes scrollState for low-fanout iOS Group-backed Settings detail pages", () => {
+    const labels = ["View", "Settings"];
+    const uiTree = makeGroupedPage("Developer", labels);
+    const snapshot = makeSnapshot(uiTree, "Developer", "com.apple.Preferences");
+    const frame: Frame = {
+      state: { screenId: "developer", screenTitle: "Developer" },
+      depth: 1,
+      path: ["Developer"],
+      elementIndex: 0,
+      elements: labels.map((label) => makeTarget(label)),
+    };
+    const config = { ...createMockConfig(), platform: "ios-simulator" as const, appId: "com.apple.Preferences" };
+
+    initScrollState(frame, snapshot, config);
+
+    assert.ok(frame.scrollState);
+    assert.equal(frame.scrollState.enabled, true);
+    assert.equal(frame.scrollState.segments[0].length, labels.length);
+  });
+
+  it("initializes scrollState for low-fanout iOS Settings detail pages with extra visible signals", () => {
+    const labels = ["View", "Settings"];
+    const uiTree = makeNonScrollablePage("Developer", labels);
+    const snapshot = {
+      ...makeSnapshot(uiTree, "Developer", "com.apple.Preferences"),
+      pageContext: {
+        type: "normal_page" as const,
+        platform: "ios" as const,
+        visibleSignals: [
+          "Settings",
+          "Default",
+          "View",
+          "Clear Trusted Computers",
+          "Developer",
+          "APPEARANCE",
+          "Dark Appearance",
+        ],
+      },
+    };
+    const frame: Frame = {
+      state: { screenId: "developer", screenTitle: "Developer" },
+      depth: 1,
+      path: ["Developer"],
+      elementIndex: 0,
+      elements: labels.map((label) => makeTarget(label)),
+    };
+    const config = { ...createMockConfig(), platform: "ios-simulator" as const, appId: "com.apple.Preferences" };
+
+    initScrollState(frame, snapshot, config);
+
+    assert.ok(frame.scrollState);
+    assert.equal(frame.scrollState.enabled, true);
+    assert.equal(frame.scrollState.segments[0].length, labels.length);
+  });
+
+  it("does not use the iOS Group fallback for Android pages", () => {
+    const labels = [
+      "General",
+      "Accessibility",
+      "Action Button",
+      "Siri",
+      "Camera",
+      "Home Screen & App Library",
+      "StandBy",
+      "Screen Time",
+    ];
+    const uiTree = makeGroupedPage("Settings", labels, "com.android.settings");
+    const snapshot = makeSnapshot(uiTree, "Settings", "com.android.settings");
+    const frame: Frame = {
+      state: { screenId: "settings-root", screenTitle: "Settings" },
+      depth: 0,
+      path: [],
+      elementIndex: 0,
+      elements: labels.map((label) => makeTarget(label)),
+    };
+
+    initScrollState(frame, snapshot, createMockConfig());
+
+    assert.equal(frame.scrollState, undefined);
+  });
+
+  it("logs a diagnostic when a high-fanout page does not arm scrollState", () => {
+    const uiTree = makeNonScrollablePage("Settings", [
+      "General",
+      "Accessibility",
+      "Action Button",
+      "Siri",
+      "Camera",
+      "Home Screen & App Library",
+      "StandBy",
+      "Screen Time",
+    ]);
+    const snapshot = makeSnapshot(uiTree, "Settings", "com.test.app");
+    const frame: Frame = {
+      state: { screenId: "settings-root", screenTitle: "Settings" },
+      depth: 0,
+      path: [],
+      elementIndex: 0,
+      elements: uiTree.children?.slice(1).map((node) => makeTarget(node.text ?? "")) ?? [],
+    };
+    const originalLog = console.log;
+    const messages: string[] = [];
+    console.log = (message?: unknown, ...optionalParams: unknown[]) => {
+      messages.push([message, ...optionalParams].map(String).join(" "));
+    };
+
+    try {
+      initScrollState(frame, snapshot, createMockConfig());
+    } finally {
+      console.log = originalLog;
+    }
+
+    assert.equal(frame.scrollState, undefined);
+    assert.equal(
+      messages.some((message) => message.includes("[SCROLL-STATE] Not initialized") && message.includes("visibleElements=8")),
+      true,
+    );
   });
 
   it("uses rule registry disabledRuleIds when filtering initial scroll segment", () => {
@@ -332,9 +563,11 @@ describe("scroll-segment: discoverNextSegment", () => {
     assert.equal(frame.scrollState.segments[0].length, 3);
 
     let scrollCallCount = 0;
+    const scrollDirections: string[] = [];
     const mcp = {
-      scrollOnly: async () => {
+      scrollOnly: async (args: { direction: string }) => {
         scrollCallCount++;
+        scrollDirections.push(args.direction);
         return okResult({ swipesPerformed: 1 } as any);
       },
       waitForUiStable: async () => okResult({ stable: true } as any),
@@ -359,6 +592,7 @@ describe("scroll-segment: discoverNextSegment", () => {
     assert.equal(result2.newElements.length, 2);
     assert.equal(frame.scrollState.segmentIndex, 2);
     assert.equal(frame.scrollState.segments.length, 3);
+    assert.deepEqual(scrollDirections, ["up", "up"]);
   });
 
   it("stops when page fingerprint changes (same-page detection)", async () => {
@@ -607,7 +841,7 @@ describe("scroll-segment: restoreSegment", () => {
     assert.equal(result, true);
   });
 
-  it("restores viewport by scrolling down to target segment", async () => {
+  it("restores viewport by replaying forward scroll gestures to target segment", async () => {
     const seg0 = [
       { label: "Bluetooth", selector: { text: "Bluetooth" }, elementType: "Button" },
     ];
@@ -633,6 +867,7 @@ describe("scroll-segment: restoreSegment", () => {
     };
 
     let inspectCall = 0;
+    const scrollDirections: string[] = [];
     const mcp = {
       inspectUi: async () => {
         inspectCall += 1;
@@ -640,13 +875,17 @@ describe("scroll-segment: restoreSegment", () => {
           content: inspectCall === 1 ? makeScrollablePage("Settings", ["Bluetooth"]) : makeScrollablePage("Settings", ["Apps"]),
         } as any);
       },
-      scrollOnly: async () => okResult({ swipesPerformed: 1 } as any),
+      scrollOnly: async (args: { direction: string }) => {
+        scrollDirections.push(args.direction);
+        return okResult({ swipesPerformed: 1 } as any);
+      },
       waitForUiStable: async () => okResult({ stable: true } as any),
     } as unknown as McpToolInterface;
 
     const result = await restoreSegment(mcp, frame, createMockConfig());
     assert.equal(result, true);
     assert.equal(frame.scrollState?.restoreAttempts, 0);
+    assert.deepEqual(scrollDirections, ["up"]);
   });
 
   it("fails when maxRestoreAttempts exceeded", async () => {

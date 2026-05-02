@@ -491,8 +491,18 @@ export async function explore(
 		// UNLESS the root frame was reset (e.g., after recovery) and has no elements
 		if (frame.elementIndex === 0 && frame.elements.length === 0) {
 			const snapshot = await snapshotter.captureSnapshot(config);
-			const dedupResult = await visited.dedup(snapshot);
+			const dedupResult = await visited.dedup(snapshot, frame.path);
 			if (dedupResult.alreadyVisited) {
+				if (dedupResult.warning === "same-screen-different-path") {
+					const aliasSnapshot = {
+						...snapshot,
+						screenId: `${snapshot.screenId}:alias:${visited.count + 1}`,
+						explorationStatus: "reached-not-expanded" as const,
+						stoppedByPolicy: "dedup:same-screen-different-path",
+						ruleFamily: "dedup_alias",
+					};
+					visited.register({ alreadyVisited: false }, aliasSnapshot, frame.path);
+				}
 				stack.pop();
 				if (frame.depth > 0) {
 					const recovered = await backtracker.navigateBack(frame.parentTitle);
@@ -1217,13 +1227,19 @@ export async function explore(
 					console.log(
 						`[CIRCUIT-BREAKER] Page ${frame.state.screenId} exceeded failure threshold (${circuitBreaker.currentPageFailures}/${circuitBreaker.threshold})`,
 					);
-					console.log(
-						`[PAGE-SKIP] Skipping remaining elements on "${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}" after repeated non-navigation actions`,
-					);
-					frame.elementIndex = frame.elements.length;
-					if (frame.scrollState) {
-						frame.scrollState.enabled = false;
-						frame.scrollState.segmentIndex = frame.scrollState.segments.length;
+					if (
+						frame.scrollState?.enabled &&
+						frame.elementIndex >= currentSegmentElements.length
+					) {
+						console.log(
+							`[PAGE-SKIP] Skipping remaining visible segment elements on "${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}" after repeated non-navigation actions; preserving scroll discovery`,
+						);
+						frame.elementIndex = currentSegmentElements.length;
+					} else {
+						console.log(
+							`[PAGE-SKIP] Skipping remaining elements on "${frame.state.screenTitle ?? frame.state.screenId ?? "(unknown)"}" after repeated non-navigation actions`,
+						);
+						frame.elementIndex = frame.elements.length;
 					}
 				}
 				transitionLifecycle.transitionRejected += 1;

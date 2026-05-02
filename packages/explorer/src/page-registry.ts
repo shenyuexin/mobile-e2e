@@ -27,6 +27,13 @@ function shortHash(input: string): string {
   return createHash("sha256").update(input).digest("hex").slice(0, 16);
 }
 
+function isSamePath(a: string[] | undefined, b: string[] | undefined): boolean {
+  if (!a || !b || a.length !== b.length) {
+    return false;
+  }
+  return a.every((part, index) => part === b[index]);
+}
+
 /**
  * L1: Hash visible text content.
  *
@@ -78,7 +85,7 @@ function buildStructureSignature(node: UiHierarchy, depth = 0): string {
  */
 export class PageRegistry implements PageRegistryContract {
   private entries: PageEntry[] = [];
-  private byTextHash = new Map<string, PageEntry>();
+  private byTextHash = new Map<string, PageEntry[]>();
   private byStructureHash = new Map<string, PageEntry[]>();
   private counter = 0;
 
@@ -89,14 +96,35 @@ export class PageRegistry implements PageRegistryContract {
    * L3 visual comparison is deferred pending 25-00 spike validation
    * of the pixelmatch 0.05 threshold (SPEC §4.3).
    */
-  async dedup(snapshot: PageSnapshot): Promise<DedupResult> {
+  async dedup(snapshot: PageSnapshot, path?: string[]): Promise<DedupResult> {
     // L1: Text hash (fast path)
     const textHash = hashVisibleTexts(snapshot.uiTree);
-    if (this.byTextHash.has(textHash)) {
-      const matchedEntry = this.byTextHash.get(textHash);
+    const textCandidates = this.byTextHash.get(textHash) ?? [];
+    if (textCandidates.length > 0) {
+      const matchedEntry = path
+        ? textCandidates.find((candidate) => isSamePath(path, candidate.path))
+        : textCandidates[0];
+
+      if (!matchedEntry) {
+        const sameScreenEntry = textCandidates.find((candidate) => candidate.screenId === snapshot.screenId);
+        if (sameScreenEntry) {
+          return {
+            alreadyVisited: true,
+            matchedId: sameScreenEntry.id,
+            confidence: "text",
+            warning: "same-screen-different-path",
+          };
+        }
+
+        return {
+          alreadyVisited: false,
+          warning: "same-visible-text-different-path",
+        };
+      }
+
       return {
         alreadyVisited: true,
-        matchedId: matchedEntry?.id,
+        matchedId: matchedEntry.id,
         confidence: "text",
       };
     }
@@ -153,7 +181,8 @@ export class PageRegistry implements PageRegistryContract {
     // Index by hashes for future dedup
     const textHash = hashVisibleTexts(snapshot.uiTree);
     const structHash = hashUiStructure(snapshot.uiTree);
-    this.byTextHash.set(textHash, entry);
+    const textEntries = this.byTextHash.get(textHash) ?? [];
+    this.byTextHash.set(textHash, [...textEntries, entry]);
 
     const existing = this.byStructureHash.get(structHash) ?? [];
     this.byStructureHash.set(structHash, [...existing, entry]);

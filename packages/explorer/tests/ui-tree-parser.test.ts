@@ -3,9 +3,11 @@ import { describe, it } from "node:test";
 import { parseUiTreeFromInspectData } from "../src/ui-tree-parser.js";
 
 function flattenLabels(node: { text?: string; contentDesc?: string; accessibilityLabel?: string; children?: unknown[] }, result: string[] = []): string[] {
-  if (node.text) result.push(node.text);
-  if (node.contentDesc) result.push(node.contentDesc);
-  if (node.accessibilityLabel) result.push(node.accessibilityLabel);
+  for (const label of [node.text, node.contentDesc, node.accessibilityLabel]) {
+    if (label && !result.includes(label)) {
+      result.push(label);
+    }
+  }
   if (Array.isArray(node.children)) {
     for (const child of node.children as Array<typeof node>) {
       flattenLabels(child, result);
@@ -71,5 +73,32 @@ describe("parseUiTreeFromInspectData", () => {
     assert.equal(wrapped?.children?.[0]?.accessibilityLabel, "Settings");
     assert.equal(wrapped?.children?.[0]?.children?.[1]?.clickable, true);
     assert.deepEqual(flattenLabels(wrapped as never), ["Settings", "General", "Wi-Fi", "wifi-cell"]);
+  });
+
+  it("infers scrollability for iOS table-style containers", () => {
+    const tree = parseUiTreeFromInspectData(
+      {
+        content: {
+          type: "Application",
+          AXLabel: "Settings",
+          children: [
+            {
+              type: "Table",
+              AXFrame: "{{0,88},{393,764}}",
+              children: [
+                { type: "Cell", AXLabel: "General", AXUniqueId: "com.apple.settings.general" },
+                { type: "Cell", AXLabel: "Game Center", AXUniqueId: "com.apple.settings.gameCenter" },
+              ],
+            },
+          ],
+        },
+      },
+      { fallbackToDataRoot: true },
+    );
+
+    assert.ok(tree);
+    const table = tree?.children?.[0];
+    assert.equal(table?.className, "Table");
+    assert.equal(table?.scrollable, true);
   });
 });
