@@ -74,7 +74,7 @@ export function generateMarkdown(
 
 	// Page map reference
 	content += `## Page Map\n\n`;
-	content += `See [graph.mmd](./graph.mmd) and [tree.txt](./tree.txt)\n\n`;
+	content += `See [tree.txt](./tree.txt)\n\n`;
 
 	const ruleDecisions = pages
 		.flatMap((page) => [page.ruleDecision, ...(page.ruleDecisions ?? [])])

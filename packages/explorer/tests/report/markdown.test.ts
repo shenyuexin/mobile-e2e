@@ -138,16 +138,6 @@ describe('generateMarkdown', () => {
     assert.ok(md2.includes('6000ms'));
   });
 
-  it('includes page map reference to graph.mmd', () => {
-    const pages = [makePage('p1', 0, [])];
-    const modules = inferModules(pages);
-    const md = generateMarkdown(pages, [], modules, mockConfig, {
-      partial: false,
-      durationMs: 5000,
-    });
-    assert.ok(md.includes('[graph.mmd](./graph.mmd)'));
-  });
-
   it('escapes pipe characters in markdown table cells', () => {
     const pages = [makePage('Screen | Title', 0, ['Module | A'])];
     const modules = inferModules(pages);

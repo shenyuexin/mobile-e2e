@@ -14,7 +14,7 @@
 
 ## Page Map
 
-See [graph.mmd](./graph.mmd) and [tree.txt](./tree.txt)
+See [tree.txt](./tree.txt)
 
 ## Rule Decisions
 

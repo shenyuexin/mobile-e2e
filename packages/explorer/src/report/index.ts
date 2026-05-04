@@ -17,7 +17,6 @@ import type {
 import { generateAsciiTree } from './ascii.js';
 import { updateIndex } from './index-manager.js';
 import { generateMarkdown } from './markdown.js';
-import { generateMermaidGraph, generateMermaidGraphLargeApp, isLargeApp } from './mermaid.js';
 import { inferModules } from './modules.js';
 import { generateSummaryJson, resolveRunId, type RunIndexEntry } from './summary.js';
 
@@ -58,7 +57,7 @@ export interface ReportOpts {
  * Writes the following to the output directory:
  * - summary.json — structured run data
  * - report.md — human-readable Markdown report
- * - graph.mmd — Mermaid flowchart visualization
+ * - tree.txt — ASCII tree of discovered pages
  * - config.json — configuration snapshot
  * - Updates index.json in the parent report directory
  *
@@ -95,17 +94,6 @@ export async function generateReport(
   // Generate report.md
   const markdown = generateMarkdown(pages, failures, modules, config, opts);
   writeFileSync(join(runDir, 'report.md'), markdown, 'utf-8');
-
-  // Generate graph.mmd
-  const largeApp = isLargeApp(pages.length);
-  let graph: string;
-  if (largeApp) {
-    const modulePages = modules.map((m) => ({ name: m.name, pages: m.pages }));
-    graph = generateMermaidGraphLargeApp(pages, failures, modulePages);
-  } else {
-    graph = generateMermaidGraph(pages, failures);
-  }
-  writeFileSync(join(runDir, 'graph.mmd'), graph, 'utf-8');
 
   // Generate tree.txt
   const asciiTree = generateAsciiTree(pages, opts.sampling?.details);
