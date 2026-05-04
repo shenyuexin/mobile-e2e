@@ -8,6 +8,68 @@
 
 This repository is a pnpm monorepo that combines MCP tooling, adapter execution, and architecture docs for a scalable mobile E2E platform.
 
+## Quick Start
+
+```json
+{
+  "mcpServers": {
+    "mobile-e2e-mcp": {
+      "command": "npx",
+      "args": ["-y", "@shenyuexin/mobile-e2e-mcp@latest"]
+    }
+  }
+}
+```
+
+Once installed, you get **64 MCP tools** for mobile E2E automation, plus a built-in **Explorer** for automatic page traversal.
+
+## Explorer: Automatic Page Traversal
+
+Explorer is a DFS-based automatic page traversal engine built into the MCP server. It systematically navigates through your app's screens, builds a state graph, and produces structured coverage reports without requiring manual flow definitions.
+
+```bash
+npx -y @shenyuexin/mobile-e2e-mcp@latest explore \
+  --app-id com.example.app \
+  --platform android \
+  --output ./explore-report
+```
+
+Key features:
+
+- **DFS-based traversal**: systematically explores every reachable screen from a starting point
+- **State graph tracking**: records visited states and detects cycles to avoid infinite loops
+- **Circuit breaker**: automatically stops when exploration hits diminishing returns or configured limits
+- **Structured coverage reports**: outputs machine-consumable reports showing which screens and elements were discovered
+- **Rule-based gating**: respects skip-page, skip-element, sampling, and risk-gating rules for safe exploration
+
+For architecture details and rule configuration:
+
+- [Explorer hybrid traversal design](docs/architecture/explorer-hybrid-traversal-ascii.md)
+- [Explorer rule registry](docs/engineering/explorer-rule-registry.zh-CN.md)
+
+## What This Repository Actually Is
+
+This repo contains both:
+
+1. **Executable implementation** (MCP server, adapters, contracts, core orchestration), and
+2. **Architecture and delivery knowledge base** (design principles, capability model, phased rollout docs).
+
+If you only remember one thing: this project is designed as a **mobile orchestration layer for AI agents**, not a single-framework test runner.
+
+## Mobile E2E Harness Positioning
+
+This project is an **AI mobile E2E harness**: a policy-aware, session-oriented, deterministic-first execution harness for real-device mobile automation.
+
+If you're searching for terms like **mobile test harness**, **real-device Android test harness**, **AI automation harness**, or **mobile CI harness**, this repository is built for that exact workflow.
+
+### Why teams use this harness
+
+- **Deterministic-first harness**: stable selectors and structured retries before OCR/CV fallback
+- **Failure-intelligence harness**: reason codes, evidence artifacts, and remediation suggestions
+- **Governance-aware harness**: policy profiles, auditable sessions, and controlled tool surfaces
+- **Explorer harness**: DFS-based automatic page traversal with state graph, circuit breaker, and structured coverage reports *(available via CLI)*
+- **Real-device demo harness**: reproducible scripts + videos for happy path and interruption recovery
+
 ## Capability Showcase
 
 If you want a quick hands-on tour before diving into architecture details, start here:
@@ -40,32 +102,7 @@ If you want a quick hands-on tour before diving into architecture details, start
 |---|---|
 | ![Happy path preview](docs/showcase/assets/happy-preview.gif) | ![Interruption recovery preview](docs/showcase/assets/interruption-preview.gif) |
 
-## Mobile E2E Harness Positioning 
-
-This project is an **AI mobile E2E harness**: a policy-aware, session-oriented, deterministic-first execution harness for real-device mobile automation.
-
-If you're searching for terms like **mobile test harness**, **real-device Android test harness**, **AI automation harness**, or **mobile CI harness**, this repository is built for that exact workflow.
-
-### Why teams use this harness
-
-- **Deterministic-first harness**: stable selectors and structured retries before OCR/CV fallback
-- **Failure-intelligence harness**: reason codes, evidence artifacts, and remediation suggestions
-- **Governance-aware harness**: policy profiles, auditable sessions, and controlled tool surfaces
-- **Explorer harness**: DFS-based automatic page traversal with state graph, circuit breaker, and structured coverage reports
-- **Real-device demo harness**: reproducible scripts + videos for happy path and interruption recovery
-
-## Appium / Maestro vs This Harness
-
-| Dimension | Appium / Maestro | Mobile E2E MCP Harness |
-|---|---|---|
-| Core role | Automation framework / flow runner | AI-facing orchestration harness |
-| Execution strategy | Action execution centric | Deterministic-first + policy/session governance |
-| Failure handling | Assertion/command failure outputs | Structured diagnostics + ranked causes + remediation hints |
-| AI integration | Possible but not primary abstraction | Primary design target (tools for AI agents) |
-| Evidence model | Varies by setup | Built-in evidence-first action outcomes |
-| Helper app dependency | Required for iOS/Android replay | Android: owned-adb primary (no helper app needed for common commands); iOS simulator: axe CLI; iOS physical: WDA (one-time setup, see [External Tools Guide](docs/guides/external-tools.md)) |
-
-## FAQ 
+## FAQ
 
 ### What is a mobile E2E harness for AI agents?
 
@@ -87,103 +124,20 @@ Not necessarily. It is better understood as an orchestration harness that can co
 
 Release-gate mobile regression, flaky-flow triage, AI-driven exploratory checks, and real-device CI workflows that require auditable, evidence-rich outcomes.
 
-## What This Repository Actually Is
+### What is the Explorer and when should I use it?
 
-This repo contains both:
+Explorer automatically traverses your app's screens without predefined flows. Use it when you need broad coverage discovery, want to map an unfamiliar app's navigation structure, or need to identify all reachable screens before writing targeted test flows. It is available via the `explore` CLI command.
 
-1. **Executable implementation** (MCP server, adapters, contracts, core orchestration), and
-2. **Architecture and delivery knowledge base** (design principles, capability model, phased rollout docs).
+## Appium / Maestro vs This Harness
 
-If you only remember one thing: this project is designed as a **mobile orchestration layer for AI agents**, not a single-framework test runner.
-
-## Quick Start
-
-```json
-{
-  "mcpServers": {
-    "mobile-e2e-mcp": {
-      "command": "npx",
-      "args": ["-y", "@shenyuexin/mobile-e2e-mcp@latest"]
-    }
-  }
-}
-```
-
-## Build Locally (Fast Validation)
-
-Use this sequence to verify the repository is buildable end-to-end:
-
-```bash
-pnpm install
-pnpm build
-pnpm typecheck
-pnpm test:ci
-```
-
-If you only need the local MCP runtime:
-
-```bash
-pnpm mcp:dev
-# or
-pnpm mcp:stdio
-```
-
-## AI Agent Start Here
-
-For AI/code-analysis workflows, use this order:
-
-1. **Read `repomix-output.xml` first** for global architecture and code-path context.
-2. **Read `docs/engineering/ai-first-capability-expansion-guideline.md`** before changing tools, contracts, adapters, policy/session/evidence flows, or support-boundary docs.
-3. **Delta-check live repo files** (`git ls-files` + targeted reads).
-4. Treat `repomix-output.xml` as the **primary entry point**, not the only source of truth.
-
-For MCP tool usage and invocation sequencing after installation, use:
-
-- [`docs/guides/ai-agent-invocation.zh-CN.md`](docs/guides/ai-agent-invocation.zh-CN.md) — canonical tool-selection and invocation guide
-- [`docs/guides/agent-policy-prompt-sync.md`](docs/guides/agent-policy-prompt-sync.md) — agent policy prompt sync and current OpenCode config layering
-- [`docs/guides/golden-path.md`](docs/guides/golden-path.md) — first-run closed loop
-- [`docs/guides/flow-generation.md`](docs/guides/flow-generation.md) — record/export/replay topic guide
-- [`docs/guides/ui-stabilization-timing.md`](docs/guides/ui-stabilization-timing.md) — UI stabilization timing: why settle delays matter, per-action timing guide, flow authoring best practices
-
-Why: packed context may omit some files (binary assets, ignored paths, etc.), so final conclusions must be verified against live files.
-
-Agent guardrail: if you are extending capability surface rather than making a tiny local fix, do not start implementation from memory. Re-read the engineering guideline in the current session and map the change across contracts, core/governance, adapter runtime, MCP exposure, docs, and tests.
-
-### Repo-owned agent policy prompts
-
-This repo keeps canonical policy prompt sources under `agent_policies/` and runtime-facing prompt build/sync scripts under `scripts/agent-prompts/`.
-
-Quick commands:
-
-```bash
-pnpm exec tsx scripts/agent-prompts/build-agent-prompt.ts --agent prometheus
-pnpm agent-prompts:sync
-pnpm agent-prompts:check
-```
-
-Current configuration split:
-
-- repo `opencode.json` → repo-local instruction loading
-- `~/.config/opencode/opencode.json` → global providers/plugins/models
-- `~/.config/opencode/oh-my-openagent.json` → runtime agent registry and `prompt_append`
-
-For the current setup, `exploratory` is treated as a policy build target, not a standalone runtime agent role. Details: [`docs/guides/agent-policy-prompt-sync.md`](docs/guides/agent-policy-prompt-sync.md)
-
-## Monorepo at a Glance
-
-- `packages/contracts` — shared types/contracts for tools, sessions, and result envelopes
-- `packages/core` — policy engine, session store/scheduler, governance primitives
-- `packages/adapter-maestro` — deterministic execution adapter, UI model/query/action path
-- `packages/adapter-vision` — OCR/visual fallback services
-- `packages/mcp-server` — MCP tool registry + stdio/dev CLI entry points
-- `packages/cli` — CLI package boundary
-- `configs/profiles` — framework profile contracts
-- `configs/policies` — governance/access policy baselines
-- `flows/samples` — sample flow baselines
-
-Dependency direction (high level):
-
-`contracts -> core -> adapters -> mcp-server -> CLI/stdio/dev runtime`
+| Dimension | Appium / Maestro | Mobile E2E MCP Harness |
+|---|---|---|
+| Core role | Automation framework / flow runner | AI-facing orchestration harness |
+| Execution strategy | Action execution centric | Deterministic-first + policy/session governance |
+| Failure handling | Assertion/command failure outputs | Structured diagnostics + ranked causes + remediation hints |
+| AI integration | Possible but not primary abstraction | Primary design target (tools for AI agents) |
+| Evidence model | Varies by setup | Built-in evidence-first action outcomes |
+| Helper app dependency | Required for iOS/Android replay | Android: owned-adb primary (no helper app needed for common commands); iOS simulator: axe CLI; iOS physical: WDA (one-time setup, see [External Tools Guide](docs/guides/external-tools.md)) |
 
 ## How It Works (End-to-End)
 
@@ -304,55 +258,12 @@ Key policy/config locations:
 - `configs/policies/*.yaml`
 - `configs/profiles/*.yaml`
 
-## Current Test and Validation Model
-
-Regression layers intentionally separate no-device core coverage from heavier lanes:
-
-- Unit stack across core/adapters/server (`pnpm test:unit`)
-- Root smoke validators (`pnpm test:smoke`)
-- Optional OCR smoke (`pnpm test:ocr-smoke`)
-
-Primary CI-oriented command:
-
-```bash
-pnpm test:ci
-```
-
-Testing details and fixture strategy: `tests/README.md`.
-
 ## Non-Goals (Important for Correct Expectations)
 
 - This is not a replacement for every mobile framework internals.
 - This is not OCR-first automation.
 - This does not imply separate full RN or Flutter backends, or immediate parity across all native/RN/Flutter edge cases.
 - This is not a single abstraction that erases all platform differences.
-
-## Practical Reading Path (Human + AI)
-
-If you want to get productive quickly, read in this sequence:
-
-1. This README (mental model + commands + boundaries)
-2. `AGENTS.md` (repo navigation and invariants)
-3. `docs/architecture/architecture.md` (control plane vs execution plane)
-4. `packages/mcp-server/src/server.ts` (actual tool registry and invocation surface)
-5. `tests/README.md` (what is truly validated today)
-
-## Open Source Collaboration
-
-- License: [MIT](LICENSE)
-- Contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Security policy: [SECURITY.md](SECURITY.md)
-- Code ownership: [.github/CODEOWNERS](.github/CODEOWNERS)
-- Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- Support guide: [SUPPORT.md](SUPPORT.md)
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
-
-## Recommended GitHub Repository Topics
-
-To improve discoverability for developers and AI agents, set these topics in
-the repository settings:
-
-`mcp`, `mobile-testing`, `e2e-testing`, `android`, `ios`, `react-native`, `flutter`, `automation`, `ai-agent`
 
 ## Selected Docs
 
@@ -380,6 +291,12 @@ the repository settings:
 - Long term: stronger agentic remediation/governance and enterprise controls.
 
 Detailed public planning references are maintained in `docs/delivery/roadmap.md` and `docs/architecture/*`.
+
+## Open Source Collaboration
+
+- License: [MIT](LICENSE)
+- Contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## Positioning
 

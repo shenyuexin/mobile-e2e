@@ -8,6 +8,69 @@
 
 本仓库是一个 pnpm monorepo，组合了 MCP 工具层、执行适配层与架构文档，用于构建可扩展的移动端 E2E 平台。
 
+## 快速开始
+
+```json
+{
+  "mcpServers": {
+    "mobile-e2e-mcp": {
+      "command": "npx",
+      "args": ["-y", "@shenyuexin/mobile-e2e-mcp@latest"]
+    }
+  }
+}
+```
+
+安装后，你将获得 **64 个 MCP 工具** 用于移动端 E2E 自动化，以及内置的 **Explorer** 自动页面遍历能力。
+
+## Explorer：自动页面遍历
+
+Explorer 是内置于 MCP 服务器的 DFS 自动页面遍历引擎。它会系统化地导航你的应用页面，构建状态图，并输出结构化覆盖率报告，无需手动定义流程。
+
+```bash
+npx -y @shenyuexin/mobile-e2e-mcp@latest explore \
+  --app-id com.example.app \
+  --platform android \
+  --output ./explore-report
+```
+
+核心特性：
+
+- **DFS 遍历**：系统化地从起始点探索所有可达页面
+- **状态图追踪**：记录已访问状态，检测循环以避免无限遍历
+- **熔断器**：当探索收益递减或达到配置限制时自动停止
+- **结构化覆盖率报告**：输出机器可消费的报告，展示已发现的页面与元素
+- **规则门控**：遵循跳过页面、跳过元素、采样与风险门控规则，确保安全探索
+
+架构设计与规则配置参考：
+
+- [Explorer 混合遍历设计](docs/architecture/explorer-hybrid-traversal-ascii.md)
+- [Explorer 规则注册表](docs/engineering/explorer-rule-registry.zh-CN.md)
+
+## 这个仓库"本质上"是什么
+
+本仓库同时包含两层内容：
+
+1. **可执行实现**（MCP server、adapters、contracts、core 编排能力）
+2. **架构与交付知识库**（设计原则、能力模型、阶段规划文档）
+
+如果只记住一句话：它是一个**给 AI Agent 用的移动端编排层**，不是单一框架的测试 runner。
+
+## Mobile E2E Harness 定位
+
+这个项目可以理解为一个 **AI mobile E2E harness（面向 AI 的移动端执行编排层）**：
+它不是单纯执行动作，而是提供策略约束、会话治理、确定性优先执行路径与结构化证据输出。
+
+如果你在搜索这些关键词：**mobile test harness / Android test harness / AI automation harness / mobile CI harness**，本仓库就是为这类需求设计的。
+
+### 为什么团队会用这个 harness
+
+- **Deterministic-first harness**：优先稳定定位与可解释重试，再进入 OCR/CV 兜底
+- **Failure-intelligence harness**：失败有原因码、证据产物、候选根因与修复建议
+- **Governance-aware harness**：策略 profile、可审计 session、受控工具面
+- **Explorer harness**：基于 DFS 的自动页面遍历，包含状态图、熔断器与结构化覆盖率报告*（可通过 CLI 使用）*
+- **Real-device demo harness**：有真实可复现脚本与录屏，不是纸面架构
+
 ## 能力展示
 
 如果你想先快速了解能力，再深入看架构细节，先看这部分：
@@ -23,6 +86,7 @@
 - 演示说明与证据索引：
   - [docs/showcase/README.md](docs/showcase/README.md)
   - [docs/showcase/demo-playbook.zh-CN.md](docs/showcase/demo-playbook.zh-CN.md)
+  - [docs/showcase/failure-intelligence-demo.md](docs/showcase/failure-intelligence-demo.md)
 - AI 调用与任务指南：
   - [docs/guides/ai-agent-invocation.zh-CN.md](docs/guides/ai-agent-invocation.zh-CN.md)
   - [docs/guides/golden-path.md](docs/guides/golden-path.md)
@@ -39,37 +103,11 @@
 |---|---|
 | ![Happy Path 预览](docs/showcase/assets/happy-preview.gif) | ![中断恢复预览](docs/showcase/assets/interruption-preview.gif) |
 
-## Mobile E2E Harness 定位
-
-这个项目可以理解为一个 **AI mobile E2E harness（面向 AI 的移动端执行编排层）**：
-它不是单纯执行动作，而是提供策略约束、会话治理、确定性优先执行路径与结构化证据输出。
-
-如果你在搜索这些关键词：**mobile test harness / Android test harness / AI automation harness / mobile CI harness**，本仓库就是为这类需求设计的。
-
-### 为什么团队会用这个 harness
-
-- **Deterministic-first harness**：优先稳定定位与可解释重试，再进入 OCR/CV 兜底
-- **Failure-intelligence harness**：失败有原因码、证据产物、候选根因与修复建议
-- **Governance-aware harness**：策略 profile、可审计 session、受控工具面
-- **Explorer harness**：基于 DFS 的自动页面遍历，包含状态图、熔断器与结构化覆盖率报告
-- **Real-device demo harness**：有真实可复现脚本与录屏，不是纸面架构
-
-## Appium / Maestro 与本 Harness 的关系
-
-| 维度 | Appium / Maestro | Mobile E2E MCP Harness |
-|---|---|---|
-| 核心角色 | 自动化框架 / flow runner | 面向 AI 的编排 harness |
-| 执行策略 | 以动作执行为中心 | 确定性优先 + policy/session 治理 |
-| 失败处理 | 命令或断言失败信息 | 结构化诊断 + 候选根因排序 + 修复建议 |
-| AI 适配 | 可接入，但非一等抽象 | 原生面向 AI Agent 设计 |
-| 证据模型 | 依赖外部拼装 | 内建证据优先 action outcome |
-| Helper app 依赖 | iOS/Android 回放都需要 | Android: owned-adb 主路径（常用命令不需要 helper app）；iOS 模拟器: axe CLI；iOS 真机: WDA（一次性配置，详见 [外部工具指南](docs/guides/external-tools.md)） |
-
 ## FAQ
 
 ### 什么是面向 AI Agent 的 mobile E2E harness？
 
-它是一个执行编排层，让 AI Agent 能在可控边界内稳定执行移动端动作，并拿到可机器消费的结果与证据，而不只是“命令成功/失败”。
+它是一个执行编排层，让 AI Agent 能在可控边界内稳定执行移动端动作，并拿到可机器消费的结果与证据，而不只是"命令成功/失败"。
 
 ### 这个 harness 能跑 Android 真机吗？
 
@@ -87,63 +125,20 @@
 
 发布门禁回归（release-gate）、脆弱流程排障、AI 驱动探索式检查、以及需要审计证据的真机 CI 场景。
 
-## 这个仓库“本质上”是什么
+### 什么是 Explorer，什么时候应该用？
 
-本仓库同时包含两层内容：
+Explorer 可以在没有预定义流程的情况下自动遍历应用页面。当你需要大范围覆盖发现、想 mapping 一个不熟悉的应用导航结构，或在编写定向测试流程前需要先识别所有可达页面时，就可以使用它。通过 `explore` CLI 命令即可调用。
 
-1. **可执行实现**（MCP server、adapters、contracts、core 编排能力）
-2. **架构与交付知识库**（设计原则、能力模型、阶段规划文档）
+## Appium / Maestro 与本 Harness 的关系
 
-如果只记住一句话：它是一个**给 AI Agent 用的移动端编排层**，不是单一框架的测试 runner。
-
-## 快速开始
-
-```json
-{
-  "mcpServers": {
-    "mobile-e2e-mcp": {
-      "command": "npx",
-      "args": ["-y", "@shenyuexin/mobile-e2e-mcp@latest"]
-    }
-  }
-}
-```
-
-## AI Agent 从这里开始
-
-建议 AI / 代码分析统一按以下顺序：
-
-1. **先读 `repomix-output.xml`**，快速建立全局架构与关键代码路径。
-2. **如果改动涉及 tools、contracts、adapter、policy/session/evidence 流程或支持边界文案，先读 `docs/engineering/ai-first-capability-expansion-guideline.md`。**
-3. **再核对实时仓库文件**（`git ls-files` + 定向读取）。
-4. 将 `repomix-output.xml` 作为**第一入口**，但不要当作唯一事实来源。
-
-如果你是要在安装后实际调用 MCP 工具，请优先阅读：
-
-- [`docs/guides/ai-agent-invocation.zh-CN.md`](docs/guides/ai-agent-invocation.zh-CN.md) —— AI 调用真相源
-- [`docs/guides/golden-path.md`](docs/guides/golden-path.md) —— 首跑闭环前门
-- [`docs/guides/flow-generation.md`](docs/guides/flow-generation.md) —— 录制 / 导出 / 回放专题
-- [`docs/guides/ui-stabilization-timing.md`](docs/guides/ui-stabilization-timing.md) —— UI 稳定时序：为什么需要等待、各动作推荐时间、Flow 编写最佳实践
-
-原因：打包上下文可能遗漏部分文件（如二进制、忽略路径等），最终结论必须由真实仓库文件校验。
-
-额外 guardrail：如果你做的是 capability 扩展，而不是单点小修，不要凭上一轮 session 的记忆直接开改。请在当前 session 重新阅读工程规范，并按 contracts / core / adapter / MCP / docs / tests 的链路检查变更是否完整。
-
-## Monorepo 结构速览
-
-- `packages/contracts` — 工具、会话、结果结构的共享契约/类型
-- `packages/core` — policy engine、session store/scheduler、治理能力
-- `packages/adapter-maestro` — 确定性执行适配器、UI 模型/查询/动作路径
-- `packages/adapter-vision` — OCR/视觉兜底能力
-- `packages/mcp-server` — MCP 工具注册、stdio/dev CLI 入口
-- `packages/cli` — CLI 包边界
-- `configs/profiles` — framework profile 合同
-- `configs/policies` — 治理/权限策略基线
-- `flows/samples` — 示例 flow 基线
-
-高层依赖方向：
-
-`contracts -> core -> adapters -> mcp-server -> CLI/stdio/dev runtime`
+| 维度 | Appium / Maestro | Mobile E2E MCP Harness |
+|---|---|---|
+| 核心角色 | 自动化框架 / flow runner | 面向 AI 的编排 harness |
+| 执行策略 | 以动作执行为中心 | 确定性优先 + policy/session 治理 |
+| 失败处理 | 命令或断言失败信息 | 结构化诊断 + 候选根因排序 + 修复建议 |
+| AI 适配 | 可接入，但非一等抽象 | 原生面向 AI Agent 设计 |
+| 证据模型 | 依赖外部拼装 | 内建证据优先 action outcome |
+| Helper app 依赖 | iOS/Android 回放都需要 | Android: owned-adb 主路径（常用命令不需要 helper app）；iOS 模拟器: axe CLI；iOS 真机: WDA（一次性配置，详见 [外部工具指南](docs/guides/external-tools.md)） |
 
 ## 端到端执行原理（How It Works）
 
@@ -157,7 +152,7 @@
 6. 附加证据（截图、日志、状态摘要、时间线）用于审计与排障。
 7. 若确定性路径失败且策略允许，才进入有边界 OCR/CV 兜底。
 
-所以该项目重点不仅是“点点点”，而是 **session + policy + evidence** 的可控执行。
+所以该项目重点不仅是"点点点"，而是 **session + policy + evidence** 的可控执行。
 
 ## 高层架构
 
@@ -170,6 +165,12 @@
 
 - [系统架构总览（Mermaid，仓库内）](docs/architecture/system-architecture-overview.md)
 - [参考架构详细版](docs/architecture/architecture.md)
+- [架构导航索引（中文版）](docs/architecture/README.zh-CN.md)
+
+Source-of-truth 说明：
+
+- 架构文档既描述当前基线，也描述目标态设计。
+- 如果文档表述与严格校验行为冲突，以 `packages/contracts/*.schema.json` 和 `configs/policies/*.yaml` 的当前实现为准。
 
 ## 能力地图（当前范围）
 
@@ -179,11 +180,11 @@
 - **诊断与证据**：日志、崩溃信号、性能、截图/时间线证据
 - **可靠性与恢复**：原因码失败、有限重试、恢复建议工具
 
-工具注册与签名入口：`packages/mcp-server/src/server.ts` 与 `packages/mcp-server/src/tools/*`。
+工具注册与签名入口：`packages/mcp-server/src/server.ts`，描述符元数据与 wrapper 组合：`packages/mcp-server/src/index.ts`。
 
 ## 完整 MCP 工具目录（当前）
 
-当前服务共暴露 **63 个工具**。对于 AI Agent，这是最快建立"可做什么"的入口。
+当前服务共暴露 **64 个工具**。对于 AI Agent，这是最快建立"可做什么"的入口。
 
 ### 1）会话与生命周期
 
@@ -258,48 +259,27 @@
 - `configs/policies/*.yaml`
 - `configs/profiles/*.yaml`
 
-## 当前测试与验证模型
-
-回归层刻意区分了无设备验证与更重的执行链路：
-
-- 跨 core/adapters/server 的单元层（`pnpm test:unit`）
-- 根目录 smoke 校验（`pnpm test:smoke`）
-- 可选 OCR smoke（`pnpm test:ocr-smoke`）
-
-面向 CI 的主命令：
-
-```bash
-pnpm test:ci
-```
-
-测试细节与 fixture 策略见：`tests/README.md`。
-
 ## 非目标（避免误解）
 
 - 不是为了替代所有移动测试框架的内部实现。
 - 不是 OCR-first 自动化框架。
 - 不是一开始就覆盖 native/RN/Flutter 全部边界场景。
-- 不是试图抹平所有平台差异的“单一万能抽象”。
-
-## 推荐阅读路径（人类 + AI）
-
-想快速进入有效工作状态，建议按这个顺序读：
-
-1. 本 README（心智模型 + 命令 + 边界）
-2. `AGENTS.md`（仓库导航与不变量）
-3. `docs/architecture/architecture.md`（控制平面 vs 执行平面）
-4. `packages/mcp-server/src/server.ts`（实际工具注册与调用面）
-5. `tests/README.md`（当前真实验证范围）
+- 不是试图抹平所有平台差异的"单一万能抽象"。
 
 ## 精选文档入口
 
 - [README.md](README.md) — English overview
 - [docs/README.md](docs/README.md) — 对外文档总索引与公开边界
 - [docs/guides/ai-agent-invocation.zh-CN.md](docs/guides/ai-agent-invocation.zh-CN.md) — AI Agent 调用真相源与默认工具链
+- [docs/engineering/ai-first-capability-expansion-guideline.md](docs/engineering/ai-first-capability-expansion-guideline.md) — AI-first harness 能力扩展规则
 - [docs/architecture/overview.md](docs/architecture/overview.md) — 目标/范围/原则
 - [docs/architecture/architecture.md](docs/architecture/architecture.md) — 参考架构
 - [docs/architecture/capability-map.md](docs/architecture/capability-map.md) — 能力域与成熟度
 - [docs/architecture/governance-security.md](docs/architecture/governance-security.md) — 治理与安全
+- [docs/architecture/README.zh-CN.md](docs/architecture/README.zh-CN.md) — 架构导航索引（中文版）
+- [docs/architecture/session-orchestration-architecture.zh-CN.md](docs/architecture/session-orchestration-architecture.zh-CN.md) — 会话租约/调度/运行时编排
+- [docs/architecture/policy-engine-runtime-architecture.zh-CN.md](docs/architecture/policy-engine-runtime-architecture.zh-CN.md) — 策略运行时/守卫/范围映射
+- [docs/architecture/platform-implementation-matrix.zh-CN.md](docs/architecture/platform-implementation-matrix.zh-CN.md) — 跨平台支持矩阵
 - [docs/delivery/roadmap.md](docs/delivery/roadmap.md) — 分阶段交付路线
 - [docs/delivery/npm-release-and-git-tagging.zh-CN.md](docs/delivery/npm-release-and-git-tagging.zh-CN.md) — npm 发版与 Git tag 一体化规范（含 PR/pre-tag/tag 分层 doc-sync 规则）
 - [docs/showcase/README.md](docs/showcase/README.md) — 真机 Demo 证据与复现脚本
@@ -327,4 +307,4 @@ pnpm test:ci
 
 捐赠说明：
 
-- [![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/shenyuexin) 
+- [![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/shenyuexin)
