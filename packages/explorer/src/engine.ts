@@ -1024,6 +1024,14 @@ export async function explore(
 				nextStateSnapshot.appId =
 					nextStateSnapshot.appId ?? `external:${element.label}`;
 
+				// Only mark metadata when we actually switched to an external app
+				if (isExternalApp) {
+					nextStateSnapshot.explorationStatus = 'reached-not-expanded';
+					nextStateSnapshot.stoppedByPolicy = 'externalLinkPolicy:skip';
+					nextStateSnapshot.ruleFamily = 'foreign_app_boundary';
+					nextStateSnapshot.recoveryMethod = 'launch-app-return';
+				}
+
 				console.log(
 					`[EXTERNAL-LINK] External link detected. Returning immediately...`,
 				);

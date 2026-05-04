@@ -120,17 +120,78 @@ export function generateAsciiTree(
   }
 }
 
+/** Detect whether a value looks like a 16-char hex hash. */
+function isHashLike(value: string | undefined): boolean {
+  if (!value) return false;
+  return /^[a-f0-9]{16}$/i.test(value);
+}
+
+/** Extract short hash (first 8 chars) for disambiguation. */
+function shortHash(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.slice(0, 8);
+}
+
+/** Map internal ruleFamily identifiers to human-readable labels. */
+function displayNameForRuleFamily(ruleFamily: string | undefined): string | undefined {
+  if (!ruleFamily) return undefined;
+  const map: Record<string, string> = {
+    dedup_alias: 'Already Visited',
+    foreign_app_boundary: 'External App',
+    stateful_form_entry: 'Form Entry',
+    owner_package_gate: 'Blocked Package',
+    heuristic_low_value_content: 'Low-Value Content',
+    page_context_gate: 'Gated Page',
+  };
+  return map[ruleFamily] ?? ruleFamily;
+}
+
 function formatPageLabel(
   page: PageEntry,
   samplingDetail?: SamplingPageDetail,
 ): string {
-  const title = page.screenTitle || page.screenId;
+  let title: string;
+
+  if (page.ruleFamily === 'dedup_alias' || page.screenId?.includes(':alias:')) {
+    title = '[Already Visited]';
+  } else if (page.snapshot?.isExternalApp && page.snapshot?.appId) {
+    const appId = page.snapshot.appId;
+    const appIdShort = appId.split('.').pop() || appId;
+    const displayTitle = page.screenTitle || appIdShort;
+    title = `${displayTitle} (${appId})`;
+  } else if (page.screenTitle) {
+    title = page.screenTitle;
+  } else if (page.screenId && !isHashLike(page.screenId)) {
+    title = page.screenId;
+  } else if (
+    page.snapshot?.appId &&
+    page.snapshot.appId !== '(target-app)' &&
+    !page.snapshot.appId.startsWith('external:')
+  ) {
+    const appId = page.snapshot.appId;
+    const appIdShort = appId.split('.').pop() || appId;
+    title = `${appIdShort} (${appId})`;
+  } else if (page.pageContext?.type) {
+    title = `[${page.pageContext.type}]`;
+  } else {
+    const hash = shortHash(page.screenId);
+    title = hash ? `[Unnamed Page: ${hash}]` : '[Unnamed Page]';
+  }
+
   let base = page.viaElement ? `${title}  [via: ${page.viaElement}]` : title;
+
   if (page.explorationStatus === 'reached-not-expanded' && page.ruleFamily) {
-    base = `${base}  [reached, not expanded: ${page.ruleFamily}]`;
+    const friendlyFamily = displayNameForRuleFamily(page.ruleFamily);
+    base = `${base}  [reached, not expanded: ${friendlyFamily}]`;
   }
-  if (!samplingDetail || samplingDetail.totalChildren <= 0) {
-    return base;
+
+  if (page.snapshot?.isExternalApp && !title.includes('External')) {
+    base = `${base}  [External App]`;
   }
-  return `${base}  [sampling: ${samplingDetail.exploredChildren}/${samplingDetail.totalChildren}]`;
+
+  if (samplingDetail && samplingDetail.totalChildren > 0) {
+    base = `${base}  [sampling: ${samplingDetail.exploredChildren}/${samplingDetail.totalChildren}]`;
+  }
+
+  return base;
 }
