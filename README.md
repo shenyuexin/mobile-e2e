@@ -42,6 +42,23 @@ Key features:
 - **Structured coverage reports**: outputs machine-consumable reports showing which screens and elements were discovered
 - **Rule-based gating**: respects skip-page, skip-element, sampling, and risk-gating rules for safe exploration
 
+### Output
+
+Explorer produces a directory of structured artifacts:
+
+| File | Description |
+|------|-------------|
+| `tree.txt` | ASCII tree of all discovered pages and navigation paths |
+| `report.md` | Human-readable coverage report with module breakdown |
+| `summary.json` | Machine-consumable metrics and page metadata |
+| `config.json` | Runtime configuration and rule settings used for the run |
+
+Example output from a real run against iOS Settings (181 pages, max depth 5):
+
+- [`tree.txt`](docs/showcase/explorer/tree.txt) — full page hierarchy
+- [`report.md`](docs/showcase/explorer/report.md) — module breakdown and paths
+- [`summary.json`](docs/showcase/explorer/summary.json) — metrics and metadata
+
 For architecture details and rule configuration:
 
 - [Explorer hybrid traversal design](docs/architecture/explorer-hybrid-traversal-ascii.md)

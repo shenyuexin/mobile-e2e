@@ -1,0 +1,92 @@
+{
+  "mode": "full",
+  "auth": {
+    "type": "already-logged-in"
+  },
+  "failureStrategy": "retry-3",
+  "maxDepth": 8,
+  "maxPages": 200,
+  "timeoutMs": 7200000,
+  "compareWith": null,
+  "platform": "ios-simulator",
+  "destructiveActionPolicy": "skip",
+  "statefulFormPolicy": "skip",
+  "editorEntryPolicy": "skip",
+  "maxActionSuccessesPerContext": 1,
+  "appId": "com.apple.Preferences",
+  "reportDir": "artifacts/explorer/full",
+  "samplingRules": [
+    {
+      "match": {
+        "pathPrefix": [
+          "General",
+          "Fonts",
+          "System Fonts"
+        ]
+      },
+      "mode": "smoke",
+      "strategy": "representative-child",
+      "maxChildrenToValidate": 1,
+      "stopAfterFirstSuccessfulNavigation": true,
+      "excludeActions": [
+        "Download"
+      ]
+    }
+  ],
+  "blockedOwnerPackages": [
+    "com.bbk.account"
+  ],
+  "skipPages": [
+    {
+      "match": {
+        "pathPrefix": [
+          "Bluetooth",
+          "Other devices"
+        ]
+      },
+      "reason": "Bluetooth device search triggers system pairing dialogs"
+    },
+    {
+      "match": {
+        "screenTitle": "SIMs & mobile network"
+      },
+      "reason": "Stateful mobile network settings"
+    }
+  ],
+  "skipElements": [
+    {
+      "match": {
+        "pathPrefix": [
+          "Bluetooth"
+        ],
+        "elementLabel": "Other devices"
+      },
+      "reason": "Bluetooth device search triggers system pairing dialogs"
+    },
+    {
+      "match": {
+        "screenTitle": "SIMs & mobile network"
+      },
+      "reason": "Stateful mobile network settings"
+    },
+    {
+      "match": {
+        "screenTitle": "More connections"
+      },
+      "reason": "Temporarily skip due to flakiness,"
+    },
+    {
+      "match": {
+        "elementLabel": "Help"
+      },
+      "reason": "Help/FAQ pages typically contain low-value leaf content"
+    },
+    {
+      "match": {
+        "elementLabelPattern": "^(How do I|What do I|Why do|Cannot|Car kit)"
+      },
+      "reason": "FAQ items are typically leaf nodes with no navigation value"
+    }
+  ],
+  "skipInterview": true
+}

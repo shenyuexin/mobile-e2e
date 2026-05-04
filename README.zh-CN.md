@@ -42,6 +42,23 @@ npx -y @shenyuexin/mobile-e2e-mcp@latest explore \
 - **结构化覆盖率报告**：输出机器可消费的报告，展示已发现的页面与元素
 - **规则门控**：遵循跳过页面、跳过元素、采样与风险门控规则，确保安全探索
 
+### 输出产物
+
+Explorer 会生成一个包含结构化产物的目录：
+
+| 文件 | 说明 |
+|------|-------------|
+| `tree.txt` | 所有已发现页面与导航路径的 ASCII 树 |
+| `report.md` | 人类可读的覆盖率报告，按模块分组 |
+| `summary.json` | 机器可消费的指标与页面元数据 |
+| `config.json` | 运行时配置与本次运行的规则设置 |
+
+一次针对 iOS Settings 的真实运行示例输出（181 个页面，最大深度 5）：
+
+- [`tree.txt`](docs/showcase/explorer/tree.txt) — 完整页面层级
+- [`report.md`](docs/showcase/explorer/report.md) — 模块分组与路径
+- [`summary.json`](docs/showcase/explorer/summary.json) — 指标与元数据
+
 架构设计与规则配置参考：
 
 - [Explorer 混合遍历设计](docs/architecture/explorer-hybrid-traversal-ascii.md)

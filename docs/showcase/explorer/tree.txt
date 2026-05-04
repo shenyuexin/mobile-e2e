@@ -1,0 +1,181 @@
+Settings
+├──   ( )
+├── General
+│   ├── About
+│   │   ├── Certificate Trust Settings
+│   │   │   └── Safari (Safari)  [reached, not expanded: External App]  [External App]
+│   │   └── iOS Version
+│   ├── AutoFill & Passwords
+│   ├── Dictionary
+│   ├── Fonts
+│   │   ├── INSTALLED FONTS
+│   │   │   ├── Academy Engraved LET
+│   │   │   │   └── Plain
+│   │   │   ├── Al Nile
+│   │   │   │   ├── Regular
+│   │   │   │   └── Bold
+│   │   │   ├── American Typewriter
+│   │   │   │   ├── Light
+│   │   │   │   ├── Condensed Light
+│   │   │   │   ├── Regular
+│   │   │   │   ├── Semibold
+│   │   │   │   ├── Bold
+│   │   │   │   └── Condensed Bold
+│   │   │   ├── ONE TYPEFACE
+│   │   │   │   └── Regular
+│   │   │   ├── Apple Color Emoji
+│   │   │   │   └── Regular
+│   │   │   ├── Apple Symbols
+│   │   │   │   └── Regular
+│   │   │   ├── Arial Hebrew
+│   │   │   │   ├── Light
+│   │   │   │   ├── Regular
+│   │   │   │   └── Bold
+│   │   │   └── Arial Rounded MT Bold
+│   │   │       └── Regular
+│   │   └── No Fonts Installed
+│   ├── Keyboards
+│   │   ├── M
+│   │   ├── Hardware Keyboard
+│   │   │   ├── Chinese, Simplified – Pinyin
+│   │   │   ├── English (US)
+│   │   │   ├── Thai
+│   │   │   ├── Modifier Keys
+│   │   │   └── Keyboard Type
+│   │   ├── Dictation Languages
+│   │   ├── Dictation Shortcut
+│   │   ├── Fuzzy Pinyin
+│   │   └── Regional Dialect
+│   ├── PREFERRED LANGUAGES
+│   └── VPN & Device Management
+├── Accessibility
+│   ├── Display & Text Size
+│   ├── Motion
+│   ├── Speak Selection
+│   │   └── Settings (Settings)
+│   ├── Face ID & Attention
+│   ├── Control Nearby Devices
+│   ├── Subtitles & Captioning
+│   │   └── Transparent Background
+│   │       └── Settings (Settings)
+│   └── Keyboards & Typing
+│       └── Typing Feedback
+├── No Action
+├── Apple Intelligence & Siri
+│   ├── Language
+│   │   └── English (India)
+│   ├── Talk to Siri
+│   ├── Voice
+│   ├── Siri Responses
+│   ├── Messaging with Siri
+│   ├── Siri & Dictation History
+│   ├── Settings (Settings)
+│   ├── App Clips
+│   └── Apps
+│       ├── Calendar
+│       ├── Contacts
+│       ├── Expo Go
+│       ├── Files
+│       ├── Fitness
+│       ├── Health
+│       ├── Maps
+│       ├── Material 3 Demo
+│       ├── Mobitru
+│       ├── News
+│       ├── Passwords
+│       ├── Photos
+│       ├── Reminders
+│       ├── Safari
+│       ├── Shortcuts
+│       ├── Wallet
+│       └── Watch
+├── Camera
+│   ├── Photographic Styles
+│   ├── Record Video
+│   ├── Record Slo-mo
+│   ├── Record Sound
+│   ├── Formats
+│   └── Preserve Settings
+├── Home Screen & App Library
+├── Search
+│   ├── Search Engine
+│   ├── App Clips
+│   ├── Calendar
+│   ├── Contacts
+│   ├── Expo Go
+│   ├── Files
+│   ├── Health
+│   ├── Maps
+│   ├── Material 3 Demo
+│   ├── Mobitru
+│   ├── News
+│   ├── Passwords
+│   ├── Photos
+│   ├── Reminders
+│   ├── Safari
+│   ├── Shortcuts
+│   ├── Wallet
+│   └── Watch
+├── StandBy
+├── Screen Time
+│   ├── See All App & Website Activity
+│   ├── Downtime
+│   ├── App Limits
+│   │   └── MOST USED APPS, CATEGORIES, AND WEBSITES
+│   ├── Always Allowed
+│   ├── Content & Privacy Restrictions
+│   ├── Set Passcode
+│   ├── [Already Visited]  [reached, not expanded: Already Visited]
+│   ├── Settings (Settings)
+│   └── App & Website Activity
+├── Privacy & Security
+│   ├── Location Services  [reached, not expanded: stateful-form]
+│   ├── Tracking
+│   ├── Calendars
+│   │   └── Mobitru
+│   ├── Contacts
+│   │   └── Mobitru
+│   ├── Files & Folders
+│   ├── Focus
+│   ├── Health
+│   │   └── Headphone Audio Levels
+│   ├── Bluetooth
+│   │   └── App Clips
+│   ├── Camera
+│   │   └── App Clips
+│   ├── Local Network
+│   ├── Microphone
+│   │   └── App Clips
+│   ├── Motion & Fitness
+│   ├── Nearby Interactions
+│   ├── Research Sensor & Usage Data
+│   │   └── [Already Visited]  [reached, not expanded: Already Visited]
+│   ├── Speech Recognition
+│   ├── Safety Check
+│   │   └── Settings (Settings)
+│   ├── Analytics & Improvements
+│   │   └── Data
+│   └── Apple Advertising
+│       └── Ad Targeting Information
+├── [Already Visited]  [reached, not expanded: Already Visited]
+├── C
+│   ├── Default Apps
+│   ├── Calendar
+│   ├── Contacts
+│   ├── Expo Go
+│   ├── Files
+│   ├── Fitness
+│   ├── Health
+│   ├── Maps
+│   └── Material 3 Demo
+├── Developer
+│   ├── Larger Text
+│   ├── TV Provider
+│   │   └── AUTHENTICATION SCHEMES
+│   │       └── Certificate validation failed
+│   ├── TV App
+│   └── [Already Visited]  [reached, not expanded: Already Visited]
+└── Wallet & Apple Pay
+    ├── [Already Visited]  [reached, not expanded: Already Visited]
+    ├── Search
+    └── Notifications
