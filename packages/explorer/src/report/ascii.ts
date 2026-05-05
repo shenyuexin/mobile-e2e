@@ -153,7 +153,14 @@ function formatPageLabel(
   let title: string;
 
   if (page.ruleFamily === 'dedup_alias' || page.screenId?.includes(':alias:')) {
-    title = '[Already Visited]';
+    // Alias inherits the original page's screenTitle via ...snapshot spread
+    if (page.screenTitle?.trim()) {
+      title = `[Already Visited: ${page.screenTitle.trim()}]`;
+    } else if (page.viaElement?.trim()) {
+      title = `${page.viaElement.trim()} [Already Visited]`;
+    } else {
+      title = '[Already Visited]';
+    }
   } else if (page.snapshot?.isExternalApp && page.snapshot?.appId) {
     const appId = page.snapshot.appId;
     const appIdShort = appId.split('.').pop() || appId;

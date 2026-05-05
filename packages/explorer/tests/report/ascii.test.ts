@@ -137,7 +137,8 @@ describe('generateAsciiTree — readable labels', () => {
       }),
     ];
     const tree = generateAsciiTree(pages);
-    assert.ok(tree.includes('[Already Visited]'), `tree should show [Already Visited], got:\n${tree}`);
+    assert.ok(tree.includes('Already Visited'), `tree should show Already Visited, got:\n${tree}`);
+    assert.ok(tree.includes('Settings'), `tree should preserve original screenTitle, got:\n${tree}`);
     assert.ok(!tree.includes('settings:alias:1'), `tree should not show raw alias screenId, got:\n${tree}`);
   });
 
@@ -150,7 +151,8 @@ describe('generateAsciiTree — readable labels', () => {
       }),
     ];
     const tree = generateAsciiTree(pages);
-    assert.ok(tree.includes('[Already Visited]'), `tree should show [Already Visited], got:\n${tree}`);
+    assert.ok(tree.includes('Already Visited'), `tree should show Already Visited, got:\n${tree}`);
+    assert.ok(tree.includes('Settings'), `tree should preserve original screenTitle, got:\n${tree}`);
   });
 
   it('shows appId for external app with screenTitle', () => {
